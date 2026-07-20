@@ -44,11 +44,17 @@ func TestForeignKey_ReferencedTableAndColumn(t *testing.T) {
 func TestForeignKey_FreshState(t *testing.T) {
 	fk := orm.NewForeignKey("author_id", "users", orm.NewColumn[int]("id"))
 
-	if fk.IsPrimaryKey() || fk.IsUnique() || fk.IsNotNull() {
+	if fk.IsPrimaryKey() || fk.IsUnique() || fk.IsNotNull() || fk.IsIndexed() {
 		t.Error("fresh ForeignKey has a constraint set, want none")
 	}
 	if _, ok := fk.MaxLength(); ok {
 		t.Error("fresh ForeignKey has MaxLength set, want unset")
+	}
+	if _, ok := fk.ServerDefaultExpr(); ok {
+		t.Error("fresh ForeignKey has ServerDefaultExpr set, want unset")
+	}
+	if fk.IsClientGenerated() {
+		t.Error("fresh ForeignKey is client generated, want false")
 	}
 }
 
@@ -95,6 +101,36 @@ func TestForeignKey_BuilderMethods(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "Index",
+			build: func(fk *orm.ForeignKey[int]) *orm.ForeignKey[int] { return fk.Index() },
+			check: func(t *testing.T, fk *orm.ForeignKey[int]) {
+				if !fk.IsIndexed() {
+					t.Error("IsIndexed() = false, want true")
+				}
+			},
+		},
+		{
+			name:  "ServerDefault",
+			build: func(fk *orm.ForeignKey[int]) *orm.ForeignKey[int] { return fk.ServerDefault("0") },
+			check: func(t *testing.T, fk *orm.ForeignKey[int]) {
+				expr, ok := fk.ServerDefaultExpr()
+				if !ok || expr != "0" {
+					t.Errorf("ServerDefaultExpr() = (%q, %v), want (\"0\", true)", expr, ok)
+				}
+			},
+		},
+		{
+			name: "GeneratedByClient",
+			build: func(fk *orm.ForeignKey[int]) *orm.ForeignKey[int] {
+				return fk.GeneratedByClient(func() int { return 1 })
+			},
+			check: func(t *testing.T, fk *orm.ForeignKey[int]) {
+				if !fk.IsClientGenerated() {
+					t.Error("IsClientGenerated() = false, want true")
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -105,20 +141,25 @@ func TestForeignKey_BuilderMethods(t *testing.T) {
 	}
 }
 
-// TestForeignKey_ChainedBuilders proves all four builder overrides return
+// TestForeignKey_ChainedBuilders proves all seven builder overrides return
 // *ForeignKey[T] (not the embedded *Column[T]) so calls chain together and
 // ReferencedTable/ReferencedColumn remain callable afterward. This is the
 // behavior that makes the overrides necessary in the first place.
 func TestForeignKey_ChainedBuilders(t *testing.T) {
 	fk := orm.NewForeignKey("author_id", "users", orm.NewColumn[int]("id")).
-		NotNull().Unique().PrimaryKey().MaxLen(10)
+		NotNull().Unique().PrimaryKey().MaxLen(10).Index().ServerDefault("0").
+		GeneratedByClient(func() int { return 1 })
 
-	if !fk.IsNotNull() || !fk.IsUnique() || !fk.IsPrimaryKey() {
+	if !fk.IsNotNull() || !fk.IsUnique() || !fk.IsPrimaryKey() || !fk.IsIndexed() || !fk.IsClientGenerated() {
 		t.Error("chained builders did not set all constraints")
 	}
 	n, ok := fk.MaxLength()
 	if !ok || n != 10 {
 		t.Errorf("MaxLength() = (%d, %v), want (10, true)", n, ok)
+	}
+	expr, ok := fk.ServerDefaultExpr()
+	if !ok || expr != "0" {
+		t.Errorf("ServerDefaultExpr() = (%q, %v), want (\"0\", true)", expr, ok)
 	}
 	if got, want := fk.ReferencedTable(), "users"; got != want {
 		t.Errorf("ReferencedTable() = %q, want %q after chaining", got, want)
@@ -132,13 +173,27 @@ func TestForeignKey_ChainedBuilders(t *testing.T) {
 // don't need a covariant override (they don't return Self) still work via
 // plain Go method promotion from the embedded Column[T].
 func TestForeignKey_PromotedReadAccessors(t *testing.T) {
-	fk := orm.NewForeignKey("author_id", "users", orm.NewColumn[int]("id"))
+	fk := orm.NewForeignKey("author_id", "users", orm.NewColumn[int]("id")).
+		Index().ServerDefault("0").GeneratedByClient(func() int { return 1 })
 
 	if fk.GoType() != reflect.TypeFor[int]() {
 		t.Errorf("GoType() = %v, want %v", fk.GoType(), reflect.TypeFor[int]())
 	}
 	if fk.IsNullable() {
 		t.Error("IsNullable() = true for ForeignKey[int], want false")
+	}
+	if !fk.IsIndexed() {
+		t.Error("IsIndexed() = false, want true")
+	}
+	if expr, ok := fk.ServerDefaultExpr(); !ok || expr != "0" {
+		t.Errorf("ServerDefaultExpr() = (%q, %v), want (\"0\", true)", expr, ok)
+	}
+	if !fk.IsClientGenerated() {
+		t.Error("IsClientGenerated() = false, want true")
+	}
+	gen, ok := fk.Generator()
+	if !ok || gen() != 1 {
+		t.Error("Generator() did not return the configured generator")
 	}
 }
 
@@ -162,6 +217,6 @@ func BenchmarkForeignKeyBuilderChain(b *testing.B) {
 	id := orm.NewColumn[int]("id")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = orm.NewForeignKey("author_id", "users", id).NotNull().Unique()
+		_ = orm.NewForeignKey("author_id", "users", id).NotNull().Unique().Index()
 	}
 }

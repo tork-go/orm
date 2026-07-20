@@ -14,6 +14,9 @@ type ColumnMeta interface {
 	MaxLength() (int, bool)
 	GoType() reflect.Type
 	IsNullable() bool
+	IsIndexed() bool
+	ServerDefaultExpr() (string, bool)
+	IsClientGenerated() bool
 }
 
 // ForeignKeyMeta is the read-only view of a foreign key column.

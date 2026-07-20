@@ -1,8 +1,8 @@
 package orm
 
 // ForeignKey is a Column that also references a column in another table.
-// It embeds Column[T], so PrimaryKey, Unique, NotNull, MaxLen, and all
-// read accessors apply to foreign key columns too.
+// It embeds Column[T], so all of Column's builder methods and read
+// accessors apply to foreign key columns too.
 type ForeignKey[T any] struct {
 	Column[T]
 	refTableName  string
@@ -33,11 +33,13 @@ func (fk *ForeignKey[T]) ReferencedColumn() string {
 	return fk.refColumnName
 }
 
-// The methods below redeclare Column[T]'s builder methods on ForeignKey[T].
-// Without them, fk.NotNull() would still compile through promotion, but
-// return *Column[T] instead of *ForeignKey[T], breaking the chain. All
-// four are overridden together so none of them silently changes the
-// chain's type.
+// The methods below redeclare Column[T]'s chain-returning builder methods
+// on ForeignKey[T]. Without them, fk.NotNull() would still compile through
+// promotion, but return *Column[T] instead of *ForeignKey[T], breaking the
+// chain. Every chain-returning builder is overridden so none of them
+// silently changes the chain's type. Read accessors that return something
+// other than Self (MaxLength, IsIndexed, GoType, ...) need no override:
+// promotion already returns the right type for those.
 
 // PrimaryKey marks the foreign key column as (part of) the primary key.
 func (fk *ForeignKey[T]) PrimaryKey() *ForeignKey[T] {
@@ -60,5 +62,25 @@ func (fk *ForeignKey[T]) NotNull() *ForeignKey[T] {
 // MaxLen sets the foreign key column's maximum length.
 func (fk *ForeignKey[T]) MaxLen(n int) *ForeignKey[T] {
 	fk.Column.MaxLen(n)
+	return fk
+}
+
+// Index marks the foreign key column as having a plain index.
+func (fk *ForeignKey[T]) Index() *ForeignKey[T] {
+	fk.Column.Index()
+	return fk
+}
+
+// ServerDefault stores a raw SQL expression for the foreign key column's
+// default value.
+func (fk *ForeignKey[T]) ServerDefault(expr string) *ForeignKey[T] {
+	fk.Column.ServerDefault(expr)
+	return fk
+}
+
+// GeneratedByClient stores the foreign key column's Go-side value
+// generator.
+func (fk *ForeignKey[T]) GeneratedByClient(gen func() T) *ForeignKey[T] {
+	fk.Column.GeneratedByClient(gen)
 	return fk
 }

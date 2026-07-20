@@ -25,6 +25,18 @@ func TestColumn_FreshState(t *testing.T) {
 	if n, ok := c.MaxLength(); ok {
 		t.Errorf("MaxLength() = (%d, %v), want ok=false on a fresh column", n, ok)
 	}
+	if c.IsIndexed() {
+		t.Error("IsIndexed() = true on a fresh column, want false")
+	}
+	if expr, ok := c.ServerDefaultExpr(); ok {
+		t.Errorf("ServerDefaultExpr() = (%q, %v), want ok=false on a fresh column", expr, ok)
+	}
+	if c.IsClientGenerated() {
+		t.Error("IsClientGenerated() = true on a fresh column, want false")
+	}
+	if gen, ok := c.Generator(); ok || gen != nil {
+		t.Errorf("Generator() ok=%v, isNil=%v, want ok=false, generator=nil on a fresh column", ok, gen == nil)
+	}
 }
 
 func TestColumn_BuilderMethods(t *testing.T) {
@@ -83,6 +95,45 @@ func TestColumn_BuilderMethods(t *testing.T) {
 			},
 		},
 		{
+			name:  "Index sets only indexed",
+			build: func(c *orm.Column[string]) *orm.Column[string] { return c.Index() },
+			check: func(t *testing.T, c *orm.Column[string]) {
+				if !c.IsIndexed() {
+					t.Error("IsIndexed() = false, want true")
+				}
+				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() {
+					t.Error("Index() unexpectedly set another constraint")
+				}
+			},
+		},
+		{
+			name:  "ServerDefault sets only the server default",
+			build: func(c *orm.Column[string]) *orm.Column[string] { return c.ServerDefault("now()") },
+			check: func(t *testing.T, c *orm.Column[string]) {
+				expr, ok := c.ServerDefaultExpr()
+				if !ok || expr != "now()" {
+					t.Errorf("ServerDefaultExpr() = (%q, %v), want (\"now()\", true)", expr, ok)
+				}
+				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
+					t.Error("ServerDefault() unexpectedly set another constraint")
+				}
+			},
+		},
+		{
+			name: "GeneratedByClient sets only the generator",
+			build: func(c *orm.Column[string]) *orm.Column[string] {
+				return c.GeneratedByClient(func() string { return "x" })
+			},
+			check: func(t *testing.T, c *orm.Column[string]) {
+				if !c.IsClientGenerated() {
+					t.Error("IsClientGenerated() = false, want true")
+				}
+				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
+					t.Error("GeneratedByClient() unexpectedly set another constraint")
+				}
+			},
+		},
+		{
 			name: "all builders combined",
 			build: func(c *orm.Column[string]) *orm.Column[string] {
 				return c.PrimaryKey().Unique().NotNull().MaxLen(30)
@@ -120,17 +171,23 @@ func TestColumn_BuilderMethods(t *testing.T) {
 // same regardless of the order builder methods are called in, since they
 // mutate independent fields.
 func TestColumn_ChainOrderIndependence(t *testing.T) {
-	forward := orm.NewColumn[string]("username").Unique().NotNull().MaxLen(30)
-	reversed := orm.NewColumn[string]("username").MaxLen(30).NotNull().Unique()
+	forward := orm.NewColumn[string]("username").Unique().NotNull().MaxLen(30).Index().ServerDefault("x")
+	reversed := orm.NewColumn[string]("username").ServerDefault("x").Index().MaxLen(30).NotNull().Unique()
 
 	if forward.IsUnique() != reversed.IsUnique() ||
-		forward.IsNotNull() != reversed.IsNotNull() {
-		t.Fatal("chain order affected Unique/NotNull flags")
+		forward.IsNotNull() != reversed.IsNotNull() ||
+		forward.IsIndexed() != reversed.IsIndexed() {
+		t.Fatal("chain order affected Unique/NotNull/Index flags")
 	}
 	fn, fok := forward.MaxLength()
 	rn, rok := reversed.MaxLength()
 	if fn != rn || fok != rok {
 		t.Fatalf("chain order affected MaxLength: forward=(%d,%v) reversed=(%d,%v)", fn, fok, rn, rok)
+	}
+	fe, feok := forward.ServerDefaultExpr()
+	re, reok := reversed.ServerDefaultExpr()
+	if fe != re || feok != reok {
+		t.Fatalf("chain order affected ServerDefaultExpr: forward=(%q,%v) reversed=(%q,%v)", fe, feok, re, reok)
 	}
 }
 
@@ -180,6 +237,64 @@ func TestColumn_MaxLength_SetVsUnset(t *testing.T) {
 				t.Errorf("MaxLength() = (%d, %v), want (%d, %v)", n, ok, tt.wantN, tt.wantOK)
 			}
 		})
+	}
+}
+
+func TestColumn_ServerDefaultExpr_SetVsUnset(t *testing.T) {
+	tests := []struct {
+		name     string
+		build    func() *orm.Column[string]
+		wantExpr string
+		wantOK   bool
+	}{
+		{
+			name:     "never called",
+			build:    func() *orm.Column[string] { return orm.NewColumn[string]("c") },
+			wantExpr: "",
+			wantOK:   false,
+		},
+		{
+			name:     "explicitly set to empty string",
+			build:    func() *orm.Column[string] { return orm.NewColumn[string]("c").ServerDefault("") },
+			wantExpr: "",
+			wantOK:   true,
+		},
+		{
+			name:     "set to a non-empty expression",
+			build:    func() *orm.Column[string] { return orm.NewColumn[string]("c").ServerDefault("now()") },
+			wantExpr: "now()",
+			wantOK:   true,
+		},
+		{
+			name:     "overwritten by a second call",
+			build:    func() *orm.Column[string] { return orm.NewColumn[string]("c").ServerDefault("a").ServerDefault("b") },
+			wantExpr: "b",
+			wantOK:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr, ok := tt.build().ServerDefaultExpr()
+			if expr != tt.wantExpr || ok != tt.wantOK {
+				t.Errorf("ServerDefaultExpr() = (%q, %v), want (%q, %v)", expr, ok, tt.wantExpr, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestColumn_GeneratedByClient_Generator(t *testing.T) {
+	c := orm.NewColumn[int]("n").GeneratedByClient(func() int { return 7 })
+
+	if !c.IsClientGenerated() {
+		t.Error("IsClientGenerated() = false, want true")
+	}
+	fn, ok := c.Generator()
+	if !ok {
+		t.Fatal("Generator() ok = false, want true")
+	}
+	if got := fn(); got != 7 {
+		t.Errorf("Generator()() = %d, want 7", got)
 	}
 }
 
@@ -254,7 +369,7 @@ func TestColumn_GoTypeAndNullability(t *testing.T) {
 func BenchmarkColumnBuilderChain(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = orm.NewColumn[string]("username").Unique().NotNull().MaxLen(30)
+		_ = orm.NewColumn[string]("username").Unique().NotNull().MaxLen(30).Index().ServerDefault("x")
 	}
 }
 

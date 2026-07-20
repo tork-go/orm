@@ -136,10 +136,10 @@ func TestColumn_ChainOrderIndependence(t *testing.T) {
 
 func TestColumn_MaxLength_SetVsUnset(t *testing.T) {
 	tests := []struct {
-		name    string
-		build   func() *orm.Column[string]
-		wantN   int
-		wantOK  bool
+		name   string
+		build  func() *orm.Column[string]
+		wantN  int
+		wantOK bool
 	}{
 		{
 			name:   "never called",

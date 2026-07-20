@@ -21,6 +21,8 @@ func TestGenerate_DispatchesEachOperationKind(t *testing.T) {
 		migrate.DropPrimaryKey{Table: "t", Name: "pk_t"},
 		migrate.AddUnique{Table: "t", Unique: schema.UniqueConstraint{Name: "uq_t"}},
 		migrate.DropUnique{Table: "t", Name: "uq_t"},
+		migrate.AddIndex{Table: "t", Index: schema.Index{Name: "ix_t"}},
+		migrate.DropIndex{Table: "t", Name: "ix_t"},
 		migrate.AddForeignKey{Table: "t", ForeignKey: schema.ForeignKey{Name: "fk_t"}},
 		migrate.DropForeignKey{Table: "t", Name: "fk_t"},
 	}
@@ -35,6 +37,7 @@ func TestGenerate_DispatchesEachOperationKind(t *testing.T) {
 		"ALTER COLUMN TYPE t.c", "ALTER COLUMN NULLABILITY t.c true",
 		"ADD PRIMARY KEY t pk_t", "DROP PRIMARY KEY pk_t",
 		"ADD UNIQUE uq_t", "DROP UNIQUE uq_t",
+		"ADD INDEX ix_t", "DROP INDEX ix_t",
 		"ADD FOREIGN KEY fk_t", "DROP FOREIGN KEY fk_t",
 	}
 	for _, want := range wantFragments {
@@ -48,6 +51,11 @@ func TestGenerate_DispatchesEachOperationKind(t *testing.T) {
 	}
 }
 
+// TestGenerate_PropagatesRenderErrors covers the three Render* methods
+// that can fail (CreateTable, AddColumn, AlterColumnType, all of which map
+// a schema.Kind to a type string). AddIndex/DropIndex, like DropTable and
+// DropColumn, are pure formatting and never return an error, so they need
+// no case here.
 func TestGenerate_PropagatesRenderErrors(t *testing.T) {
 	dialect := fakedriver.NewDialect()
 	dialect.FailRender = true

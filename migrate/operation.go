@@ -35,6 +35,11 @@ type AddUnique struct {
 	Unique schema.UniqueConstraint
 }
 type DropUnique struct{ Table, Name string }
+type AddIndex struct {
+	Table string
+	Index schema.Index
+}
+type DropIndex struct{ Table, Name string }
 type AddForeignKey struct {
 	Table      string
 	ForeignKey schema.ForeignKey
@@ -51,5 +56,7 @@ func (AddPrimaryKey) isOperation()          {}
 func (DropPrimaryKey) isOperation()         {}
 func (AddUnique) isOperation()              {}
 func (DropUnique) isOperation()             {}
+func (AddIndex) isOperation()               {}
+func (DropIndex) isOperation()              {}
 func (AddForeignKey) isOperation()          {}
 func (DropForeignKey) isOperation()         {}

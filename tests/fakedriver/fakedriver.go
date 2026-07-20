@@ -208,6 +208,12 @@ func (d *Dialect) RenderAddUnique(table string, u schema.UniqueConstraint) []str
 func (d *Dialect) RenderDropUnique(table, name string) []string {
 	return []string{"DROP UNIQUE " + name}
 }
+func (d *Dialect) RenderAddIndex(table string, idx schema.Index) []string {
+	return []string{"ADD INDEX " + idx.Name}
+}
+func (d *Dialect) RenderDropIndex(table, name string) []string {
+	return []string{"DROP INDEX " + name}
+}
 func (d *Dialect) RenderAddForeignKey(table string, fk schema.ForeignKey) []string {
 	return []string{"ADD FOREIGN KEY " + fk.Name}
 }

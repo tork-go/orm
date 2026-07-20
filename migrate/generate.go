@@ -55,6 +55,10 @@ func renderOp(dialect driver.Dialect, op Operation) ([]string, error) {
 		return dialect.RenderAddUnique(o.Table, o.Unique), nil
 	case DropUnique:
 		return dialect.RenderDropUnique(o.Table, o.Name), nil
+	case AddIndex:
+		return dialect.RenderAddIndex(o.Table, o.Index), nil
+	case DropIndex:
+		return dialect.RenderDropIndex(o.Table, o.Name), nil
 	case AddForeignKey:
 		return dialect.RenderAddForeignKey(o.Table, o.ForeignKey), nil
 	case DropForeignKey:

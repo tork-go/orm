@@ -252,6 +252,69 @@ func TestDiff_UniqueAndForeignKey_AddDrop(t *testing.T) {
 	})
 }
 
+func TestDiff_Index_AddDrop(t *testing.T) {
+	withIndex := schema.Table{Name: "posts", Indexes: []schema.Index{{Name: "ix_posts_author_id", Columns: []string{"author_id"}}}}
+	withoutIndex := schema.Table{Name: "posts"}
+
+	t.Run("add index", func(t *testing.T) {
+		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withoutIndex}}, schema.Schema{Tables: []schema.Table{withIndex}})
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		if _, ok := ops[0].(migrate.AddIndex); !ok {
+			t.Errorf("ops[0] = %T, want AddIndex", ops[0])
+		}
+	})
+	t.Run("drop index", func(t *testing.T) {
+		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withIndex}}, schema.Schema{Tables: []schema.Table{withoutIndex}})
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		if _, ok := ops[0].(migrate.DropIndex); !ok {
+			t.Errorf("ops[0] = %T, want DropIndex", ops[0])
+		}
+	})
+}
+
+// TestDiff_Index_MatchedByColumnSet_NotName mirrors
+// TestDiff_LegacyUnnamedConstraint for plain indexes.
+func TestDiff_Index_MatchedByColumnSet_NotName(t *testing.T) {
+	current := schema.Table{Name: "posts", Indexes: []schema.Index{{Name: "posts_author_id_idx", Columns: []string{"author_id"}}}}
+	desired := schema.Table{Name: "posts", Indexes: []schema.Index{{Name: "ix_posts_author_id", Columns: []string{"author_id"}}}}
+
+	ops := migrate.Diff(schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
+	if len(ops) != 0 {
+		t.Errorf("Diff() = %+v, want no operations (same columns, different index name)", ops)
+	}
+}
+
+// TestDiff_CreateTable_IndexIsSeparateOp mirrors
+// TestDiff_CreateTable_ForeignKeyIsSeparateOp: a plain index can't be
+// inlined into CREATE TABLE in Postgres at all, so it's always its own
+// AddIndex, even for a brand-new table.
+func TestDiff_CreateTable_IndexIsSeparateOp(t *testing.T) {
+	desired := schema.Schema{Tables: []schema.Table{{
+		Name:    "posts",
+		Columns: []schema.Column{{Name: "author_id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true}},
+		Indexes: []schema.Index{{Name: "ix_posts_author_id", Columns: []string{"author_id"}}},
+	}}}
+
+	ops := migrate.Diff(schema.Schema{}, desired)
+	if len(ops) != 2 {
+		t.Fatalf("got %d ops, want 2 (CreateTable, AddIndex): %+v", len(ops), ops)
+	}
+	ct, ok := ops[0].(migrate.CreateTable)
+	if !ok {
+		t.Fatalf("ops[0] is %T, want CreateTable", ops[0])
+	}
+	if len(ct.Table.Indexes) != 0 {
+		t.Errorf("CreateTable.Table.Indexes = %v, want none (indexes are always a separate op)", ct.Table.Indexes)
+	}
+	if _, ok := ops[1].(migrate.AddIndex); !ok {
+		t.Fatalf("ops[1] is %T, want AddIndex", ops[1])
+	}
+}
+
 // TestDiff_LegacyUnnamedConstraint proves a live constraint that already
 // covers the desired columns, but under a different (e.g. Postgres
 // auto-generated) name, is left alone rather than proposed as a rename.
@@ -274,7 +337,7 @@ func TestDiff_LegacyUnnamedConstraint(t *testing.T) {
 }
 
 // TestDiff_OperationOrdering builds a diff touching many operation kinds
-// at once and asserts they come back in the twelve-phase order.
+// at once and asserts they come back in the fourteen-phase order.
 func TestDiff_OperationOrdering(t *testing.T) {
 	current := schema.Schema{Tables: []schema.Table{
 		{
@@ -292,6 +355,7 @@ func TestDiff_OperationOrdering(t *testing.T) {
 			},
 			PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
 			Uniques:    []schema.UniqueConstraint{{Name: "uq_users_email", Columns: []string{"email"}}},
+			Indexes:    []schema.Index{{Name: "ix_users_old_col", Columns: []string{"old_col"}}},
 		},
 	}}
 	desired := schema.Schema{Tables: []schema.Table{
@@ -302,6 +366,7 @@ func TestDiff_OperationOrdering(t *testing.T) {
 				{Name: "new_col", Type: schema.ColumnType{Kind: schema.KindText}},
 			},
 			PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
+			Indexes:    []schema.Index{{Name: "ix_users_new_col", Columns: []string{"new_col"}}},
 		},
 		{
 			Name:    "new_table",
@@ -321,16 +386,18 @@ func TestDiff_OperationOrdering(t *testing.T) {
 	phaseOrder := map[string]int{
 		"migrate.DropForeignKey":         0,
 		"migrate.DropUnique":             1,
-		"migrate.DropPrimaryKey":         2,
-		"migrate.DropColumn":             3,
-		"migrate.DropTable":              4,
-		"migrate.CreateTable":            5,
-		"migrate.AddColumn":              6,
-		"migrate.AlterColumnType":        7,
-		"migrate.AlterColumnNullability": 8,
-		"migrate.AddPrimaryKey":          9,
-		"migrate.AddUnique":              10,
-		"migrate.AddForeignKey":          11,
+		"migrate.DropIndex":              2,
+		"migrate.DropPrimaryKey":         3,
+		"migrate.DropColumn":             4,
+		"migrate.DropTable":              5,
+		"migrate.CreateTable":            6,
+		"migrate.AddColumn":              7,
+		"migrate.AlterColumnType":        8,
+		"migrate.AlterColumnNullability": 9,
+		"migrate.AddPrimaryKey":          10,
+		"migrate.AddIndex":               11,
+		"migrate.AddUnique":              12,
+		"migrate.AddForeignKey":          13,
 	}
 
 	last := -1
@@ -399,6 +466,7 @@ func TestDiff_ReverseIsCorrectlyOrderedInverse(t *testing.T) {
 				{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true},
 				{Name: "email", Type: schema.ColumnType{Kind: schema.KindText}},
 			},
+			Indexes: []schema.Index{{Name: "ix_users_email", Columns: []string{"email"}}},
 		},
 		{
 			Name:    "posts",
@@ -415,12 +483,16 @@ func TestDiff_ReverseIsCorrectlyOrderedInverse(t *testing.T) {
 
 	upHasCreatePosts, downHasDropPosts := false, false
 	upHasAddEmail, downHasDropEmail := false, false
+	upHasAddIndex, downHasDropIndex := false, false
 	for _, op := range up {
 		if ct, ok := op.(migrate.CreateTable); ok && ct.Table.Name == "posts" {
 			upHasCreatePosts = true
 		}
 		if ac, ok := op.(migrate.AddColumn); ok && ac.Column.Name == "email" {
 			upHasAddEmail = true
+		}
+		if _, ok := op.(migrate.AddIndex); ok {
+			upHasAddIndex = true
 		}
 	}
 	for _, op := range down {
@@ -430,12 +502,41 @@ func TestDiff_ReverseIsCorrectlyOrderedInverse(t *testing.T) {
 		if dc, ok := op.(migrate.DropColumn); ok && dc.Column == "email" {
 			downHasDropEmail = true
 		}
+		if _, ok := op.(migrate.DropIndex); ok {
+			downHasDropIndex = true
+		}
 	}
 	if !upHasCreatePosts || !downHasDropPosts {
 		t.Errorf("expected up to CreateTable posts and down to DropTable posts: up=%+v down=%+v", up, down)
 	}
 	if !upHasAddEmail || !downHasDropEmail {
 		t.Errorf("expected up to AddColumn email and down to DropColumn email: up=%+v down=%+v", up, down)
+	}
+	if !upHasAddIndex || !downHasDropIndex {
+		t.Errorf("expected up to AddIndex and down to DropIndex: up=%+v down=%+v", up, down)
+	}
+}
+
+// TestDiff_IndexesSortWithinPhaseByTableThenName mirrors
+// TestDiff_SortsWithinPhaseByTableThenName for AddIndex ops.
+func TestDiff_IndexesSortWithinPhaseByTableThenName(t *testing.T) {
+	current := schema.Schema{Tables: []schema.Table{{Name: "zebra"}, {Name: "apple"}}}
+	desired := schema.Schema{Tables: []schema.Table{
+		{Name: "zebra", Indexes: []schema.Index{{Name: "ix_zebra_z", Columns: []string{"z"}}}},
+		{Name: "apple", Indexes: []schema.Index{{Name: "ix_apple_a", Columns: []string{"a"}}}},
+	}}
+
+	ops := migrate.Diff(current, desired)
+	if len(ops) != 2 {
+		t.Fatalf("got %d ops, want 2: %+v", len(ops), ops)
+	}
+	first, ok := ops[0].(migrate.AddIndex)
+	if !ok || first.Table != "apple" {
+		t.Errorf("ops[0] = %+v, want AddIndex on table apple (sorted first)", ops[0])
+	}
+	second, ok := ops[1].(migrate.AddIndex)
+	if !ok || second.Table != "zebra" {
+		t.Errorf("ops[1] = %+v, want AddIndex on table zebra", ops[1])
 	}
 }
 
@@ -461,6 +562,10 @@ func typeName(op migrate.Operation) string {
 		return "migrate.AddUnique"
 	case migrate.DropUnique:
 		return "migrate.DropUnique"
+	case migrate.AddIndex:
+		return "migrate.AddIndex"
+	case migrate.DropIndex:
+		return "migrate.DropIndex"
 	case migrate.AddForeignKey:
 		return "migrate.AddForeignKey"
 	case migrate.DropForeignKey:

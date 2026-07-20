@@ -23,8 +23,13 @@ func TestGenerate_DispatchesEachOperationKind(t *testing.T) {
 		migrate.DropUnique{Table: "t", Name: "uq_t"},
 		migrate.AddIndex{Table: "t", Index: schema.Index{Name: "ix_t"}},
 		migrate.DropIndex{Table: "t", Name: "ix_t"},
+		migrate.AddCheck{Table: "t", Check: schema.Check{Name: "ck_t"}},
+		migrate.DropCheck{Table: "t", Name: "ck_t"},
 		migrate.AddForeignKey{Table: "t", ForeignKey: schema.ForeignKey{Name: "fk_t"}},
 		migrate.DropForeignKey{Table: "t", Name: "fk_t"},
+		migrate.CreateEnumType{Enum: schema.EnumType{Name: "order_status"}},
+		migrate.DropEnumType{Name: "order_status"},
+		migrate.AddEnumValue{Name: "order_status", Value: "cancelled"},
 	}
 
 	sql, err := migrate.Generate(fakedriver.NewDialect(), ops)
@@ -38,7 +43,10 @@ func TestGenerate_DispatchesEachOperationKind(t *testing.T) {
 		"ADD PRIMARY KEY t pk_t", "DROP PRIMARY KEY pk_t",
 		"ADD UNIQUE uq_t", "DROP UNIQUE uq_t",
 		"ADD INDEX ix_t", "DROP INDEX ix_t",
+		"ADD CHECK ck_t", "DROP CHECK ck_t",
 		"ADD FOREIGN KEY fk_t", "DROP FOREIGN KEY fk_t",
+		"CREATE ENUM TYPE order_status", "DROP ENUM TYPE order_status",
+		"ADD ENUM VALUE order_status.cancelled",
 	}
 	for _, want := range wantFragments {
 		if !strings.Contains(sql, want) {

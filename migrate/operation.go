@@ -40,11 +40,23 @@ type AddIndex struct {
 	Index schema.Index
 }
 type DropIndex struct{ Table, Name string }
+type AddCheck struct {
+	Table string
+	Check schema.Check
+}
+type DropCheck struct{ Table, Name string }
 type AddForeignKey struct {
 	Table      string
 	ForeignKey schema.ForeignKey
 }
 type DropForeignKey struct{ Table, Name string }
+type CreateEnumType struct{ Enum schema.EnumType }
+type DropEnumType struct{ Name string }
+
+// AddEnumValue adds Value to the enum type Name. Before/After are
+// mutually exclusive; both empty appends the value at the end of the
+// type's current value list.
+type AddEnumValue struct{ Name, Value, Before, After string }
 
 func (CreateTable) isOperation()            {}
 func (DropTable) isOperation()              {}
@@ -58,5 +70,10 @@ func (AddUnique) isOperation()              {}
 func (DropUnique) isOperation()             {}
 func (AddIndex) isOperation()               {}
 func (DropIndex) isOperation()              {}
+func (AddCheck) isOperation()               {}
+func (DropCheck) isOperation()              {}
 func (AddForeignKey) isOperation()          {}
 func (DropForeignKey) isOperation()         {}
+func (CreateEnumType) isOperation()         {}
+func (DropEnumType) isOperation()           {}
+func (AddEnumValue) isOperation()           {}

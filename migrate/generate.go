@@ -59,10 +59,20 @@ func renderOp(dialect driver.Dialect, op Operation) ([]string, error) {
 		return dialect.RenderAddIndex(o.Table, o.Index), nil
 	case DropIndex:
 		return dialect.RenderDropIndex(o.Table, o.Name), nil
+	case AddCheck:
+		return dialect.RenderAddCheck(o.Table, o.Check), nil
+	case DropCheck:
+		return dialect.RenderDropCheck(o.Table, o.Name), nil
 	case AddForeignKey:
 		return dialect.RenderAddForeignKey(o.Table, o.ForeignKey), nil
 	case DropForeignKey:
 		return dialect.RenderDropForeignKey(o.Table, o.Name), nil
+	case CreateEnumType:
+		return dialect.RenderCreateEnumType(o.Enum), nil
+	case DropEnumType:
+		return dialect.RenderDropEnumType(o.Name), nil
+	case AddEnumValue:
+		return dialect.RenderAddEnumValue(o.Name, o.Value, o.Before, o.After), nil
 	default:
 		return nil, fmt.Errorf("migrate: unknown operation type %T", op)
 	}

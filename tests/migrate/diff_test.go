@@ -1,6 +1,7 @@
 package migrate_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tork-go/orm/migrate"
@@ -9,12 +10,25 @@ import (
 
 func table(name string) schema.Table { return schema.Table{Name: name} }
 
+// mustDiff calls migrate.Diff and fails the test on error, for the many
+// tests here that exercise ordinary structural diffs and don't care about
+// the error path (see TestDiff_EnumType_NonAdditiveChange_Errors for a
+// test that does).
+func mustDiff(t *testing.T, current, desired schema.Schema) []migrate.Operation {
+	t.Helper()
+	ops, err := migrate.Diff(current, desired)
+	if err != nil {
+		t.Fatalf("Diff() error = %v", err)
+	}
+	return ops
+}
+
 func TestDiff_NoChanges(t *testing.T) {
 	s := schema.Schema{Tables: []schema.Table{{
 		Name:    "users",
 		Columns: []schema.Column{{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true}},
 	}}}
-	if ops := migrate.Diff(s, s); len(ops) != 0 {
+	if ops := mustDiff(t, s, s); len(ops) != 0 {
 		t.Errorf("Diff(s, s) = %v, want no operations", ops)
 	}
 }
@@ -26,7 +40,7 @@ func TestDiff_CreateTable_NoForeignKeys(t *testing.T) {
 		PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
 	}}}
 
-	ops := migrate.Diff(schema.Schema{}, desired)
+	ops := mustDiff(t, schema.Schema{}, desired)
 	if len(ops) != 1 {
 		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 	}
@@ -49,7 +63,7 @@ func TestDiff_CreateTable_ForeignKeyIsSeparateOp(t *testing.T) {
 		}},
 	}}}
 
-	ops := migrate.Diff(schema.Schema{}, desired)
+	ops := mustDiff(t, schema.Schema{}, desired)
 	if len(ops) != 2 {
 		t.Fatalf("got %d ops, want 2 (CreateTable, AddForeignKey): %+v", len(ops), ops)
 	}
@@ -67,7 +81,7 @@ func TestDiff_CreateTable_ForeignKeyIsSeparateOp(t *testing.T) {
 
 func TestDiff_DropTable(t *testing.T) {
 	current := schema.Schema{Tables: []schema.Table{table("users")}}
-	ops := migrate.Diff(current, schema.Schema{})
+	ops := mustDiff(t, current, schema.Schema{})
 	if len(ops) != 1 {
 		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 	}
@@ -84,7 +98,7 @@ func TestDiff_DropTable_ForeignKeyDroppedFirst(t *testing.T) {
 			ReferencedTable: "users", ReferencedColumns: []string{"id"},
 		}},
 	}}}
-	ops := migrate.Diff(current, schema.Schema{})
+	ops := mustDiff(t, current, schema.Schema{})
 	if len(ops) != 2 {
 		t.Fatalf("got %d ops, want 2: %+v", len(ops), ops)
 	}
@@ -102,7 +116,7 @@ func TestDiff_AddColumn(t *testing.T) {
 		Name:    "users",
 		Columns: []schema.Column{{Name: "age", Type: schema.ColumnType{Kind: schema.KindInteger}}},
 	}}}
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) != 1 {
 		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 	}
@@ -118,7 +132,7 @@ func TestDiff_DropColumn(t *testing.T) {
 		Columns: []schema.Column{{Name: "age", Type: schema.ColumnType{Kind: schema.KindInteger}}},
 	}}}
 	desired := schema.Schema{Tables: []schema.Table{table("users")}}
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) != 1 {
 		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 	}
@@ -137,7 +151,7 @@ func TestDiff_AlterColumnType(t *testing.T) {
 		Name:    "users",
 		Columns: []schema.Column{{Name: "age", Type: schema.ColumnType{Kind: schema.KindBigInteger}}},
 	}}}
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) != 1 {
 		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 	}
@@ -156,7 +170,7 @@ func TestDiff_AlterColumnNullability(t *testing.T) {
 		Name:    "users",
 		Columns: []schema.Column{{Name: "age", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true}},
 	}}}
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) != 1 {
 		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 	}
@@ -172,7 +186,7 @@ func TestDiff_PrimaryKey_AddDropAndChange(t *testing.T) {
 	pkB := schema.Table{Name: "users", PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"b"}}}
 
 	t.Run("add", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{noPK}}, schema.Schema{Tables: []schema.Table{pkA}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{noPK}}, schema.Schema{Tables: []schema.Table{pkA}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -181,7 +195,7 @@ func TestDiff_PrimaryKey_AddDropAndChange(t *testing.T) {
 		}
 	})
 	t.Run("drop", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{pkA}}, schema.Schema{Tables: []schema.Table{noPK}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{pkA}}, schema.Schema{Tables: []schema.Table{noPK}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -190,7 +204,7 @@ func TestDiff_PrimaryKey_AddDropAndChange(t *testing.T) {
 		}
 	})
 	t.Run("change columns", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{pkA}}, schema.Schema{Tables: []schema.Table{pkB}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{pkA}}, schema.Schema{Tables: []schema.Table{pkB}})
 		if len(ops) != 2 {
 			t.Fatalf("got %d ops, want 2 (DropPrimaryKey, AddPrimaryKey): %+v", len(ops), ops)
 		}
@@ -208,7 +222,7 @@ func TestDiff_UniqueAndForeignKey_AddDrop(t *testing.T) {
 	withoutUnique := schema.Table{Name: "users"}
 
 	t.Run("add unique", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withoutUnique}}, schema.Schema{Tables: []schema.Table{withUnique}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withoutUnique}}, schema.Schema{Tables: []schema.Table{withUnique}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -217,7 +231,7 @@ func TestDiff_UniqueAndForeignKey_AddDrop(t *testing.T) {
 		}
 	})
 	t.Run("drop unique", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withUnique}}, schema.Schema{Tables: []schema.Table{withoutUnique}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withUnique}}, schema.Schema{Tables: []schema.Table{withoutUnique}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -233,7 +247,7 @@ func TestDiff_UniqueAndForeignKey_AddDrop(t *testing.T) {
 	withoutFK := schema.Table{Name: "posts"}
 
 	t.Run("add foreign key on existing table", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withoutFK}}, schema.Schema{Tables: []schema.Table{withFK}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withoutFK}}, schema.Schema{Tables: []schema.Table{withFK}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -242,7 +256,7 @@ func TestDiff_UniqueAndForeignKey_AddDrop(t *testing.T) {
 		}
 	})
 	t.Run("drop foreign key on existing table", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withFK}}, schema.Schema{Tables: []schema.Table{withoutFK}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withFK}}, schema.Schema{Tables: []schema.Table{withoutFK}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -257,7 +271,7 @@ func TestDiff_Index_AddDrop(t *testing.T) {
 	withoutIndex := schema.Table{Name: "posts"}
 
 	t.Run("add index", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withoutIndex}}, schema.Schema{Tables: []schema.Table{withIndex}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withoutIndex}}, schema.Schema{Tables: []schema.Table{withIndex}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -266,7 +280,7 @@ func TestDiff_Index_AddDrop(t *testing.T) {
 		}
 	})
 	t.Run("drop index", func(t *testing.T) {
-		ops := migrate.Diff(schema.Schema{Tables: []schema.Table{withIndex}}, schema.Schema{Tables: []schema.Table{withoutIndex}})
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withIndex}}, schema.Schema{Tables: []schema.Table{withoutIndex}})
 		if len(ops) != 1 {
 			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
 		}
@@ -282,7 +296,7 @@ func TestDiff_Index_MatchedByColumnSet_NotName(t *testing.T) {
 	current := schema.Table{Name: "posts", Indexes: []schema.Index{{Name: "posts_author_id_idx", Columns: []string{"author_id"}}}}
 	desired := schema.Table{Name: "posts", Indexes: []schema.Index{{Name: "ix_posts_author_id", Columns: []string{"author_id"}}}}
 
-	ops := migrate.Diff(schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
+	ops := mustDiff(t, schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
 	if len(ops) != 0 {
 		t.Errorf("Diff() = %+v, want no operations (same columns, different index name)", ops)
 	}
@@ -299,7 +313,7 @@ func TestDiff_CreateTable_IndexIsSeparateOp(t *testing.T) {
 		Indexes: []schema.Index{{Name: "ix_posts_author_id", Columns: []string{"author_id"}}},
 	}}}
 
-	ops := migrate.Diff(schema.Schema{}, desired)
+	ops := mustDiff(t, schema.Schema{}, desired)
 	if len(ops) != 2 {
 		t.Fatalf("got %d ops, want 2 (CreateTable, AddIndex): %+v", len(ops), ops)
 	}
@@ -330,55 +344,63 @@ func TestDiff_LegacyUnnamedConstraint(t *testing.T) {
 		Uniques:    []schema.UniqueConstraint{{Name: "uq_users_email", Columns: []string{"email"}}},
 	}
 
-	ops := migrate.Diff(schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
+	ops := mustDiff(t, schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
 	if len(ops) != 0 {
 		t.Errorf("Diff() = %+v, want no operations (same columns, different names)", ops)
 	}
 }
 
-// TestDiff_OperationOrdering builds a diff touching many operation kinds
-// at once and asserts they come back in the fourteen-phase order.
+// TestDiff_OperationOrdering builds a diff touching every operation kind
+// at once and asserts they come back in the nineteen-phase order.
 func TestDiff_OperationOrdering(t *testing.T) {
-	current := schema.Schema{Tables: []schema.Table{
-		{
-			Name: "dropped_table",
-			ForeignKeys: []schema.ForeignKey{{
-				Name: "fk_dropped_table_x", Columns: []string{"x"},
-				ReferencedTable: "other", ReferencedColumns: []string{"id"},
-			}},
-		},
-		{
-			Name: "users",
-			Columns: []schema.Column{
-				{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true},
-				{Name: "old_col", Type: schema.ColumnType{Kind: schema.KindText}},
+	current := schema.Schema{
+		Tables: []schema.Table{
+			{
+				Name: "dropped_table",
+				ForeignKeys: []schema.ForeignKey{{
+					Name: "fk_dropped_table_x", Columns: []string{"x"},
+					ReferencedTable: "other", ReferencedColumns: []string{"id"},
+				}},
 			},
-			PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
-			Uniques:    []schema.UniqueConstraint{{Name: "uq_users_email", Columns: []string{"email"}}},
-			Indexes:    []schema.Index{{Name: "ix_users_old_col", Columns: []string{"old_col"}}},
-		},
-	}}
-	desired := schema.Schema{Tables: []schema.Table{
-		{
-			Name: "users",
-			Columns: []schema.Column{
-				{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true},
-				{Name: "new_col", Type: schema.ColumnType{Kind: schema.KindText}},
+			{
+				Name: "users",
+				Columns: []schema.Column{
+					{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true},
+					{Name: "old_col", Type: schema.ColumnType{Kind: schema.KindText}},
+				},
+				PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
+				Uniques:    []schema.UniqueConstraint{{Name: "uq_users_email", Columns: []string{"email"}}},
+				Indexes:    []schema.Index{{Name: "ix_users_old_col", Columns: []string{"old_col"}}},
+				Checks:     []schema.Check{{Name: "ck_users_old", Expression: "old_col <> ''"}},
 			},
-			PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
-			Indexes:    []schema.Index{{Name: "ix_users_new_col", Columns: []string{"new_col"}}},
 		},
-		{
-			Name:    "new_table",
-			Columns: []schema.Column{{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true}},
-			ForeignKeys: []schema.ForeignKey{{
-				Name: "fk_new_table_users", Columns: []string{"id"},
-				ReferencedTable: "users", ReferencedColumns: []string{"id"},
-			}},
+		EnumTypes: []schema.EnumType{{Name: "dropped_enum", Values: []string{"a"}}},
+	}
+	desired := schema.Schema{
+		Tables: []schema.Table{
+			{
+				Name: "users",
+				Columns: []schema.Column{
+					{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true},
+					{Name: "new_col", Type: schema.ColumnType{Kind: schema.KindText}},
+				},
+				PrimaryKey: &schema.PrimaryKey{Name: "pk_users", Columns: []string{"id"}},
+				Indexes:    []schema.Index{{Name: "ix_users_new_col", Columns: []string{"new_col"}}},
+				Checks:     []schema.Check{{Name: "ck_users_new", Expression: "new_col <> ''"}},
+			},
+			{
+				Name:    "new_table",
+				Columns: []schema.Column{{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true}},
+				ForeignKeys: []schema.ForeignKey{{
+					Name: "fk_new_table_users", Columns: []string{"id"},
+					ReferencedTable: "users", ReferencedColumns: []string{"id"},
+				}},
+			},
 		},
-	}}
+		EnumTypes: []schema.EnumType{{Name: "new_enum", Values: []string{"a"}}},
+	}
 
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) == 0 {
 		t.Fatal("expected a non-empty diff")
 	}
@@ -386,18 +408,23 @@ func TestDiff_OperationOrdering(t *testing.T) {
 	phaseOrder := map[string]int{
 		"migrate.DropForeignKey":         0,
 		"migrate.DropUnique":             1,
-		"migrate.DropIndex":              2,
-		"migrate.DropPrimaryKey":         3,
-		"migrate.DropColumn":             4,
-		"migrate.DropTable":              5,
-		"migrate.CreateTable":            6,
-		"migrate.AddColumn":              7,
-		"migrate.AlterColumnType":        8,
-		"migrate.AlterColumnNullability": 9,
-		"migrate.AddPrimaryKey":          10,
-		"migrate.AddIndex":               11,
-		"migrate.AddUnique":              12,
-		"migrate.AddForeignKey":          13,
+		"migrate.DropCheck":              2,
+		"migrate.DropIndex":              3,
+		"migrate.DropPrimaryKey":         4,
+		"migrate.DropColumn":             5,
+		"migrate.DropTable":              6,
+		"migrate.DropEnumType":           7,
+		"migrate.CreateEnumType":         8,
+		"migrate.AddEnumValue":           9,
+		"migrate.CreateTable":            10,
+		"migrate.AddColumn":              11,
+		"migrate.AlterColumnType":        12,
+		"migrate.AlterColumnNullability": 13,
+		"migrate.AddPrimaryKey":          14,
+		"migrate.AddIndex":               15,
+		"migrate.AddCheck":               16,
+		"migrate.AddUnique":              17,
+		"migrate.AddForeignKey":          18,
 	}
 
 	last := -1
@@ -429,7 +456,7 @@ func TestDiff_SortsWithinPhaseByTableThenName(t *testing.T) {
 		{Name: "mango", Columns: []schema.Column{{Name: "y", Type: schema.ColumnType{Kind: schema.KindInteger}}}},
 	}}
 
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) != 4 {
 		t.Fatalf("got %d ops, want 4: %+v", len(ops), ops)
 	}
@@ -474,8 +501,8 @@ func TestDiff_ReverseIsCorrectlyOrderedInverse(t *testing.T) {
 		},
 	}}
 
-	up := migrate.Diff(before, after)
-	down := migrate.Diff(after, before)
+	up := mustDiff(t, before, after)
+	down := mustDiff(t, after, before)
 
 	if len(up) != len(down) {
 		t.Fatalf("len(up)=%d, len(down)=%d, want equal (same changes, reversed)", len(up), len(down))
@@ -526,7 +553,7 @@ func TestDiff_IndexesSortWithinPhaseByTableThenName(t *testing.T) {
 		{Name: "apple", Indexes: []schema.Index{{Name: "ix_apple_a", Columns: []string{"a"}}}},
 	}}
 
-	ops := migrate.Diff(current, desired)
+	ops := mustDiff(t, current, desired)
 	if len(ops) != 2 {
 		t.Fatalf("got %d ops, want 2: %+v", len(ops), ops)
 	}
@@ -538,6 +565,211 @@ func TestDiff_IndexesSortWithinPhaseByTableThenName(t *testing.T) {
 	if !ok || second.Table != "zebra" {
 		t.Errorf("ops[1] = %+v, want AddIndex on table zebra", ops[1])
 	}
+}
+
+// TestDiff_Check_AddDropMatchedByName proves CHECK constraints are matched
+// by name (they have no natural column set), not by expression text.
+func TestDiff_Check_AddDropMatchedByName(t *testing.T) {
+	withCheck := schema.Table{Name: "accounts", Checks: []schema.Check{{Name: "ck_accounts_1", Expression: "age >= 0"}}}
+	withoutCheck := schema.Table{Name: "accounts"}
+
+	t.Run("add check", func(t *testing.T) {
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withoutCheck}}, schema.Schema{Tables: []schema.Table{withCheck}})
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		if _, ok := ops[0].(migrate.AddCheck); !ok {
+			t.Errorf("ops[0] = %T, want AddCheck", ops[0])
+		}
+	})
+	t.Run("drop check", func(t *testing.T) {
+		ops := mustDiff(t, schema.Schema{Tables: []schema.Table{withCheck}}, schema.Schema{Tables: []schema.Table{withoutCheck}})
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		if _, ok := ops[0].(migrate.DropCheck); !ok {
+			t.Errorf("ops[0] = %T, want DropCheck", ops[0])
+		}
+	})
+}
+
+// TestDiff_Check_ExpressionChange_NormalizedNoOp proves a check whose
+// expression only differs by whitespace or a single wrapping layer of
+// parens (the kind of reformatting Postgres itself does when storing an
+// expression) produces no operation, thanks to normalizeExpr.
+func TestDiff_Check_ExpressionChange_NormalizedNoOp(t *testing.T) {
+	current := schema.Table{Name: "accounts", Checks: []schema.Check{{Name: "ck_accounts_1", Expression: "(age >= 0)"}}}
+	desired := schema.Table{Name: "accounts", Checks: []schema.Check{{Name: "ck_accounts_1", Expression: "age  >=  0"}}}
+
+	ops := mustDiff(t, schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
+	if len(ops) != 0 {
+		t.Errorf("Diff() = %+v, want no operations (expression differs only by whitespace/wrapping parens)", ops)
+	}
+}
+
+// TestDiff_Check_ExpressionActuallyChanged_AddDropPair proves a genuine
+// expression change (not just reformatting) produces a drop+add pair for
+// the same name.
+func TestDiff_Check_ExpressionActuallyChanged_AddDropPair(t *testing.T) {
+	current := schema.Table{Name: "accounts", Checks: []schema.Check{{Name: "ck_accounts_1", Expression: "age >= 0"}}}
+	desired := schema.Table{Name: "accounts", Checks: []schema.Check{{Name: "ck_accounts_1", Expression: "age >= 18"}}}
+
+	ops := mustDiff(t, schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
+	if len(ops) != 2 {
+		t.Fatalf("got %d ops, want 2 (DropCheck, AddCheck): %+v", len(ops), ops)
+	}
+	if _, ok := ops[0].(migrate.DropCheck); !ok {
+		t.Errorf("ops[0] = %T, want DropCheck", ops[0])
+	}
+	if _, ok := ops[1].(migrate.AddCheck); !ok {
+		t.Errorf("ops[1] = %T, want AddCheck", ops[1])
+	}
+}
+
+// TestDiff_ForeignKey_ActionMismatch_DropAndAdd proves a foreign key
+// matched by column set but with a different OnDelete/OnUpdate action is
+// treated as changed (drop+add), since Postgres cannot ALTER a foreign
+// key's referential actions in place.
+func TestDiff_ForeignKey_ActionMismatch_DropAndAdd(t *testing.T) {
+	base := schema.ForeignKey{
+		Name: "fk_posts_author_id", Columns: []string{"author_id"},
+		ReferencedTable: "users", ReferencedColumns: []string{"id"},
+	}
+	current := schema.Table{Name: "posts", ForeignKeys: []schema.ForeignKey{base}}
+	changed := base
+	changed.OnDelete = schema.ActionCascade
+	desired := schema.Table{Name: "posts", ForeignKeys: []schema.ForeignKey{changed}}
+
+	ops := mustDiff(t, schema.Schema{Tables: []schema.Table{current}}, schema.Schema{Tables: []schema.Table{desired}})
+	if len(ops) != 2 {
+		t.Fatalf("got %d ops, want 2 (DropForeignKey, AddForeignKey): %+v", len(ops), ops)
+	}
+	if _, ok := ops[0].(migrate.DropForeignKey); !ok {
+		t.Errorf("ops[0] = %T, want DropForeignKey", ops[0])
+	}
+	if _, ok := ops[1].(migrate.AddForeignKey); !ok {
+		t.Errorf("ops[1] = %T, want AddForeignKey", ops[1])
+	}
+}
+
+func TestDiff_ForeignKey_SameActions_NoOp(t *testing.T) {
+	fk := schema.ForeignKey{
+		Name: "fk_posts_author_id", Columns: []string{"author_id"},
+		ReferencedTable: "users", ReferencedColumns: []string{"id"}, OnDelete: schema.ActionCascade,
+	}
+	table := schema.Table{Name: "posts", ForeignKeys: []schema.ForeignKey{fk}}
+
+	ops := mustDiff(t, schema.Schema{Tables: []schema.Table{table}}, schema.Schema{Tables: []schema.Table{table}})
+	if len(ops) != 0 {
+		t.Errorf("Diff() = %+v, want no operations (identical actions)", ops)
+	}
+}
+
+// TestDiff_EnumType_CreateDropAddValue covers the three enum-type
+// operation kinds at the schema level (not table-scoped).
+func TestDiff_EnumType_CreateDropAddValue(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending"}}}}
+		ops := mustDiff(t, schema.Schema{}, desired)
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		ce, ok := ops[0].(migrate.CreateEnumType)
+		if !ok || ce.Enum.Name != "order_status" {
+			t.Errorf("ops[0] = %+v, want CreateEnumType{Enum.Name: order_status}", ops[0])
+		}
+	})
+	t.Run("drop", func(t *testing.T) {
+		current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending"}}}}
+		ops := mustDiff(t, current, schema.Schema{})
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		if got, ok := ops[0].(migrate.DropEnumType); !ok || got.Name != "order_status" {
+			t.Errorf("ops[0] = %+v, want DropEnumType{Name: order_status}", ops[0])
+		}
+	})
+	t.Run("add value at tail", func(t *testing.T) {
+		current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending"}}}}
+		desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "done"}}}}
+		ops := mustDiff(t, current, desired)
+		if len(ops) != 1 {
+			t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+		}
+		got, ok := ops[0].(migrate.AddEnumValue)
+		if !ok || got.Value != "done" || got.After != "pending" || got.Before != "" {
+			t.Errorf("ops[0] = %+v, want AddEnumValue{Value: done, After: pending}", ops[0])
+		}
+	})
+}
+
+// TestDiff_EnumType_InsertInMiddle_UsesAfter proves a value inserted
+// between two existing values is anchored with After, not just appended.
+func TestDiff_EnumType_InsertInMiddle_UsesAfter(t *testing.T) {
+	current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "done"}}}}
+	desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "paid", "done"}}}}
+
+	ops := mustDiff(t, current, desired)
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+	}
+	got, ok := ops[0].(migrate.AddEnumValue)
+	if !ok || got.Value != "paid" || got.After != "pending" {
+		t.Errorf("ops[0] = %+v, want AddEnumValue{Value: paid, After: pending}", ops[0])
+	}
+}
+
+// TestDiff_EnumType_InsertAtHead_UsesBefore proves a value inserted
+// before every existing value is anchored with Before, since it has no
+// preceding established neighbor.
+func TestDiff_EnumType_InsertAtHead_UsesBefore(t *testing.T) {
+	current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "done"}}}}
+	desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"draft", "pending", "done"}}}}
+
+	ops := mustDiff(t, current, desired)
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1: %+v", len(ops), ops)
+	}
+	got, ok := ops[0].(migrate.AddEnumValue)
+	if !ok || got.Value != "draft" || got.Before != "pending" || got.After != "" {
+		t.Errorf("ops[0] = %+v, want AddEnumValue{Value: draft, Before: pending}", ops[0])
+	}
+}
+
+// TestDiff_EnumType_NonAdditiveChange_Errors proves removing or reordering
+// an enum value is a hard error, the locked decision over a graceful
+// down-pass degradation.
+func TestDiff_EnumType_NonAdditiveChange_Errors(t *testing.T) {
+	t.Run("removal detected directly", func(t *testing.T) {
+		current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "done"}}}}
+		desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending"}}}}
+		if _, err := migrate.Diff(current, desired); err == nil || !strings.Contains(err.Error(), "removing or reordering enum values isn't supported") {
+			t.Fatalf("error = %v, want it to contain %q", err, "removing or reordering enum values isn't supported")
+		}
+	})
+	t.Run("reorder detected directly", func(t *testing.T) {
+		current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "done"}}}}
+		desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"done", "pending"}}}}
+		if _, err := migrate.Diff(current, desired); err == nil || !strings.Contains(err.Error(), "removing or reordering enum values isn't supported") {
+			t.Fatalf("error = %v, want it to contain %q", err, "removing or reordering enum values isn't supported")
+		}
+	})
+	t.Run("additive up-pass succeeds but its down-pass errors", func(t *testing.T) {
+		// The model adds a value: the up-migration is purely additive
+		// and succeeds. Generating the down-migration by swapping Diff's
+		// arguments (see Diff's doc comment) hits the same non-additive
+		// case from the other direction (removing the value that was
+		// just added); per the locked decision that's a hard error, not
+		// a silently degraded down-migration.
+		current := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending"}}}}
+		desired := schema.Schema{EnumTypes: []schema.EnumType{{Name: "order_status", Values: []string{"pending", "done"}}}}
+		if _, err := migrate.Diff(current, desired); err != nil {
+			t.Fatalf("up-pass Diff() error = %v, want nil (adding a value is purely additive)", err)
+		}
+		if _, err := migrate.Diff(desired, current); err == nil || !strings.Contains(err.Error(), "removing or reordering enum values isn't supported") {
+			t.Fatalf("down-pass Diff() error = %v, want it to contain %q", err, "removing or reordering enum values isn't supported")
+		}
+	})
 }
 
 func typeName(op migrate.Operation) string {
@@ -566,10 +798,20 @@ func typeName(op migrate.Operation) string {
 		return "migrate.AddIndex"
 	case migrate.DropIndex:
 		return "migrate.DropIndex"
+	case migrate.AddCheck:
+		return "migrate.AddCheck"
+	case migrate.DropCheck:
+		return "migrate.DropCheck"
 	case migrate.AddForeignKey:
 		return "migrate.AddForeignKey"
 	case migrate.DropForeignKey:
 		return "migrate.DropForeignKey"
+	case migrate.CreateEnumType:
+		return "migrate.CreateEnumType"
+	case migrate.DropEnumType:
+		return "migrate.DropEnumType"
+	case migrate.AddEnumValue:
+		return "migrate.AddEnumValue"
 	default:
 		return "unknown"
 	}

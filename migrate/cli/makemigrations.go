@@ -38,11 +38,17 @@ func MakeMigrations(ctx context.Context, dialect driver.Dialect, dsn, dir, messa
 		return nil, fmt.Errorf("cli: extracting desired schema: %w", err)
 	}
 
-	upOps := migrate.Diff(current, desired)
+	upOps, err := migrate.Diff(current, desired)
+	if err != nil {
+		return nil, fmt.Errorf("cli: diffing up: %w", err)
+	}
 	if len(upOps) == 0 {
 		return nil, nil
 	}
-	downOps := migrate.Diff(desired, current)
+	downOps, err := migrate.Diff(desired, current)
+	if err != nil {
+		return nil, fmt.Errorf("cli: diffing down: %w", err)
+	}
 
 	upSQL, err := migrate.Generate(dialect, upOps)
 	if err != nil {

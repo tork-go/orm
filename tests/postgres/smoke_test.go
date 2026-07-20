@@ -13,30 +13,22 @@ package postgres_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
-const defaultDSN = "postgres://tork:tork@localhost:5432/tork_orm_dev?sslmode=disable"
-
 // TestConnectivity proves the pgx driver dependency can open a connection
 // to the Docker Postgres instance and run a trivial query. It is
 // intentionally independent of any Tork ORM type.
 func TestConnectivity(t *testing.T) {
-	dsn := os.Getenv("TORK_ORM_POSTGRES_DSN")
-	if dsn == "" {
-		dsn = defaultDSN
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := pgx.Connect(ctx, dsn)
+	conn, err := pgx.Connect(ctx, dsn())
 	if err != nil {
-		t.Fatalf("pgx.Connect(%q) failed: %v", dsn, err)
+		t.Fatalf("pgx.Connect(%q) failed: %v", dsn(), err)
 	}
 	defer conn.Close(ctx)
 

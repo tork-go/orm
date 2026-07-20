@@ -59,3 +59,19 @@ func TestIndexName(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckConstraintName(t *testing.T) {
+	tests := []struct {
+		table string
+		n     int
+		want  string
+	}{
+		{table: "accounts", n: 1, want: "ck_accounts_1"},
+		{table: "accounts", n: 2, want: "ck_accounts_2"},
+	}
+	for _, tt := range tests {
+		if got := schema.CheckConstraintName(tt.table, tt.n); got != tt.want {
+			t.Errorf("CheckConstraintName(%q, %d) = %q, want %q", tt.table, tt.n, got, tt.want)
+		}
+	}
+}

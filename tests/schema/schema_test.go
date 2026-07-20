@@ -36,6 +36,72 @@ func TestColumnType_Equal(t *testing.T) {
 			b:    schema.ColumnType{Kind: schema.KindInteger, Length: 0},
 			want: true,
 		},
+		{
+			name: "same numeric precision and scale",
+			a:    schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2},
+			b:    schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2},
+			want: true,
+		},
+		{
+			name: "different numeric precision",
+			a:    schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2},
+			b:    schema.ColumnType{Kind: schema.KindNumeric, Precision: 12, Scale: 2},
+			want: false,
+		},
+		{
+			name: "different numeric scale",
+			a:    schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2},
+			b:    schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 4},
+			want: false,
+		},
+		{
+			name: "same enum type name",
+			a:    schema.ColumnType{Kind: schema.KindEnum, TypeName: "order_status"},
+			b:    schema.ColumnType{Kind: schema.KindEnum, TypeName: "order_status"},
+			want: true,
+		},
+		{
+			name: "different enum type name",
+			a:    schema.ColumnType{Kind: schema.KindEnum, TypeName: "order_status"},
+			b:    schema.ColumnType{Kind: schema.KindEnum, TypeName: "payment_status"},
+			want: false,
+		},
+		{
+			name: "same array element kind",
+			a:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindText}},
+			b:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindText}},
+			want: true,
+		},
+		{
+			name: "different array element kind",
+			a:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindText}},
+			b:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindInteger}},
+			want: false,
+		},
+		{
+			name: "different array element varchar length",
+			a:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindVarchar, Length: 10}},
+			b:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindVarchar, Length: 20}},
+			want: false,
+		},
+		{
+			name: "json and jsonb are different kinds",
+			a:    schema.ColumnType{Kind: schema.KindJSON},
+			b:    schema.ColumnType{Kind: schema.KindJSONB},
+			want: false,
+		},
+		{
+			name: "both array types with nil element are equal",
+			a:    schema.ColumnType{Kind: schema.KindArray},
+			b:    schema.ColumnType{Kind: schema.KindArray},
+			want: true,
+		},
+		{
+			name: "nil element vs non-nil element are unequal",
+			a:    schema.ColumnType{Kind: schema.KindArray},
+			b:    schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindText}},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {

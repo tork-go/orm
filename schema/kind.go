@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // KindForGoType maps a Go type to its default column Kind. Leading pointer
@@ -13,9 +14,18 @@ import (
 // string. string always maps to KindText here; ExtractSchema upgrades it
 // to KindVarchar when a column's MaxLen was set, since that information
 // isn't part of a reflect.Type.
+//
+// A slice type maps to KindArray without inspecting its element: recovering
+// the element's own Kind (and applying MaxLen/Numeric to it) is extract.go's
+// job, not this function's, keeping this function's contract to "map a bare
+// type to a bare Kind."
 func KindForGoType(t reflect.Type) (Kind, error) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
+	}
+
+	if t.Kind() == reflect.Slice {
+		return KindArray, nil
 	}
 
 	switch t {
@@ -35,6 +45,8 @@ func KindForGoType(t reflect.Type) (Kind, error) {
 		return KindTimestamp, nil
 	case reflect.TypeFor[uuid.UUID]():
 		return KindUUID, nil
+	case reflect.TypeFor[decimal.Decimal]():
+		return KindNumeric, nil
 	default:
 		return 0, fmt.Errorf("schema: no column kind for Go type %s", t)
 	}

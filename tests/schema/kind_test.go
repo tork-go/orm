@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/tork-go/orm/schema"
 )
@@ -32,8 +33,12 @@ func TestKindForGoType(t *testing.T) {
 		{name: "*string unwraps to string", typ: reflect.TypeFor[*string](), want: schema.KindText},
 		{name: "*int unwraps to int", typ: reflect.TypeFor[*int](), want: schema.KindInteger},
 		{name: "**int unwraps through two pointers", typ: reflect.TypeFor[**int](), want: schema.KindInteger},
+		{name: "decimal.Decimal", typ: reflect.TypeFor[decimal.Decimal](), want: schema.KindNumeric},
+		{name: "*decimal.Decimal unwraps to decimal.Decimal", typ: reflect.TypeFor[*decimal.Decimal](), want: schema.KindNumeric},
+		{name: "[]int is an array", typ: reflect.TypeFor[[]int](), want: schema.KindArray},
+		{name: "[]string is an array", typ: reflect.TypeFor[[]string](), want: schema.KindArray},
+		{name: "*[]string unwraps to an array", typ: reflect.TypeFor[*[]string](), want: schema.KindArray},
 		{name: "struct is unsupported", typ: reflect.TypeFor[unsupportedStruct](), wantErr: true},
-		{name: "slice is unsupported", typ: reflect.TypeFor[[]int](), wantErr: true},
 		{name: "map is unsupported", typ: reflect.TypeFor[map[string]int](), wantErr: true},
 		{name: "chan is unsupported", typ: reflect.TypeFor[chan int](), wantErr: true},
 	}

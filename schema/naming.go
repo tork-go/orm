@@ -1,6 +1,9 @@
 package schema
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // PrimaryKeyConstraintName returns the deterministic name used for a
 // table's primary key constraint when we create one.
@@ -24,4 +27,13 @@ func ForeignKeyConstraintName(table string, columns []string) string {
 // index on the given columns when we create one.
 func IndexName(table string, columns []string) string {
 	return "ix_" + table + "_" + strings.Join(columns, "_")
+}
+
+// CheckConstraintName returns the deterministic name used for the n-th
+// (1-based) unnamed CHECK constraint on table, in Checks() declaration
+// order. Unlike every other name function here, this is positional, not
+// derived from a column set: a CHECK expression has no natural column
+// list to name it from. See orm.Checker's doc comment.
+func CheckConstraintName(table string, n int) string {
+	return fmt.Sprintf("ck_%s_%d", table, n)
 }

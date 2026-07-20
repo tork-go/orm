@@ -19,6 +19,16 @@ type Column[T any] struct {
 	serverDefault    string
 	serverDefaultSet bool
 	generator        func() T
+	numericPrecision int
+	numericScale     int
+	numericSet       bool
+	jsonKindSet      bool
+	isJSONB          bool
+	marshal          func(T) ([]byte, error)
+	unmarshal        func([]byte) (T, error)
+	enumTypeName     string
+	enumValues       []string
+	enumSet          bool
 }
 
 // newColumn builds the shared Column[T] value used by both NewColumn and
@@ -98,6 +108,57 @@ func (c *Column[T]) GeneratedByClient(gen func() T) *Column[T] {
 	return c
 }
 
+// Numeric sets explicit precision and scale, rendered as NUMERIC(p,s).
+// Only meaningful when T resolves to KindNumeric (decimal.Decimal);
+// validated at extract time, mirroring MaxLen. Without a call to Numeric,
+// a decimal.Decimal column renders as bare NUMERIC (arbitrary precision),
+// the same relationship MaxLen has to a bare string column rendering TEXT.
+func (c *Column[T]) Numeric(precision, scale int) *Column[T] {
+	c.numericPrecision = precision
+	c.numericScale = scale
+	c.numericSet = true
+	return c
+}
+
+// JSON marks the column as stored as JSON, using encoding/json.Marshal and
+// Unmarshal by default for whatever T is. Chain Serialize to override the
+// default marshal/unmarshal pair.
+func (c *Column[T]) JSON() *Column[T] {
+	c.jsonKindSet = true
+	c.isJSONB = false
+	return c
+}
+
+// JSONB marks the column as stored as JSONB, using encoding/json.Marshal
+// and Unmarshal by default for whatever T is. Chain Serialize to override
+// the default marshal/unmarshal pair.
+func (c *Column[T]) JSONB() *Column[T] {
+	c.jsonKindSet = true
+	c.isJSONB = true
+	return c
+}
+
+// Serialize overrides the default encoding/json.Marshal/Unmarshal pair
+// used when this column is stored as JSON or JSONB. Calling Serialize
+// alone, without JSON or JSONB, implies JSONB, matching Postgres's own
+// general recommendation of jsonb over json.
+func (c *Column[T]) Serialize(marshal func(T) ([]byte, error), unmarshal func([]byte) (T, error)) *Column[T] {
+	c.marshal = marshal
+	c.unmarshal = unmarshal
+	return c
+}
+
+// Enum declares the column as a Postgres native enum of type typeName
+// with the given values, in order. T must resolve to a string kind after
+// unwrapping pointer nullability; validated at extract time, mirroring
+// MaxLen.
+func (c *Column[T]) Enum(typeName string, values ...string) *Column[T] {
+	c.enumTypeName = typeName
+	c.enumValues = values
+	c.enumSet = true
+	return c
+}
+
 // Name returns the column's database name.
 func (c *Column[T]) Name() string {
 	return c.name
@@ -162,4 +223,44 @@ func (c *Column[T]) IsNullable() bool {
 // right thing.
 func (c *Column[T]) Generator() (func() T, bool) {
 	return c.generator, c.generator != nil
+}
+
+// NumericPrecisionScale returns the values passed to Numeric and whether
+// Numeric was ever called, the same (value, ok) shape as MaxLength.
+func (c *Column[T]) NumericPrecisionScale() (precision, scale int, ok bool) {
+	return c.numericPrecision, c.numericScale, c.numericSet
+}
+
+// IsJSON reports whether JSON was called (not JSONB, and not merely
+// Serialize alone, which implies JSONB rather than JSON).
+func (c *Column[T]) IsJSON() bool {
+	return c.jsonKindSet && !c.isJSONB
+}
+
+// IsJSONB reports whether JSONB was called, or Serialize was called
+// without a preceding JSON call.
+func (c *Column[T]) IsJSONB() bool {
+	if c.jsonKindSet {
+		return c.isJSONB
+	}
+	return c.IsSerialized()
+}
+
+// IsSerialized reports whether Serialize was called.
+func (c *Column[T]) IsSerialized() bool {
+	return c.marshal != nil || c.unmarshal != nil
+}
+
+// Serializer returns the marshal/unmarshal pair passed to Serialize and
+// whether Serialize was ever called. Like Generator, this mentions T in
+// its return type, so it can't join ColumnMeta and needs no ForeignKey
+// override either.
+func (c *Column[T]) Serializer() (marshal func(T) ([]byte, error), unmarshal func([]byte) (T, error), ok bool) {
+	return c.marshal, c.unmarshal, c.IsSerialized()
+}
+
+// EnumSpec returns the values passed to Enum and whether Enum was ever
+// called.
+func (c *Column[T]) EnumSpec() (typeName string, values []string, ok bool) {
+	return c.enumTypeName, c.enumValues, c.enumSet
 }

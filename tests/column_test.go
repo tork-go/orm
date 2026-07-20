@@ -37,6 +37,21 @@ func TestColumn_FreshState(t *testing.T) {
 	if gen, ok := c.Generator(); ok || gen != nil {
 		t.Errorf("Generator() ok=%v, isNil=%v, want ok=false, generator=nil on a fresh column", ok, gen == nil)
 	}
+	if p, s, ok := c.NumericPrecisionScale(); ok {
+		t.Errorf("NumericPrecisionScale() = (%d, %d, %v), want ok=false on a fresh column", p, s, ok)
+	}
+	if c.IsJSON() {
+		t.Error("IsJSON() = true on a fresh column, want false")
+	}
+	if c.IsJSONB() {
+		t.Error("IsJSONB() = true on a fresh column, want false")
+	}
+	if c.IsSerialized() {
+		t.Error("IsSerialized() = true on a fresh column, want false")
+	}
+	if typeName, values, ok := c.EnumSpec(); ok {
+		t.Errorf("EnumSpec() = (%q, %v, %v), want ok=false on a fresh column", typeName, values, ok)
+	}
 }
 
 func TestColumn_BuilderMethods(t *testing.T) {
@@ -130,6 +145,90 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				}
 				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
 					t.Error("GeneratedByClient() unexpectedly set another constraint")
+				}
+			},
+		},
+		{
+			name:  "Numeric sets only precision and scale",
+			build: func(c *orm.Column[string]) *orm.Column[string] { return c.Numeric(10, 2) },
+			check: func(t *testing.T, c *orm.Column[string]) {
+				p, s, ok := c.NumericPrecisionScale()
+				if !ok || p != 10 || s != 2 {
+					t.Errorf("NumericPrecisionScale() = (%d, %d, %v), want (10, 2, true)", p, s, ok)
+				}
+				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
+					t.Error("Numeric() unexpectedly set another constraint")
+				}
+			},
+		},
+		{
+			name:  "JSON sets only IsJSON",
+			build: func(c *orm.Column[string]) *orm.Column[string] { return c.JSON() },
+			check: func(t *testing.T, c *orm.Column[string]) {
+				if !c.IsJSON() {
+					t.Error("IsJSON() = false, want true")
+				}
+				if c.IsJSONB() {
+					t.Error("IsJSONB() = true after JSON(), want false")
+				}
+			},
+		},
+		{
+			name:  "JSONB sets only IsJSONB",
+			build: func(c *orm.Column[string]) *orm.Column[string] { return c.JSONB() },
+			check: func(t *testing.T, c *orm.Column[string]) {
+				if !c.IsJSONB() {
+					t.Error("IsJSONB() = false, want true")
+				}
+				if c.IsJSON() {
+					t.Error("IsJSON() = true after JSONB(), want false")
+				}
+			},
+		},
+		{
+			name: "Serialize alone implies JSONB, not JSON",
+			build: func(c *orm.Column[string]) *orm.Column[string] {
+				return c.Serialize(
+					func(s string) ([]byte, error) { return []byte(s), nil },
+					func(b []byte) (string, error) { return string(b), nil },
+				)
+			},
+			check: func(t *testing.T, c *orm.Column[string]) {
+				if !c.IsSerialized() {
+					t.Error("IsSerialized() = false, want true")
+				}
+				if !c.IsJSONB() {
+					t.Error("IsJSONB() = false after Serialize() alone, want true (implies JSONB)")
+				}
+				if c.IsJSON() {
+					t.Error("IsJSON() = true after Serialize() alone, want false")
+				}
+			},
+		},
+		{
+			name: "JSON then Serialize keeps JSON, not JSONB",
+			build: func(c *orm.Column[string]) *orm.Column[string] {
+				return c.JSON().Serialize(
+					func(s string) ([]byte, error) { return []byte(s), nil },
+					func(b []byte) (string, error) { return string(b), nil },
+				)
+			},
+			check: func(t *testing.T, c *orm.Column[string]) {
+				if !c.IsJSON() {
+					t.Error("IsJSON() = false, want true (explicit JSON() should win over Serialize()'s JSONB default)")
+				}
+				if c.IsJSONB() {
+					t.Error("IsJSONB() = true, want false")
+				}
+			},
+		},
+		{
+			name:  "Enum sets the type name and values",
+			build: func(c *orm.Column[string]) *orm.Column[string] { return c.Enum("status", "a", "b") },
+			check: func(t *testing.T, c *orm.Column[string]) {
+				typeName, values, ok := c.EnumSpec()
+				if !ok || typeName != "status" || len(values) != 2 || values[0] != "a" || values[1] != "b" {
+					t.Errorf("EnumSpec() = (%q, %v, %v), want (\"status\", [a b], true)", typeName, values, ok)
 				}
 			},
 		},
@@ -298,6 +397,109 @@ func TestColumn_GeneratedByClient_Generator(t *testing.T) {
 	}
 }
 
+func TestColumn_NumericPrecisionScale_SetVsUnset(t *testing.T) {
+	tests := []struct {
+		name   string
+		build  func() *orm.Column[string]
+		wantP  int
+		wantS  int
+		wantOK bool
+	}{
+		{
+			name:   "never called",
+			build:  func() *orm.Column[string] { return orm.NewColumn[string]("c") },
+			wantOK: false,
+		},
+		{
+			name:   "set to a positive precision and scale",
+			build:  func() *orm.Column[string] { return orm.NewColumn[string]("c").Numeric(10, 2) },
+			wantP:  10,
+			wantS:  2,
+			wantOK: true,
+		},
+		{
+			name:   "overwritten by a second call",
+			build:  func() *orm.Column[string] { return orm.NewColumn[string]("c").Numeric(10, 2).Numeric(5, 1) },
+			wantP:  5,
+			wantS:  1,
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, s, ok := tt.build().NumericPrecisionScale()
+			if p != tt.wantP || s != tt.wantS || ok != tt.wantOK {
+				t.Errorf("NumericPrecisionScale() = (%d, %d, %v), want (%d, %d, %v)", p, s, ok, tt.wantP, tt.wantS, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestColumn_Serializer_MarshalUnmarshal(t *testing.T) {
+	c := orm.NewColumn[int]("n").Serialize(
+		func(n int) ([]byte, error) { return []byte{byte(n)}, nil },
+		func(b []byte) (int, error) { return int(b[0]), nil },
+	)
+
+	marshal, unmarshal, ok := c.Serializer()
+	if !ok {
+		t.Fatal("Serializer() ok = false, want true")
+	}
+	b, err := marshal(7)
+	if err != nil || len(b) != 1 || b[0] != 7 {
+		t.Fatalf("marshal(7) = (%v, %v), want ([7], nil)", b, err)
+	}
+	n, err := unmarshal(b)
+	if err != nil || n != 7 {
+		t.Fatalf("unmarshal([7]) = (%d, %v), want (7, nil)", n, err)
+	}
+}
+
+func TestColumn_EnumSpec_SetVsUnset(t *testing.T) {
+	tests := []struct {
+		name       string
+		build      func() *orm.Column[string]
+		wantName   string
+		wantValues []string
+		wantOK     bool
+	}{
+		{
+			name:   "never called",
+			build:  func() *orm.Column[string] { return orm.NewColumn[string]("c") },
+			wantOK: false,
+		},
+		{
+			name:       "set with values",
+			build:      func() *orm.Column[string] { return orm.NewColumn[string]("c").Enum("status", "pending", "done") },
+			wantName:   "status",
+			wantValues: []string{"pending", "done"},
+			wantOK:     true,
+		},
+		{
+			name:       "overwritten by a second call",
+			build:      func() *orm.Column[string] { return orm.NewColumn[string]("c").Enum("a", "x").Enum("b", "y", "z") },
+			wantName:   "b",
+			wantValues: []string{"y", "z"},
+			wantOK:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, values, ok := tt.build().EnumSpec()
+			if name != tt.wantName || ok != tt.wantOK || len(values) != len(tt.wantValues) {
+				t.Fatalf("EnumSpec() = (%q, %v, %v), want (%q, %v, %v)", name, values, ok, tt.wantName, tt.wantValues, tt.wantOK)
+			}
+			for i := range values {
+				if values[i] != tt.wantValues[i] {
+					t.Errorf("EnumSpec() values[%d] = %q, want %q", i, values[i], tt.wantValues[i])
+				}
+			}
+		})
+	}
+}
+
 type namedStruct struct{ X int }
 
 func TestColumn_GoTypeAndNullability(t *testing.T) {
@@ -386,5 +588,19 @@ func BenchmarkColumn_IsNullable(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = c.IsNullable()
+	}
+}
+
+func BenchmarkColumn_Enum(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = orm.NewColumn[string]("status").Enum("status", "pending", "active", "done")
+	}
+}
+
+func BenchmarkColumn_Numeric(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = orm.NewColumn[string]("amount").Numeric(10, 2)
 	}
 }

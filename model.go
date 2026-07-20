@@ -17,6 +17,11 @@ type ColumnMeta interface {
 	IsIndexed() bool
 	ServerDefaultExpr() (string, bool)
 	IsClientGenerated() bool
+	NumericPrecisionScale() (precision, scale int, ok bool)
+	IsJSON() bool
+	IsJSONB() bool
+	IsSerialized() bool
+	EnumSpec() (typeName string, values []string, ok bool)
 }
 
 // ForeignKeyMeta is the read-only view of a foreign key column.
@@ -24,6 +29,8 @@ type ForeignKeyMeta interface {
 	ColumnMeta
 	ReferencedTable() string
 	ReferencedColumn() string
+	OnDeleteAction() ForeignKeyAction
+	OnUpdateAction() ForeignKeyAction
 }
 
 // Model is any type with a table name, satisfied by embedding Table.

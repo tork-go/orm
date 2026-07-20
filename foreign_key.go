@@ -7,6 +7,8 @@ type ForeignKey[T any] struct {
 	Column[T]
 	refTableName  string
 	refColumnName string
+	onDelete      ForeignKeyAction
+	onUpdate      ForeignKeyAction
 }
 
 // NewForeignKey declares a foreign key column named name that references
@@ -83,4 +85,65 @@ func (fk *ForeignKey[T]) ServerDefault(expr string) *ForeignKey[T] {
 func (fk *ForeignKey[T]) GeneratedByClient(gen func() T) *ForeignKey[T] {
 	fk.Column.GeneratedByClient(gen)
 	return fk
+}
+
+// Numeric sets the foreign key column's explicit precision and scale.
+func (fk *ForeignKey[T]) Numeric(precision, scale int) *ForeignKey[T] {
+	fk.Column.Numeric(precision, scale)
+	return fk
+}
+
+// JSON marks the foreign key column as stored as JSON.
+func (fk *ForeignKey[T]) JSON() *ForeignKey[T] {
+	fk.Column.JSON()
+	return fk
+}
+
+// JSONB marks the foreign key column as stored as JSONB.
+func (fk *ForeignKey[T]) JSONB() *ForeignKey[T] {
+	fk.Column.JSONB()
+	return fk
+}
+
+// Serialize overrides the foreign key column's default marshal/unmarshal
+// pair.
+func (fk *ForeignKey[T]) Serialize(marshal func(T) ([]byte, error), unmarshal func([]byte) (T, error)) *ForeignKey[T] {
+	fk.Column.Serialize(marshal, unmarshal)
+	return fk
+}
+
+// Enum declares the foreign key column as a Postgres native enum.
+func (fk *ForeignKey[T]) Enum(typeName string, values ...string) *ForeignKey[T] {
+	fk.Column.Enum(typeName, values...)
+	return fk
+}
+
+// OnDelete and OnUpdate are new, FK-only builders, not promoted or
+// overridden Column[T] methods, so they need no covariant-override
+// counterpart there.
+
+// OnDelete sets the referential action Postgres runs when the referenced
+// row is deleted.
+func (fk *ForeignKey[T]) OnDelete(action ForeignKeyAction) *ForeignKey[T] {
+	fk.onDelete = action
+	return fk
+}
+
+// OnUpdate sets the referential action Postgres runs when the referenced
+// row is updated.
+func (fk *ForeignKey[T]) OnUpdate(action ForeignKeyAction) *ForeignKey[T] {
+	fk.onUpdate = action
+	return fk
+}
+
+// OnDeleteAction returns the action set by OnDelete, ActionNoAction if
+// never called.
+func (fk *ForeignKey[T]) OnDeleteAction() ForeignKeyAction {
+	return fk.onDelete
+}
+
+// OnUpdateAction returns the action set by OnUpdate, ActionNoAction if
+// never called.
+func (fk *ForeignKey[T]) OnUpdateAction() ForeignKeyAction {
+	return fk.onUpdate
 }

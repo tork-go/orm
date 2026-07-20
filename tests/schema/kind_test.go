@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/tork-go/orm/schema"
 )
 
@@ -25,6 +27,8 @@ func TestKindForGoType(t *testing.T) {
 		{name: "float64", typ: reflect.TypeFor[float64](), want: schema.KindDouble},
 		{name: "string", typ: reflect.TypeFor[string](), want: schema.KindText},
 		{name: "time.Time", typ: reflect.TypeFor[time.Time](), want: schema.KindTimestamp},
+		{name: "uuid.UUID", typ: reflect.TypeFor[uuid.UUID](), want: schema.KindUUID},
+		{name: "*uuid.UUID unwraps to uuid.UUID", typ: reflect.TypeFor[*uuid.UUID](), want: schema.KindUUID},
 		{name: "*string unwraps to string", typ: reflect.TypeFor[*string](), want: schema.KindText},
 		{name: "*int unwraps to int", typ: reflect.TypeFor[*int](), want: schema.KindInteger},
 		{name: "**int unwraps through two pointers", typ: reflect.TypeFor[**int](), want: schema.KindInteger},

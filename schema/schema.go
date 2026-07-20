@@ -12,6 +12,7 @@ const (
 	KindVarchar
 	KindText
 	KindTimestamp
+	KindUUID
 )
 
 // ColumnType is a column's type, dialect-agnostic. Length only applies
@@ -36,9 +37,10 @@ func (t ColumnType) Equal(other ColumnType) bool {
 
 // Column is a single column in a table.
 type Column struct {
-	Name    string
-	Type    ColumnType
-	NotNull bool
+	Name          string
+	Type          ColumnType
+	NotNull       bool
+	ServerDefault string // raw SQL expression for a DEFAULT clause; empty means none
 }
 
 // PrimaryKey is a table's primary key constraint. Name is empty for a
@@ -63,12 +65,22 @@ type ForeignKey struct {
 	ReferencedColumns []string
 }
 
+// Index is a plain (non-unique) index on one or more columns. A unique
+// constraint already provides an index in every dialect Tork targets, so
+// a column that is both unique and indexed produces one UniqueConstraint,
+// never an Index alongside it.
+type Index struct {
+	Name    string
+	Columns []string
+}
+
 // Table is a single table: its columns and constraints.
 type Table struct {
 	Name        string
 	Columns     []Column
 	PrimaryKey  *PrimaryKey
 	Uniques     []UniqueConstraint
+	Indexes     []Index
 	ForeignKeys []ForeignKey
 }
 

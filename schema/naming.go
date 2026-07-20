@@ -19,3 +19,9 @@ func UniqueConstraintName(table string, columns []string) string {
 func ForeignKeyConstraintName(table string, columns []string) string {
 	return "fk_" + table + "_" + strings.Join(columns, "_")
 }
+
+// IndexName returns the deterministic name used for a plain (non-unique)
+// index on the given columns when we create one.
+func IndexName(table string, columns []string) string {
+	return "ix_" + table + "_" + strings.Join(columns, "_")
+}

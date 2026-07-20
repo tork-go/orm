@@ -43,3 +43,19 @@ func TestForeignKeyConstraintName(t *testing.T) {
 		}
 	}
 }
+
+func TestIndexName(t *testing.T) {
+	tests := []struct {
+		table   string
+		columns []string
+		want    string
+	}{
+		{table: "posts", columns: []string{"author_id"}, want: "ix_posts_author_id"},
+		{table: "posts", columns: []string{"author_id", "created_at"}, want: "ix_posts_author_id_created_at"},
+	}
+	for _, tt := range tests {
+		if got := schema.IndexName(tt.table, tt.columns); got != tt.want {
+			t.Errorf("IndexName(%q, %v) = %q, want %q", tt.table, tt.columns, got, tt.want)
+		}
+	}
+}

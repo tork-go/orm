@@ -2,7 +2,10 @@ package schema_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/tork-go/orm"
 	"github.com/tork-go/orm/schema"
@@ -157,5 +160,244 @@ func TestExtractSchema_UnsupportedGoType_Error(t *testing.T) {
 	m := &unsupportedTypeModel{Table: orm.NewTable("t"), Data: orm.NewColumn[[]byte]("data")}
 	if _, err := schema.ExtractSchema(m); err == nil {
 		t.Fatal("expected an error for an unsupported Go type, got nil")
+	}
+}
+
+type indexedOnlyModel struct {
+	orm.Table
+	Email *orm.Column[string]
+}
+
+func TestExtractSchema_IndexAlone_ProducesIndexNotUnique(t *testing.T) {
+	m := &indexedOnlyModel{Table: orm.NewTable("t"), Email: orm.NewColumn[string]("email").Index()}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	table := s.Tables[0]
+	if len(table.Uniques) != 0 {
+		t.Errorf("Uniques = %+v, want none", table.Uniques)
+	}
+	want := []schema.Index{{Name: "ix_t_email", Columns: []string{"email"}}}
+	if !reflect.DeepEqual(table.Indexes, want) {
+		t.Errorf("Indexes = %+v, want %+v", table.Indexes, want)
+	}
+}
+
+type indexedAndUniqueModel struct {
+	orm.Table
+	Email *orm.Column[string]
+}
+
+func TestExtractSchema_IndexAndUnique_FoldsIntoUniqueOnly(t *testing.T) {
+	m := &indexedAndUniqueModel{Table: orm.NewTable("t"), Email: orm.NewColumn[string]("email").Unique().Index()}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	table := s.Tables[0]
+	if len(table.Indexes) != 0 {
+		t.Errorf("Indexes = %+v, want none (folded into Uniques)", table.Indexes)
+	}
+	want := []schema.UniqueConstraint{{Name: "uq_t_email", Columns: []string{"email"}}}
+	if !reflect.DeepEqual(table.Uniques, want) {
+		t.Errorf("Uniques = %+v, want %+v", table.Uniques, want)
+	}
+}
+
+type indexerCompoundModel struct {
+	orm.Table
+	A *orm.Column[int]
+	B *orm.Column[int]
+}
+
+func (m *indexerCompoundModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef(m.A, m.B)}
+}
+
+func TestExtractSchema_Indexer_UnnamedCompoundIndex_AutoNamed(t *testing.T) {
+	m := &indexerCompoundModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	want := []schema.Index{{Name: "ix_t_a_b", Columns: []string{"a", "b"}}}
+	if !reflect.DeepEqual(s.Tables[0].Indexes, want) {
+		t.Errorf("Indexes = %+v, want %+v", s.Tables[0].Indexes, want)
+	}
+}
+
+type indexerCompoundNamedModel struct {
+	orm.Table
+	A *orm.Column[int]
+	B *orm.Column[int]
+}
+
+func (m *indexerCompoundNamedModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef(m.A, m.B).Named("custom_ix")}
+}
+
+func TestExtractSchema_Indexer_NamedCompoundIndex_UsesOverride(t *testing.T) {
+	m := &indexerCompoundNamedModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	want := []schema.Index{{Name: "custom_ix", Columns: []string{"a", "b"}}}
+	if !reflect.DeepEqual(s.Tables[0].Indexes, want) {
+		t.Errorf("Indexes = %+v, want %+v", s.Tables[0].Indexes, want)
+	}
+}
+
+type indexerCompoundUniqueModel struct {
+	orm.Table
+	A *orm.Column[int]
+	B *orm.Column[int]
+}
+
+func (m *indexerCompoundUniqueModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef(m.A, m.B).Unique()}
+}
+
+func TestExtractSchema_Indexer_CompoundUnique_LandsInUniques(t *testing.T) {
+	m := &indexerCompoundUniqueModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	table := s.Tables[0]
+	if len(table.Indexes) != 0 {
+		t.Errorf("Indexes = %+v, want none", table.Indexes)
+	}
+	want := []schema.UniqueConstraint{{Name: "uq_t_a_b", Columns: []string{"a", "b"}}}
+	if !reflect.DeepEqual(table.Uniques, want) {
+		t.Errorf("Uniques = %+v, want %+v", table.Uniques, want)
+	}
+}
+
+type indexerZeroColumnsModel struct {
+	orm.Table
+	A *orm.Column[int]
+}
+
+func (m *indexerZeroColumnsModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef()}
+}
+
+func TestExtractSchema_IndexerZeroColumns_Error(t *testing.T) {
+	m := &indexerZeroColumnsModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a")}
+	_, err := schema.ExtractSchema(m)
+	if err == nil {
+		t.Fatal("expected an error for a zero-column index definition, got nil")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "index definition has no columns") {
+		t.Errorf("error = %q, want it to contain %q", got, "index definition has no columns")
+	}
+}
+
+type serverDefaultModel struct {
+	orm.Table
+	CreatedAt *orm.Column[string]
+}
+
+func TestExtractSchema_ServerDefault_Populates(t *testing.T) {
+	m := &serverDefaultModel{Table: orm.NewTable("t"), CreatedAt: orm.NewColumn[string]("created_at").ServerDefault("now()")}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	if got := s.Tables[0].Columns[0].ServerDefault; got != "now()" {
+		t.Errorf("ServerDefault = %q, want %q", got, "now()")
+	}
+}
+
+func TestExtractSchema_ServerDefault_Empty_Error(t *testing.T) {
+	m := &serverDefaultModel{Table: orm.NewTable("t"), CreatedAt: orm.NewColumn[string]("created_at").ServerDefault("")}
+	_, err := schema.ExtractSchema(m)
+	if err == nil || !strings.Contains(err.Error(), "ServerDefault must not be empty") {
+		t.Fatalf("error = %v, want it to contain %q", err, "ServerDefault must not be empty")
+	}
+}
+
+type identityConflictModel[T int | int64] struct {
+	orm.Table
+	ID *orm.Column[T]
+}
+
+func TestExtractSchema_ServerDefault_IdentityConflict_Error(t *testing.T) {
+	t.Run("int", func(t *testing.T) {
+		m := &identityConflictModel[int]{Table: orm.NewTable("t"), ID: orm.NewColumn[int]("id").PrimaryKey().ServerDefault("1")}
+		_, err := schema.ExtractSchema(m)
+		if err == nil || !strings.Contains(err.Error(), "GENERATED ALWAYS AS IDENTITY") {
+			t.Fatalf("error = %v, want it to mention GENERATED ALWAYS AS IDENTITY", err)
+		}
+	})
+	t.Run("int64", func(t *testing.T) {
+		m := &identityConflictModel[int64]{Table: orm.NewTable("t"), ID: orm.NewColumn[int64]("id").PrimaryKey().ServerDefault("1")}
+		_, err := schema.ExtractSchema(m)
+		if err == nil || !strings.Contains(err.Error(), "GENERATED ALWAYS AS IDENTITY") {
+			t.Fatalf("error = %v, want it to mention GENERATED ALWAYS AS IDENTITY", err)
+		}
+	})
+}
+
+type nonPKServerDefaultModel struct {
+	orm.Table
+	ID    *orm.Column[int]
+	Count *orm.Column[int]
+}
+
+func TestExtractSchema_ServerDefault_NonPKInteger_OK(t *testing.T) {
+	m := &nonPKServerDefaultModel{
+		Table: orm.NewTable("t"),
+		ID:    orm.NewColumn[int]("id").PrimaryKey(),
+		Count: orm.NewColumn[int]("count").ServerDefault("0"),
+	}
+	if _, err := schema.ExtractSchema(m); err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+}
+
+type compositePKServerDefaultModel struct {
+	orm.Table
+	A *orm.Column[int]
+	B *orm.Column[int]
+}
+
+func TestExtractSchema_ServerDefault_CompositePK_OK(t *testing.T) {
+	m := &compositePKServerDefaultModel{
+		Table: orm.NewTable("t"),
+		A:     orm.NewColumn[int]("a").PrimaryKey().ServerDefault("0"),
+		B:     orm.NewColumn[int]("b").PrimaryKey(),
+	}
+	if _, err := schema.ExtractSchema(m); err != nil {
+		t.Fatalf("composite primary key with a ServerDefault member should be allowed: %v", err)
+	}
+}
+
+type uuidColumnModel struct {
+	orm.Table
+	ID *orm.Column[uuid.UUID]
+}
+
+func TestExtractSchema_UUIDColumn(t *testing.T) {
+	m := &uuidColumnModel{Table: orm.NewTable("t"), ID: orm.NewColumn[uuid.UUID]("id").ServerDefault("gen_random_uuid()")}
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	col := s.Tables[0].Columns[0]
+	if col.Type.Kind != schema.KindUUID {
+		t.Errorf("Type.Kind = %v, want KindUUID", col.Type.Kind)
+	}
+	if col.ServerDefault != "gen_random_uuid()" {
+		t.Errorf("ServerDefault = %q, want %q", col.ServerDefault, "gen_random_uuid()")
+	}
+}
+
+func TestExtractSchema_MaxLenOnUUIDColumn_Error(t *testing.T) {
+	m := &uuidColumnModel{Table: orm.NewTable("t"), ID: orm.NewColumn[uuid.UUID]("id").MaxLen(10)}
+	if _, err := schema.ExtractSchema(m); err == nil {
+		t.Fatal("expected an error for MaxLen used on a UUID column, got nil")
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // KindForGoType maps a Go type to its default column Kind. Leading pointer
@@ -31,6 +33,8 @@ func KindForGoType(t reflect.Type) (Kind, error) {
 		return KindText, nil
 	case reflect.TypeFor[time.Time]():
 		return KindTimestamp, nil
+	case reflect.TypeFor[uuid.UUID]():
+		return KindUUID, nil
 	default:
 		return 0, fmt.Errorf("schema: no column kind for Go type %s", t)
 	}

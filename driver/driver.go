@@ -107,6 +107,19 @@ type Dialect interface {
 	// though Postgres itself doesn't (its index names are schema-scoped,
 	// not table-scoped).
 	RenderDropIndex(table, name string) []string
+	RenderAddCheck(table string, c schema.Check) []string
+	RenderDropCheck(table, name string) []string
 	RenderAddForeignKey(table string, fk schema.ForeignKey) []string
 	RenderDropForeignKey(table, name string) []string
+
+	// RenderCreateEnumType, RenderDropEnumType, and RenderAddEnumValue
+	// manage a native enum type's own lifecycle, separate from any single
+	// column or table: an enum type can be shared by columns across
+	// multiple tables.
+	RenderCreateEnumType(e schema.EnumType) []string
+	RenderDropEnumType(name string) []string
+	// RenderAddEnumValue renders ALTER TYPE ... ADD VALUE, optionally
+	// positioned via before/after (mutually exclusive; both empty appends
+	// the value at the end).
+	RenderAddEnumValue(name, value, before, after string) []string
 }

@@ -5,10 +5,12 @@ package postgres_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tork-go/orm/driver/postgres"
+	"github.com/tork-go/orm/migrate"
 	"github.com/tork-go/orm/schema"
 )
 
@@ -186,6 +188,293 @@ func TestIntrospect_UnknownTable_ReturnsEmpty(t *testing.T) {
 	}
 	if len(got.Tables) != 0 {
 		t.Errorf("got %d tables, want 0: %+v", len(got.Tables), got.Tables)
+	}
+}
+
+// TestIntrospect_NewColumnKindsAndConstraints covers everything added this
+// round: NUMERIC(p,s), a native enum column, JSON/JSONB, array columns
+// (including an array of a bounded-length/precision element, exercising
+// the format_type() parsing path), a CHECK constraint, and a foreign key
+// with non-default ON DELETE/ON UPDATE actions, all round-tripped through
+// real Postgres.
+func TestIntrospect_NewColumnKindsAndConstraints(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	dialect := postgres.Dialect{}
+	conn, err := dialect.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_v2_child, test_v2_parent CASCADE; DROP TYPE IF EXISTS test_order_status`)
+	})
+	setup := `
+DROP TABLE IF EXISTS test_v2_child, test_v2_parent CASCADE;
+DROP TYPE IF EXISTS test_order_status;
+
+CREATE TYPE test_order_status AS ENUM ('pending', 'paid', 'done');
+
+CREATE TABLE test_v2_parent (
+    id INTEGER GENERATED ALWAYS AS IDENTITY CONSTRAINT pk_test_v2_parent PRIMARY KEY
+);
+
+CREATE TABLE test_v2_child (
+    id INTEGER GENERATED ALWAYS AS IDENTITY CONSTRAINT pk_test_v2_child PRIMARY KEY,
+    parent_id INTEGER,
+    age INTEGER NOT NULL,
+    amount NUMERIC(10,2),
+    status test_order_status,
+    data JSON,
+    data_b JSONB,
+    tags VARCHAR(20)[],
+    scores NUMERIC(5,2)[],
+    flags BOOLEAN[],
+    ext_ids UUID[],
+    CONSTRAINT ck_test_v2_child_age CHECK (age >= 0),
+    CONSTRAINT fk_test_v2_child_parent FOREIGN KEY (parent_id) REFERENCES test_v2_parent (id)
+        ON DELETE CASCADE ON UPDATE SET NULL
+);`
+	if err := conn.Exec(ctx, setup); err != nil {
+		t.Fatalf("test setup failed: %v", err)
+	}
+
+	got, err := dialect.Introspect(ctx, conn, []string{"test_v2_parent", "test_v2_child"})
+	if err != nil {
+		t.Fatalf("Introspect failed: %v", err)
+	}
+
+	wantEnum := []schema.EnumType{{Name: "test_order_status", Values: []string{"pending", "paid", "done"}}}
+	if !reflect.DeepEqual(got.EnumTypes, wantEnum) {
+		t.Errorf("EnumTypes = %+v, want %+v", got.EnumTypes, wantEnum)
+	}
+
+	child := tableNamed(t, got, "test_v2_child")
+	colType := func(name string) schema.ColumnType {
+		for _, c := range child.Columns {
+			if c.Name == name {
+				return c.Type
+			}
+		}
+		t.Fatalf("no column named %q in %+v", name, child.Columns)
+		return schema.ColumnType{}
+	}
+
+	if got := colType("amount"); got != (schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2}) {
+		t.Errorf("amount.Type = %+v, want KindNumeric(10,2)", got)
+	}
+	if got := colType("status"); got != (schema.ColumnType{Kind: schema.KindEnum, TypeName: "test_order_status"}) {
+		t.Errorf("status.Type = %+v, want KindEnum(test_order_status)", got)
+	}
+	if got := colType("data"); got.Kind != schema.KindJSON {
+		t.Errorf("data.Type.Kind = %v, want KindJSON", got.Kind)
+	}
+	if got := colType("data_b"); got.Kind != schema.KindJSONB {
+		t.Errorf("data_b.Type.Kind = %v, want KindJSONB", got.Kind)
+	}
+	tagsType := colType("tags")
+	if tagsType.Kind != schema.KindArray || tagsType.Elem == nil || *tagsType.Elem != (schema.ColumnType{Kind: schema.KindVarchar, Length: 20}) {
+		t.Errorf("tags.Type = %+v, want KindArray of VARCHAR(20)", tagsType)
+	}
+	scoresType := colType("scores")
+	if scoresType.Kind != schema.KindArray || scoresType.Elem == nil || *scoresType.Elem != (schema.ColumnType{Kind: schema.KindNumeric, Precision: 5, Scale: 2}) {
+		t.Errorf("scores.Type = %+v, want KindArray of NUMERIC(5,2)", scoresType)
+	}
+	flagsType := colType("flags")
+	if flagsType.Kind != schema.KindArray || flagsType.Elem == nil || *flagsType.Elem != (schema.ColumnType{Kind: schema.KindBoolean}) {
+		t.Errorf("flags.Type = %+v, want KindArray of KindBoolean", flagsType)
+	}
+	extIDsType := colType("ext_ids")
+	if extIDsType.Kind != schema.KindArray || extIDsType.Elem == nil || *extIDsType.Elem != (schema.ColumnType{Kind: schema.KindUUID}) {
+		t.Errorf("ext_ids.Type = %+v, want KindArray of KindUUID", extIDsType)
+	}
+
+	if len(child.Checks) != 1 || child.Checks[0].Name != "ck_test_v2_child_age" {
+		t.Fatalf("Checks = %+v, want one named ck_test_v2_child_age", child.Checks)
+	}
+	if !strings.Contains(child.Checks[0].Expression, "age") || !strings.Contains(child.Checks[0].Expression, "0") {
+		t.Errorf("Checks[0].Expression = %q, want it to mention age and 0", child.Checks[0].Expression)
+	}
+
+	if len(child.ForeignKeys) != 1 {
+		t.Fatalf("ForeignKeys = %+v, want 1", child.ForeignKeys)
+	}
+	fk := child.ForeignKeys[0]
+	if fk.OnDelete != schema.ActionCascade {
+		t.Errorf("ForeignKeys[0].OnDelete = %v, want ActionCascade", fk.OnDelete)
+	}
+	if fk.OnUpdate != schema.ActionSetNull {
+		t.Errorf("ForeignKeys[0].OnUpdate = %v, want ActionSetNull", fk.OnUpdate)
+	}
+}
+
+// TestIntrospect_UnsupportedUserDefinedType_Errors proves a USER-DEFINED
+// column that isn't one of the enum types Introspect itself discovered (a
+// composite type, in this case, not an enum) produces a clear error
+// rather than being silently mismapped. A domain-typed column does NOT
+// exercise this path: information_schema.columns.data_type reports a
+// domain's underlying base type (e.g. "integer"), not "USER-DEFINED", so
+// Introspect treats it exactly like a plain column of that base type.
+func TestIntrospect_UnsupportedUserDefinedType_Errors(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	dialect := postgres.Dialect{}
+	conn, err := dialect.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_composite_col CASCADE; DROP TYPE IF EXISTS test_point_type`)
+	})
+	setup := `
+DROP TABLE IF EXISTS test_composite_col CASCADE;
+DROP TYPE IF EXISTS test_point_type;
+CREATE TYPE test_point_type AS (x INTEGER, y INTEGER);
+CREATE TABLE test_composite_col (p test_point_type);`
+	if err := conn.Exec(ctx, setup); err != nil {
+		t.Fatalf("test setup failed: %v", err)
+	}
+
+	_, err = dialect.Introspect(ctx, conn, []string{"test_composite_col"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported user-defined type") {
+		t.Fatalf("Introspect error = %v, want it to contain %q", err, "unsupported user-defined type")
+	}
+}
+
+// TestIntrospect_CheckExpression_NormalizedRoundTrip exercises the
+// concrete risk flagged in docs/2.fundamentals/4.constraints.md: Postgres
+// can reformat a CHECK expression when storing it, so diffing the
+// introspected expression against the originally authored one can
+// false-positive a "changed" constraint. This documents, with a real
+// database, exactly which representative shapes round-trip cleanly
+// (produce no diff operation) and which don't.
+func TestIntrospect_CheckExpression_NormalizedRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	dialect := postgres.Dialect{}
+	conn, err := dialect.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_check_roundtrip CASCADE`)
+	})
+
+	tests := []struct {
+		name       string
+		expression string
+		wantNoOp   bool
+	}{
+		{name: "simple comparison round-trips", expression: "age >= 0", wantNoOp: true},
+		{
+			name:       "conjunction, known false positive (each operand gets its own parens)",
+			expression: "a > 0 AND b > 0",
+			wantNoOp:   false,
+		},
+		{
+			name:       "like pattern, known false positive (rewritten to the ~~ operator)",
+			expression: "name LIKE 'x%'",
+			wantNoOp:   false,
+		},
+		{
+			name:       "in-list, known false positive (rewritten to = ANY (ARRAY[...]))",
+			expression: "status IN ('a', 'b')",
+			wantNoOp:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setup := `DROP TABLE IF EXISTS test_check_roundtrip CASCADE;
+CREATE TABLE test_check_roundtrip (a INTEGER, b INTEGER, age INTEGER, name TEXT, status TEXT,
+    CONSTRAINT ck_roundtrip CHECK (` + tt.expression + `));`
+			if err := conn.Exec(ctx, setup); err != nil {
+				t.Fatalf("test setup failed: %v", err)
+			}
+
+			got, err := dialect.Introspect(ctx, conn, []string{"test_check_roundtrip"})
+			if err != nil {
+				t.Fatalf("Introspect failed: %v", err)
+			}
+			introspected := tableNamed(t, got, "test_check_roundtrip")
+
+			desired := schema.Schema{Tables: []schema.Table{{
+				Name:    "test_check_roundtrip",
+				Columns: introspected.Columns,
+				Checks:  []schema.Check{{Name: "ck_roundtrip", Expression: tt.expression}},
+			}}}
+			current := schema.Schema{Tables: []schema.Table{introspected}}
+
+			ops, err := migrate.Diff(current, desired)
+			if err != nil {
+				t.Fatalf("Diff failed: %v", err)
+			}
+			gotNoOp := len(ops) == 0
+			if gotNoOp != tt.wantNoOp {
+				t.Errorf("expression %q: introspected as %q, Diff produced %d ops, want no-op=%v",
+					tt.expression, introspected.Checks[0].Expression, len(ops), tt.wantNoOp)
+			}
+		})
+	}
+}
+
+// TestIntrospect_ForeignKeyActions_AllValues covers the referential
+// actions TestIntrospect_NewColumnKindsAndConstraints doesn't (SET
+// DEFAULT, RESTRICT, and NO ACTION declared explicitly).
+func TestIntrospect_ForeignKeyActions_AllValues(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	dialect := postgres.Dialect{}
+	conn, err := dialect.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_fk_action_child, test_fk_action_parent CASCADE`)
+	})
+
+	tests := []struct {
+		name     string
+		clause   string
+		onDelete schema.ForeignKeyAction
+	}{
+		{name: "set default", clause: "ON DELETE SET DEFAULT", onDelete: schema.ActionSetDefault},
+		{name: "restrict", clause: "ON DELETE RESTRICT", onDelete: schema.ActionRestrict},
+		{name: "no action declared explicitly", clause: "ON DELETE NO ACTION", onDelete: schema.ActionNoAction},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setup := `
+DROP TABLE IF EXISTS test_fk_action_child, test_fk_action_parent CASCADE;
+CREATE TABLE test_fk_action_parent (id INTEGER GENERATED ALWAYS AS IDENTITY CONSTRAINT pk_test_fk_action_parent PRIMARY KEY);
+CREATE TABLE test_fk_action_child (
+    parent_id INTEGER DEFAULT NULL,
+    CONSTRAINT fk_test_fk_action_child_parent FOREIGN KEY (parent_id) REFERENCES test_fk_action_parent (id) ` + tt.clause + `
+);`
+			if err := conn.Exec(ctx, setup); err != nil {
+				t.Fatalf("test setup failed: %v", err)
+			}
+			got, err := dialect.Introspect(ctx, conn, []string{"test_fk_action_parent", "test_fk_action_child"})
+			if err != nil {
+				t.Fatalf("Introspect failed: %v", err)
+			}
+			child := tableNamed(t, got, "test_fk_action_child")
+			if len(child.ForeignKeys) != 1 {
+				t.Fatalf("ForeignKeys = %+v, want 1", child.ForeignKeys)
+			}
+			if got := child.ForeignKeys[0].OnDelete; got != tt.onDelete {
+				t.Errorf("OnDelete = %v, want %v", got, tt.onDelete)
+			}
+		})
 	}
 }
 

@@ -214,9 +214,24 @@ func (d *Dialect) RenderAddIndex(table string, idx schema.Index) []string {
 func (d *Dialect) RenderDropIndex(table, name string) []string {
 	return []string{"DROP INDEX " + name}
 }
+func (d *Dialect) RenderAddCheck(table string, c schema.Check) []string {
+	return []string{"ADD CHECK " + c.Name}
+}
+func (d *Dialect) RenderDropCheck(table, name string) []string {
+	return []string{"DROP CHECK " + name}
+}
 func (d *Dialect) RenderAddForeignKey(table string, fk schema.ForeignKey) []string {
 	return []string{"ADD FOREIGN KEY " + fk.Name}
 }
 func (d *Dialect) RenderDropForeignKey(table, name string) []string {
 	return []string{"DROP FOREIGN KEY " + name}
+}
+func (d *Dialect) RenderCreateEnumType(e schema.EnumType) []string {
+	return []string{"CREATE ENUM TYPE " + e.Name}
+}
+func (d *Dialect) RenderDropEnumType(name string) []string {
+	return []string{"DROP ENUM TYPE " + name}
+}
+func (d *Dialect) RenderAddEnumValue(name, value, before, after string) []string {
+	return []string{"ADD ENUM VALUE " + name + "." + value}
 }

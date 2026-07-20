@@ -93,6 +93,13 @@ func TestRenderCreateTable_AllKinds(t *testing.T) {
 			{Name: "d", Type: schema.ColumnType{Kind: schema.KindDouble}},
 			{Name: "e", Type: schema.ColumnType{Kind: schema.KindTimestamp}},
 			{Name: "f", Type: schema.ColumnType{Kind: schema.KindUUID}},
+			{Name: "g", Type: schema.ColumnType{Kind: schema.KindNumeric}},
+			{Name: "h", Type: schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2}},
+			{Name: "i", Type: schema.ColumnType{Kind: schema.KindEnum, TypeName: "order_status"}},
+			{Name: "j", Type: schema.ColumnType{Kind: schema.KindJSON}},
+			{Name: "k", Type: schema.ColumnType{Kind: schema.KindJSONB}},
+			{Name: "l", Type: schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindText}}},
+			{Name: "m", Type: schema.ColumnType{Kind: schema.KindArray, Elem: &schema.ColumnType{Kind: schema.KindVarchar, Length: 30}}},
 		},
 	}
 	got, err := postgres.Dialect{}.RenderCreateTable(table)
@@ -105,7 +112,33 @@ func TestRenderCreateTable_AllKinds(t *testing.T) {
 		"    \"c\" REAL,\n" +
 		"    \"d\" DOUBLE PRECISION,\n" +
 		"    \"e\" TIMESTAMP WITHOUT TIME ZONE,\n" +
-		"    \"f\" UUID\n" +
+		"    \"f\" UUID,\n" +
+		"    \"g\" NUMERIC,\n" +
+		"    \"h\" NUMERIC(10,2),\n" +
+		"    \"i\" \"order_status\",\n" +
+		"    \"j\" JSON,\n" +
+		"    \"k\" JSONB,\n" +
+		"    \"l\" TEXT[],\n" +
+		"    \"m\" VARCHAR(30)[]\n" +
+		")"
+	if got[0] != want {
+		t.Errorf("RenderCreateTable() =\n%s\nwant\n%s", got[0], want)
+	}
+}
+
+func TestRenderCreateTable_Checks_Inline(t *testing.T) {
+	table := schema.Table{
+		Name:    "accounts",
+		Columns: []schema.Column{{Name: "age", Type: schema.ColumnType{Kind: schema.KindInteger}}},
+		Checks:  []schema.Check{{Name: "ck_accounts_1", Expression: "age >= 0"}},
+	}
+	got, err := postgres.Dialect{}.RenderCreateTable(table)
+	if err != nil {
+		t.Fatalf("RenderCreateTable failed: %v", err)
+	}
+	want := "CREATE TABLE \"accounts\" (\n" +
+		"    \"age\" INTEGER,\n" +
+		"    CONSTRAINT \"ck_accounts_1\" CHECK (age >= 0)\n" +
 		")"
 	if got[0] != want {
 		t.Errorf("RenderCreateTable() =\n%s\nwant\n%s", got[0], want)
@@ -358,11 +391,121 @@ func TestRenderAddForeignKey(t *testing.T) {
 	}
 }
 
+func TestRenderAddForeignKey_Actions(t *testing.T) {
+	base := schema.ForeignKey{
+		Name:              "fk_posts_author_id",
+		Columns:           []string{"author_id"},
+		ReferencedTable:   "users",
+		ReferencedColumns: []string{"id"},
+	}
+	tests := []struct {
+		name   string
+		fk     schema.ForeignKey
+		suffix string
+	}{
+		{name: "no action, no clause", fk: base, suffix: ""},
+		{name: "on delete cascade", fk: withOnDelete(base, schema.ActionCascade), suffix: " ON DELETE CASCADE"},
+		{name: "on delete set null", fk: withOnDelete(base, schema.ActionSetNull), suffix: " ON DELETE SET NULL"},
+		{name: "on delete set default", fk: withOnDelete(base, schema.ActionSetDefault), suffix: " ON DELETE SET DEFAULT"},
+		{name: "on delete restrict", fk: withOnDelete(base, schema.ActionRestrict), suffix: " ON DELETE RESTRICT"},
+		{name: "on update cascade", fk: withOnUpdate(base, schema.ActionCascade), suffix: " ON UPDATE CASCADE"},
+		{
+			name:   "both on delete and on update",
+			fk:     withOnUpdate(withOnDelete(base, schema.ActionCascade), schema.ActionSetNull),
+			suffix: " ON DELETE CASCADE ON UPDATE SET NULL",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := postgres.Dialect{}.RenderAddForeignKey("posts", tt.fk)
+			want := []string{`ALTER TABLE "posts" ADD CONSTRAINT "fk_posts_author_id" FOREIGN KEY ("author_id") REFERENCES "users" ("id")` + tt.suffix}
+			if !equalSlices(got, want) {
+				t.Errorf("RenderAddForeignKey() = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func withOnDelete(fk schema.ForeignKey, a schema.ForeignKeyAction) schema.ForeignKey {
+	fk.OnDelete = a
+	return fk
+}
+
+func withOnUpdate(fk schema.ForeignKey, a schema.ForeignKeyAction) schema.ForeignKey {
+	fk.OnUpdate = a
+	return fk
+}
+
 func TestRenderDropForeignKey(t *testing.T) {
 	got := postgres.Dialect{}.RenderDropForeignKey("posts", "fk_posts_author_id")
 	want := []string{`ALTER TABLE "posts" DROP CONSTRAINT "fk_posts_author_id"`}
 	if !equalSlices(got, want) {
 		t.Errorf("RenderDropForeignKey() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderAddCheck(t *testing.T) {
+	c := schema.Check{Name: "ck_accounts_1", Expression: "age >= 0"}
+	got := postgres.Dialect{}.RenderAddCheck("accounts", c)
+	want := []string{`ALTER TABLE "accounts" ADD CONSTRAINT "ck_accounts_1" CHECK (age >= 0)`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderAddCheck() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderDropCheck(t *testing.T) {
+	got := postgres.Dialect{}.RenderDropCheck("accounts", "ck_accounts_1")
+	want := []string{`ALTER TABLE "accounts" DROP CONSTRAINT "ck_accounts_1"`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderDropCheck() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderCreateEnumType(t *testing.T) {
+	e := schema.EnumType{Name: "order_status", Values: []string{"pending", "done"}}
+	got := postgres.Dialect{}.RenderCreateEnumType(e)
+	want := []string{`CREATE TYPE "order_status" AS ENUM ('pending', 'done')`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderCreateEnumType() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderCreateEnumType_QuotesEmbeddedSingleQuote(t *testing.T) {
+	e := schema.EnumType{Name: "weird", Values: []string{"it's odd"}}
+	got := postgres.Dialect{}.RenderCreateEnumType(e)
+	want := []string{`CREATE TYPE "weird" AS ENUM ('it''s odd')`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderCreateEnumType() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderDropEnumType(t *testing.T) {
+	got := postgres.Dialect{}.RenderDropEnumType("order_status")
+	want := []string{`DROP TYPE "order_status"`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderDropEnumType() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderAddEnumValue(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  string
+		before string
+		after  string
+		want   string
+	}{
+		{name: "append", value: "cancelled", want: `ALTER TYPE "order_status" ADD VALUE 'cancelled'`},
+		{name: "before", value: "new", before: "pending", want: `ALTER TYPE "order_status" ADD VALUE 'new' BEFORE 'pending'`},
+		{name: "after", value: "shipped", after: "paid", want: `ALTER TYPE "order_status" ADD VALUE 'shipped' AFTER 'paid'`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := postgres.Dialect{}.RenderAddEnumValue("order_status", tt.value, tt.before, tt.after)
+			if !equalSlices(got, []string{tt.want}) {
+				t.Errorf("RenderAddEnumValue() = %v, want [%s]", got, tt.want)
+			}
+		})
 	}
 }
 

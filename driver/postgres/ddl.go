@@ -22,6 +22,12 @@ func quoteIdentList(names []string) string {
 	return strings.Join(quoted, ", ")
 }
 
+// quoteLiteral single-quotes a Postgres string literal, escaping any
+// embedded single quotes.
+func quoteLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 // RenderCreateTable renders a CREATE TABLE statement. A single-column
 // primary key on an integer or bigint column is rendered inline as an
 // auto-incrementing identity column; any other primary key (composite, or
@@ -74,6 +80,9 @@ func (Dialect) RenderCreateTable(t schema.Table) ([]string, error) {
 	for _, u := range t.Uniques {
 		lines = append(lines, fmt.Sprintf("CONSTRAINT %s UNIQUE (%s)",
 			quoteIdent(u.Name), quoteIdentList(u.Columns)))
+	}
+	for _, ck := range t.Checks {
+		lines = append(lines, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", quoteIdent(ck.Name), ck.Expression))
 	}
 
 	sql := fmt.Sprintf("CREATE TABLE %s (\n    %s\n)", quoteIdent(t.Name), strings.Join(lines, ",\n    "))
@@ -170,17 +179,82 @@ func (Dialect) RenderDropIndex(table, name string) []string {
 	return []string{fmt.Sprintf("DROP INDEX %s", quoteIdent(name))}
 }
 
+// RenderAddCheck renders an ALTER TABLE ... ADD CONSTRAINT ... CHECK
+// statement.
+func (Dialect) RenderAddCheck(table string, c schema.Check) []string {
+	sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
+		quoteIdent(table), quoteIdent(c.Name), c.Expression)
+	return []string{sql}
+}
+
+// RenderDropCheck renders an ALTER TABLE ... DROP CONSTRAINT statement.
+func (Dialect) RenderDropCheck(table, name string) []string {
+	return []string{fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", quoteIdent(table), quoteIdent(name))}
+}
+
 // RenderAddForeignKey renders an ALTER TABLE ... ADD CONSTRAINT ... FOREIGN
-// KEY statement.
+// KEY statement, with ON DELETE/ON UPDATE clauses only when non-default.
 func (Dialect) RenderAddForeignKey(table string, fk schema.ForeignKey) []string {
 	sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
 		quoteIdent(table), quoteIdent(fk.Name), quoteIdentList(fk.Columns),
 		quoteIdent(fk.ReferencedTable), quoteIdentList(fk.ReferencedColumns))
+	if c := actionClause("ON DELETE", fk.OnDelete); c != "" {
+		sql += " " + c
+	}
+	if c := actionClause("ON UPDATE", fk.OnUpdate); c != "" {
+		sql += " " + c
+	}
 	return []string{sql}
+}
+
+// actionClause renders a referential action clause, or "" for
+// schema.ActionNoAction, Postgres's own default (no clause needed).
+func actionClause(prefix string, a schema.ForeignKeyAction) string {
+	switch a {
+	case schema.ActionCascade:
+		return prefix + " CASCADE"
+	case schema.ActionSetNull:
+		return prefix + " SET NULL"
+	case schema.ActionSetDefault:
+		return prefix + " SET DEFAULT"
+	case schema.ActionRestrict:
+		return prefix + " RESTRICT"
+	default:
+		return ""
+	}
 }
 
 // RenderDropForeignKey renders an ALTER TABLE ... DROP CONSTRAINT
 // statement.
 func (Dialect) RenderDropForeignKey(table, name string) []string {
 	return []string{fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", quoteIdent(table), quoteIdent(name))}
+}
+
+// RenderCreateEnumType renders a CREATE TYPE ... AS ENUM statement.
+func (Dialect) RenderCreateEnumType(e schema.EnumType) []string {
+	values := make([]string, len(e.Values))
+	for i, v := range e.Values {
+		values[i] = quoteLiteral(v)
+	}
+	sql := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s)", quoteIdent(e.Name), strings.Join(values, ", "))
+	return []string{sql}
+}
+
+// RenderDropEnumType renders a DROP TYPE statement.
+func (Dialect) RenderDropEnumType(name string) []string {
+	return []string{fmt.Sprintf("DROP TYPE %s", quoteIdent(name))}
+}
+
+// RenderAddEnumValue renders an ALTER TYPE ... ADD VALUE statement,
+// optionally positioned via before/after (mutually exclusive; both empty
+// appends the value at the end of the type's value list).
+func (Dialect) RenderAddEnumValue(name, value, before, after string) []string {
+	sql := fmt.Sprintf("ALTER TYPE %s ADD VALUE %s", quoteIdent(name), quoteLiteral(value))
+	switch {
+	case before != "":
+		sql += " BEFORE " + quoteLiteral(before)
+	case after != "":
+		sql += " AFTER " + quoteLiteral(after)
+	}
+	return []string{sql}
 }

@@ -49,9 +49,20 @@ func (Dialect) RenderCreateTable(t schema.Table) ([]string, error) {
 		line := fmt.Sprintf("%s %s", quoteIdent(c.Name), typ)
 		switch {
 		case c.Name == identityColumn:
+			// schema.ExtractSchema already rejects a ServerDefault on an
+			// identity column (Postgres disallows both GENERATED ALWAYS AS
+			// IDENTITY and an explicit DEFAULT on the same column), but
+			// this stays safe even against a hand-built schema.Table that
+			// skipped that validation, by simply not looking at
+			// ServerDefault here.
 			line += " GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
-		case c.NotNull:
-			line += " NOT NULL"
+		default:
+			if c.ServerDefault != "" {
+				line += " DEFAULT " + c.ServerDefault
+			}
+			if c.NotNull {
+				line += " NOT NULL"
+			}
 		}
 		lines = append(lines, line)
 	}
@@ -81,6 +92,9 @@ func (Dialect) RenderAddColumn(table string, col schema.Column) ([]string, error
 		return nil, fmt.Errorf("table %q: %w", table, err)
 	}
 	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quoteIdent(table), quoteIdent(col.Name), typ)
+	if col.ServerDefault != "" {
+		sql += " DEFAULT " + col.ServerDefault
+	}
 	if col.NotNull {
 		sql += " NOT NULL"
 	}
@@ -138,6 +152,22 @@ func (Dialect) RenderAddUnique(table string, u schema.UniqueConstraint) []string
 // RenderDropUnique renders an ALTER TABLE ... DROP CONSTRAINT statement.
 func (Dialect) RenderDropUnique(table, name string) []string {
 	return []string{fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", quoteIdent(table), quoteIdent(name))}
+}
+
+// RenderAddIndex renders a CREATE INDEX statement. Unlike a constraint, a
+// plain index cannot be declared inline in CREATE TABLE in Postgres, so it
+// is always its own statement.
+func (Dialect) RenderAddIndex(table string, idx schema.Index) []string {
+	sql := fmt.Sprintf("CREATE INDEX %s ON %s (%s)",
+		quoteIdent(idx.Name), quoteIdent(table), quoteIdentList(idx.Columns))
+	return []string{sql}
+}
+
+// RenderDropIndex renders a DROP INDEX statement. table is accepted for
+// consistency with every other Drop* method here; Postgres itself doesn't
+// need it, since index names are schema-scoped, not table-scoped.
+func (Dialect) RenderDropIndex(table, name string) []string {
+	return []string{fmt.Sprintf("DROP INDEX %s", quoteIdent(name))}
 }
 
 // RenderAddForeignKey renders an ALTER TABLE ... ADD CONSTRAINT ... FOREIGN

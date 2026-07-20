@@ -92,6 +92,7 @@ func TestRenderCreateTable_AllKinds(t *testing.T) {
 			{Name: "c", Type: schema.ColumnType{Kind: schema.KindFloat}},
 			{Name: "d", Type: schema.ColumnType{Kind: schema.KindDouble}},
 			{Name: "e", Type: schema.ColumnType{Kind: schema.KindTimestamp}},
+			{Name: "f", Type: schema.ColumnType{Kind: schema.KindUUID}},
 		},
 	}
 	got, err := postgres.Dialect{}.RenderCreateTable(table)
@@ -103,10 +104,56 @@ func TestRenderCreateTable_AllKinds(t *testing.T) {
 		"    \"b\" BIGINT,\n" +
 		"    \"c\" REAL,\n" +
 		"    \"d\" DOUBLE PRECISION,\n" +
-		"    \"e\" TIMESTAMP WITHOUT TIME ZONE\n" +
+		"    \"e\" TIMESTAMP WITHOUT TIME ZONE,\n" +
+		"    \"f\" UUID\n" +
 		")"
 	if got[0] != want {
 		t.Errorf("RenderCreateTable() =\n%s\nwant\n%s", got[0], want)
+	}
+}
+
+func TestRenderCreateTable_ServerDefault(t *testing.T) {
+	table := schema.Table{
+		Name: "widgets",
+		Columns: []schema.Column{
+			{Name: "created_at", Type: schema.ColumnType{Kind: schema.KindTimestamp}, NotNull: true, ServerDefault: "now()"},
+		},
+	}
+	got, err := postgres.Dialect{}.RenderCreateTable(table)
+	if err != nil {
+		t.Fatalf("RenderCreateTable failed: %v", err)
+	}
+	want := "CREATE TABLE \"widgets\" (\n" +
+		"    \"created_at\" TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL\n" +
+		")"
+	if got[0] != want {
+		t.Errorf("RenderCreateTable() =\n%s\nwant\n%s (DEFAULT must come before NOT NULL)", got[0], want)
+	}
+}
+
+// TestRenderCreateTable_IdentityColumnIgnoresServerDefault is a defensive
+// case: schema.ExtractSchema already rejects this combination before any
+// SQL exists (see schema.validateIdentityServerDefault), but
+// RenderCreateTable itself stays safe even against a hand-built
+// schema.Table that skipped that validation, by not looking at
+// ServerDefault on the identity column at all.
+func TestRenderCreateTable_IdentityColumnIgnoresServerDefault(t *testing.T) {
+	table := schema.Table{
+		Name: "widgets",
+		Columns: []schema.Column{
+			{Name: "id", Type: schema.ColumnType{Kind: schema.KindInteger}, NotNull: true, ServerDefault: "1"},
+		},
+		PrimaryKey: &schema.PrimaryKey{Name: "pk_widgets", Columns: []string{"id"}},
+	}
+	got, err := postgres.Dialect{}.RenderCreateTable(table)
+	if err != nil {
+		t.Fatalf("RenderCreateTable failed: %v", err)
+	}
+	want := "CREATE TABLE \"widgets\" (\n" +
+		"    \"id\" INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY\n" +
+		")"
+	if got[0] != want {
+		t.Errorf("RenderCreateTable() =\n%s\nwant\n%s (ServerDefault must be ignored on an identity column)", got[0], want)
 	}
 }
 
@@ -155,6 +202,18 @@ func TestRenderAddColumn(t *testing.T) {
 				t.Errorf("RenderAddColumn() = %v, want [%s]", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRenderAddColumn_ServerDefault(t *testing.T) {
+	col := schema.Column{Name: "active", Type: schema.ColumnType{Kind: schema.KindBoolean}, NotNull: true, ServerDefault: "false"}
+	got, err := postgres.Dialect{}.RenderAddColumn("users", col)
+	if err != nil {
+		t.Fatalf("RenderAddColumn failed: %v", err)
+	}
+	want := []string{`ALTER TABLE "users" ADD COLUMN "active" BOOLEAN DEFAULT false NOT NULL`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderAddColumn() = %v, want %v (DEFAULT must come before NOT NULL)", got, want)
 	}
 }
 
@@ -239,6 +298,49 @@ func TestRenderDropUnique(t *testing.T) {
 	want := []string{`ALTER TABLE "users" DROP CONSTRAINT "uq_users_username"`}
 	if !equalSlices(got, want) {
 		t.Errorf("RenderDropUnique() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderAddIndex(t *testing.T) {
+	tests := []struct {
+		name string
+		idx  schema.Index
+		want string
+	}{
+		{
+			name: "single column",
+			idx:  schema.Index{Name: "ix_posts_author_id", Columns: []string{"author_id"}},
+			want: `CREATE INDEX "ix_posts_author_id" ON "posts" ("author_id")`,
+		},
+		{
+			name: "multi column",
+			idx:  schema.Index{Name: "ix_posts_author_id_created_at", Columns: []string{"author_id", "created_at"}},
+			want: `CREATE INDEX "ix_posts_author_id_created_at" ON "posts" ("author_id", "created_at")`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := postgres.Dialect{}.RenderAddIndex("posts", tt.idx)
+			if !equalSlices(got, []string{tt.want}) {
+				t.Errorf("RenderAddIndex() = %v, want [%s]", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderDropIndex(t *testing.T) {
+	got := postgres.Dialect{}.RenderDropIndex("posts", "ix_posts_author_id")
+	want := []string{`DROP INDEX "ix_posts_author_id"`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderDropIndex() = %v, want %v", got, want)
+	}
+}
+
+func TestRenderDropIndex_QuotesEmbeddedDoubleQuote(t *testing.T) {
+	got := postgres.Dialect{}.RenderDropIndex("posts", `weird"name`)
+	want := []string{`DROP INDEX "weird""name"`}
+	if !equalSlices(got, want) {
+		t.Errorf("RenderDropIndex() = %v, want %v", got, want)
 	}
 }
 

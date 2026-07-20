@@ -46,9 +46,12 @@ CREATE TABLE test_introspect_child (
     ratio REAL,
     big_num BIGINT,
     created_at TIMESTAMP WITHOUT TIME ZONE,
+    ext_id UUID,
     CONSTRAINT pk_test_introspect_child PRIMARY KEY (parent_id, seq),
     CONSTRAINT fk_test_introspect_child_parent FOREIGN KEY (parent_id) REFERENCES test_introspect_parent (id)
-);`
+);
+
+CREATE INDEX ix_test_introspect_child_active_score ON test_introspect_child (active, score);`
 	if err := conn.Exec(ctx, setup); err != nil {
 		t.Fatalf("test setup failed: %v", err)
 	}
@@ -81,6 +84,12 @@ CREATE TABLE test_introspect_child (
 	if !reflect.DeepEqual(parent.Uniques, wantParentUniques) {
 		t.Errorf("parent.Uniques = %+v, want %+v", parent.Uniques, wantParentUniques)
 	}
+	// The unique constraint above is backed by its own index in Postgres;
+	// it must not also show up as a plain Index (NOT indisunique in the
+	// introspection query excludes it).
+	if len(parent.Indexes) != 0 {
+		t.Errorf("parent.Indexes = %+v, want none (a unique constraint's backing index must not be double-counted)", parent.Indexes)
+	}
 	if len(parent.ForeignKeys) != 0 {
 		t.Errorf("parent.ForeignKeys = %+v, want none", parent.ForeignKeys)
 	}
@@ -95,6 +104,7 @@ CREATE TABLE test_introspect_child (
 		{Name: "ratio", Type: schema.ColumnType{Kind: schema.KindFloat}, NotNull: false},
 		{Name: "big_num", Type: schema.ColumnType{Kind: schema.KindBigInteger}, NotNull: false},
 		{Name: "created_at", Type: schema.ColumnType{Kind: schema.KindTimestamp}, NotNull: false},
+		{Name: "ext_id", Type: schema.ColumnType{Kind: schema.KindUUID}, NotNull: false},
 	}
 	if !reflect.DeepEqual(child.Columns, wantChildColumns) {
 		t.Errorf("child.Columns = %+v, want %+v", child.Columns, wantChildColumns)
@@ -102,6 +112,10 @@ CREATE TABLE test_introspect_child (
 	wantChildPK := &schema.PrimaryKey{Name: "pk_test_introspect_child", Columns: []string{"parent_id", "seq"}}
 	if !reflect.DeepEqual(child.PrimaryKey, wantChildPK) {
 		t.Errorf("child.PrimaryKey = %+v, want %+v", child.PrimaryKey, wantChildPK)
+	}
+	wantChildIndexes := []schema.Index{{Name: "ix_test_introspect_child_active_score", Columns: []string{"active", "score"}}}
+	if !reflect.DeepEqual(child.Indexes, wantChildIndexes) {
+		t.Errorf("child.Indexes = %+v, want %+v", child.Indexes, wantChildIndexes)
 	}
 	wantChildFKs := []schema.ForeignKey{{
 		Name:              "fk_test_introspect_child_parent",
@@ -111,6 +125,47 @@ CREATE TABLE test_introspect_child (
 	}}
 	if !reflect.DeepEqual(child.ForeignKeys, wantChildFKs) {
 		t.Errorf("child.ForeignKeys = %+v, want %+v", child.ForeignKeys, wantChildFKs)
+	}
+}
+
+// TestIntrospect_PartialAndExpressionIndexes_Excluded documents a known
+// gap (see driver/postgres/doc.go): schema.Index has no way to represent
+// an expression key or a WHERE predicate, so both kinds are excluded from
+// introspection entirely rather than misrepresented as a plain index.
+func TestIntrospect_PartialAndExpressionIndexes_Excluded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	dialect := postgres.Dialect{}
+	conn, err := dialect.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_introspect_special CASCADE`)
+	})
+	setup := `
+DROP TABLE IF EXISTS test_introspect_special CASCADE;
+CREATE TABLE test_introspect_special (
+    id INTEGER,
+    name TEXT,
+    active BOOLEAN
+);
+CREATE INDEX ix_special_partial ON test_introspect_special (id) WHERE active;
+CREATE INDEX ix_special_expr ON test_introspect_special (lower(name));`
+	if err := conn.Exec(ctx, setup); err != nil {
+		t.Fatalf("test setup failed: %v", err)
+	}
+
+	got, err := dialect.Introspect(ctx, conn, []string{"test_introspect_special"})
+	if err != nil {
+		t.Fatalf("Introspect failed: %v", err)
+	}
+	table := tableNamed(t, got, "test_introspect_special")
+	if len(table.Indexes) != 0 {
+		t.Errorf("Indexes = %+v, want none (partial and expression indexes must be excluded)", table.Indexes)
 	}
 }
 

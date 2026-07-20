@@ -25,6 +25,8 @@ func renderType(t schema.ColumnType) (string, error) {
 		return "TEXT", nil
 	case schema.KindTimestamp:
 		return "TIMESTAMP WITHOUT TIME ZONE", nil
+	case schema.KindUUID:
+		return "UUID", nil
 	default:
 		return "", fmt.Errorf("postgres: no type mapping for column kind %v", t.Kind)
 	}
@@ -54,6 +56,8 @@ func parseType(dataType string, charMaxLen *int) (schema.ColumnType, error) {
 		return schema.ColumnType{Kind: schema.KindText}, nil
 	case "timestamp without time zone":
 		return schema.ColumnType{Kind: schema.KindTimestamp}, nil
+	case "uuid":
+		return schema.ColumnType{Kind: schema.KindUUID}, nil
 	default:
 		return schema.ColumnType{}, fmt.Errorf("postgres: no column kind for data_type %q", dataType)
 	}

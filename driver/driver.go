@@ -100,6 +100,13 @@ type Dialect interface {
 	RenderDropPrimaryKey(table, name string) []string
 	RenderAddUnique(table string, u schema.UniqueConstraint) []string
 	RenderDropUnique(table, name string) []string
+	RenderAddIndex(table string, idx schema.Index) []string
+	// RenderDropIndex keeps table for consistency with every other Drop*
+	// method here, and because some dialects need it: MySQL's
+	// DROP INDEX name ON table genuinely requires it in the syntax, even
+	// though Postgres itself doesn't (its index names are schema-scoped,
+	// not table-scoped).
+	RenderDropIndex(table, name string) []string
 	RenderAddForeignKey(table string, fk schema.ForeignKey) []string
 	RenderDropForeignKey(table, name string) []string
 }

@@ -162,6 +162,84 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 	return scanCount(ctx, s.q.db, s.q.st.name, sql, c.args.args)
 }
 
+// SubqueryOf is a query yielding one column of T, for use inside another
+// query's condition rather than being run on its own.
+//
+//	authors := orm.Select(Posts.With(db).Where(Posts.Published.Eq(true)), Posts.AuthorID)
+//	Users.With(db).Where(Users.ID.InQuery(authors)).All(ctx)
+//
+// It is what InQuery and NotInQuery accept, and only this package's own query
+// values satisfy it. Naming T is what makes a subquery over the wrong column a
+// compile error: a query yielding usernames cannot be handed to a condition on
+// an ID.
+//
+// A *Scalars[T] is one, so the same value that All would run is what gets
+// embedded. Selecting a nullable column gives a *Scalars[*T], which is a
+// SubqueryOf[*T] and so not accepted by a condition on a T; NonNull is how to
+// cross that gap, and says something worth saying while it does.
+type SubqueryOf[T any] interface {
+	subquerySource
+	subqueryOf(T)
+}
+
+func (s *Scalars[T]) subqueryOf(T) {}
+
+// compileWithin renders this query as a subquery of another statement.
+//
+// It shares the outer compiler's arguments, so placeholders keep counting
+// across the boundary rather than restarting and colliding, and it qualifies
+// its columns, since the outer statement's table is in scope here too and an
+// unqualified name would be resolved by how the two happen to be nested rather
+// than by what the caller wrote.
+func (s *Scalars[T]) compileWithin(outer *compiler) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("orm: table %q: the subquery is nil", outer.table)
+	}
+	if err := s.ready(); err != nil {
+		return "", err
+	}
+	c := outer.sub(s.q.st.name)
+	list, err := c.selectList([]ColumnMeta{s.col})
+	if err != nil {
+		return "", err
+	}
+	return s.q.compileRead(c, list)
+}
+
+// NonNull narrows a subquery over a nullable column to the rows where it has a
+// value, and gives back one yielding T rather than *T.
+//
+//	authors := orm.Select(Posts.With(db), Posts.EditorID)   // *Scalars[*int]
+//	Users.With(db).Where(Users.ID.NotInQuery(orm.NonNull(authors))).All(ctx)
+//
+// Both halves matter. The type stops a *T subquery reaching a condition on a T,
+// which would otherwise need a conversion nobody would think about; and the
+// added IS NOT NULL disarms SQL's worst set-membership trap, where NOT IN is
+// never true if the subquery yields a single NULL, so the outer query silently
+// returns nothing. Requiring this call is what turns that trap into a compile
+// error whose fix is also the correct one.
+func NonNull[T any](sub *Scalars[*T]) SubqueryOf[T] {
+	return nonNullSubquery[T]{sub: sub}
+}
+
+// nonNullSubquery is NonNull's result: the query it was given, plus the
+// condition that gives it its name.
+type nonNullSubquery[T any] struct{ sub *Scalars[*T] }
+
+func (nonNullSubquery[T]) subqueryOf(T) {}
+
+func (n nonNullSubquery[T]) compileWithin(outer *compiler) (string, error) {
+	if n.sub == nil {
+		return "", fmt.Errorf("orm: table %q: NonNull was given no subquery", outer.table)
+	}
+	// The condition is added to a copy, so the query handed to NonNull is
+	// unchanged and can still be run or embedded on its own terms.
+	narrowed := *n.sub
+	narrowed.q.preds = append(append([]Predicate(nil), n.sub.q.preds...),
+		Nullness{Col: n.sub.col, Not: true})
+	return narrowed.compileWithin(outer)
+}
+
 // scan reads one value, decoding it through the column's codec when the
 // column stores a document, exactly as a row scan does.
 func (s *Scalars[T]) scan(rows Rows) (T, error) {

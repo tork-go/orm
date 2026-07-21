@@ -127,6 +127,20 @@ type Existence struct {
 	Not   bool
 }
 
+// InSubquery is `col IN (SELECT ...)`, or NOT IN when Not is set. Build one
+// with a column's InQuery or NotInQuery.
+type InSubquery struct {
+	Col ColumnMeta
+	Sub subquerySource
+	Not bool
+}
+
+// subquerySource is something that renders as a single-column SELECT inside
+// another statement. Only this package's own query values satisfy it.
+type subquerySource interface {
+	compileWithin(outer *compiler) (string, error)
+}
+
 // Relationship is a relationship marker: HasMany, HasOne, BelongsTo or
 // ManyToMany.
 //
@@ -199,6 +213,7 @@ func (Nullness) predicate()   {}
 func (Group) predicate()      {}
 func (Negation) predicate()   {}
 func (Existence) predicate()  {}
+func (InSubquery) predicate() {}
 
 // And joins preds with AND.
 //

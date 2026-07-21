@@ -39,6 +39,45 @@ func (m equatable[T]) NotIn(vs ...T) Predicate {
 	return InList{Col: m.c, Values: anySlice(vs), Not: true}
 }
 
+// InQuery is `col IN (SELECT ...)`, matching rows whose value another query
+// also yields.
+//
+//	authors := orm.Select(Posts.With(db).Where(Posts.Published.Eq(true)), Posts.AuthorID)
+//	Users.With(db).Where(Users.ID.InQuery(authors)).All(ctx)
+//
+// The subquery is embedded rather than run, so the database does the matching
+// in one statement instead of the caller shipping a list of keys back to it.
+// That is also what makes it the right shape for a set too large to bind: an
+// IN list is limited by the dialect's parameter ceiling, and this is not.
+func (m equatable[T]) InQuery(sub SubqueryOf[T]) Predicate {
+	return InSubquery{Col: m.c, Sub: subqueryOf(sub)}
+}
+
+// NotInQuery is `col NOT IN (SELECT ...)`.
+//
+//	Users.With(db).Where(Users.ID.NotInQuery(authors)).All(ctx)
+//
+// NOT IN is never true once the subquery yields a NULL, which is SQL's sharpest
+// edge: the outer query returns nothing at all and looks like it simply matched
+// nothing. A nullable column cannot reach here to cause it, since selecting one
+// gives a SubqueryOf[*T] and this takes a SubqueryOf[T]; orm.NonNull converts,
+// and excludes the NULLs while it does.
+func (m equatable[T]) NotInQuery(sub SubqueryOf[T]) Predicate {
+	return InSubquery{Col: m.c, Sub: subqueryOf(sub), Not: true}
+}
+
+// subqueryOf unwraps a subquery for storage in a predicate.
+//
+// A nil one is kept nil rather than boxed into a non-nil interface holding
+// nothing, so the compiler reports it by name instead of the caller seeing a
+// panic from inside a render.
+func subqueryOf[T any](sub SubqueryOf[T]) subquerySource {
+	if sub == nil {
+		return nil
+	}
+	return sub
+}
+
 // ordered supplies the inequalities, for kinds with a meaningful ordering.
 type ordered[T any] struct{ c *Column[T] }
 
@@ -139,6 +178,23 @@ func (m nullEquatable[T]) In(vs ...T) Predicate { return InList{Col: m.c, Values
 // NotIn is `col NOT IN (vs...)`.
 func (m nullEquatable[T]) NotIn(vs ...T) Predicate {
 	return InList{Col: m.c, Values: anySlice(vs), Not: true}
+}
+
+// InQuery is `col IN (SELECT ...)`. See equatable.InQuery.
+//
+// It takes a subquery of T rather than of *T, for the reason Eq takes a T: the
+// values being matched against are values, and a NULL among them would match
+// nothing anyway.
+func (m nullEquatable[T]) InQuery(sub SubqueryOf[T]) Predicate {
+	return InSubquery{Col: m.c, Sub: subqueryOf(sub)}
+}
+
+// NotInQuery is `col NOT IN (SELECT ...)`. See equatable.NotInQuery.
+//
+// A row whose own value is NULL matches neither this nor InQuery, which is
+// ordinary SQL and what IsNull is for.
+func (m nullEquatable[T]) NotInQuery(sub SubqueryOf[T]) Predicate {
+	return InSubquery{Col: m.c, Sub: subqueryOf(sub), Not: true}
 }
 
 // EqPtr is `col = *v`, or `col IS NULL` when v is nil.

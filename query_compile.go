@@ -164,6 +164,9 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 
 	case Existence:
 		return c.existence(p)
+
+	case InSubquery:
+		return c.inSubquery(p)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown predicate %T", c.table, p)
 }
@@ -201,6 +204,31 @@ func (c *compiler) inList(p InList) (string, error) {
 		op = " NOT IN ("
 	}
 	return col + op + strings.Join(marks, ", ") + ")", nil
+}
+
+// inSubquery renders IN and NOT IN over another query.
+//
+// Unlike inList there is no empty case to define: the subquery decides at run
+// time how many values it yields, and a database given one that yields none
+// answers the same false that an empty list compiles to.
+func (c *compiler) inSubquery(p InSubquery) (string, error) {
+	if p.Sub == nil {
+		return "", fmt.Errorf("orm: table %q: column %q was given no subquery to match "+
+			"against", c.table, p.Col.Name())
+	}
+	col, err := c.column(p.Col)
+	if err != nil {
+		return "", err
+	}
+	sub, err := p.Sub.compileWithin(c)
+	if err != nil {
+		return "", err
+	}
+	op := " IN ("
+	if p.Not {
+		op = " NOT IN ("
+	}
+	return col + op + sub + ")", nil
 }
 
 // group renders a parenthesised list joined by AND or OR.
@@ -480,13 +508,18 @@ func limitOffset(limit, offset *int) string {
 // table's own: those belong to the table by construction. A projection is a
 // caller's list, so a column from another table can reach here and has to be
 // reported rather than compiled into a reference the statement cannot resolve.
+//
+// The names come from c.column rather than being quoted here, so a list
+// rendered inside a subquery is qualified along with the rest of it. A
+// statement over one table qualifies nothing, which is every read but that one.
 func (c *compiler) selectList(cols []ColumnMeta) (string, error) {
 	parts := make([]string, len(cols))
 	for i, col := range cols {
-		if _, err := c.column(col); err != nil {
+		name, err := c.column(col)
+		if err != nil {
 			return "", err
 		}
-		parts[i] = c.d.QuoteIdent(col.Name())
+		parts[i] = name
 	}
 	return strings.Join(parts, ", "), nil
 }

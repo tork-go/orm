@@ -33,6 +33,9 @@ func (*stubDriver) RenderUpsertDoNothing([]string) (string, error) {
 func (*stubDriver) RenderUpsertDoUpdate(_, _ []string) (string, error) {
 	return "ON CONFLICT DO UPDATE", nil
 }
+func (*stubDriver) RenderLock(orm.LockMode, orm.LockWait) (string, error) {
+	return "FOR UPDATE", nil
+}
 
 func (d *stubDriver) Open(_ context.Context, cfg orm.Config) (orm.Conn, error) {
 	d.opened = append(d.opened, cfg)

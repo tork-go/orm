@@ -52,6 +52,17 @@ type QueryDialect interface {
 	// values the insert was carrying for it.
 	RenderUpsertDoUpdate(target, updates []string) (string, error)
 
+	// RenderLock returns the clause that locks the rows a SELECT reads, so
+	// another transaction cannot change them until this one ends.
+	//
+	// Both halves of it vary. Postgres and MySQL spell the strong mode FOR
+	// UPDATE and the weak one differently from each other (FOR SHARE against
+	// LOCK IN SHARE MODE before MySQL 8), and SQLite locks whole databases
+	// rather than rows and so has no clause at all. A dialect that cannot
+	// express a mode returns an error naming it, rather than reading rows it
+	// has not locked and leaving the caller to find out later.
+	RenderLock(mode LockMode, wait LockWait) (string, error)
+
 	// MaxBindParams reports how many parameters one statement may bind, or
 	// 0 when the database sets no practical limit.
 	//

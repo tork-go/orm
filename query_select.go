@@ -144,6 +144,9 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 	if err := s.ready(); err != nil {
 		return 0, err
 	}
+	if err := s.q.noLock("Count"); err != nil {
+		return 0, err
+	}
 	c := s.q.compiler()
 	name, err := c.column(s.col)
 	if err != nil {

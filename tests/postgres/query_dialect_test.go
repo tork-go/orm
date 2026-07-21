@@ -62,3 +62,46 @@ func TestSupportsReturning(t *testing.T) {
 		t.Error("SupportsReturning() = false, want true: Postgres has RETURNING")
 	}
 }
+
+func TestRenderLock(t *testing.T) {
+	d := postgres.Dialect{}
+
+	tests := []struct {
+		name string
+		mode orm.LockMode
+		wait orm.LockWait
+		want string
+	}{
+		{"for update", orm.LockUpdate, orm.LockBlock, "FOR UPDATE"},
+		{"for share", orm.LockShare, orm.LockBlock, "FOR SHARE"},
+		{"skipping locked rows", orm.LockUpdate, orm.LockSkip, "FOR UPDATE SKIP LOCKED"},
+		{"refusing to wait", orm.LockUpdate, orm.LockNoWait, "FOR UPDATE NOWAIT"},
+		{"share, skipping", orm.LockShare, orm.LockSkip, "FOR SHARE SKIP LOCKED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := d.RenderLock(tt.mode, tt.wait)
+			if err != nil {
+				t.Fatalf("RenderLock() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("RenderLock() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+// A value outside the two enums cannot arrive through the query API, which
+// only ever passes the constants. It is rejected rather than rendered as
+// whichever branch happened to be last, so a mode added to orm without a
+// spelling here is a failure that names itself.
+func TestRenderLock_UnknownValues(t *testing.T) {
+	d := postgres.Dialect{}
+
+	if _, err := d.RenderLock(orm.LockMode(99), orm.LockBlock); err == nil {
+		t.Error("RenderLock() error = nil, want the unknown mode rejected")
+	}
+	if _, err := d.RenderLock(orm.LockUpdate, orm.LockWait(99)); err == nil {
+		t.Error("RenderLock() error = nil, want the unknown wait rejected")
+	}
+}

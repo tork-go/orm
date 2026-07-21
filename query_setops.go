@@ -255,6 +255,11 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 	case len(f.loads) > 0:
 		// Loading fills a field of rows that were read. A write reads none.
 		clause = "a Load"
+	case f.lock != nil:
+		// A write locks the rows it touches by writing them, so there is
+		// nothing a ForUpdate could add, and no dialect accepts the clause on
+		// an UPDATE or a DELETE.
+		clause = "a ForUpdate or ForShare"
 	default:
 		return nil
 	}

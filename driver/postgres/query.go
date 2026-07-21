@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/tork-go/orm"
 )
 
 // The methods here are Postgres's answers to orm.QueryDialect, the pieces
@@ -71,6 +74,34 @@ func (Dialect) RenderUpsertDoUpdate(target, updates []string) (string, error) {
 	}
 	return "ON CONFLICT (" + strings.Join(target, ", ") + ") DO UPDATE SET " +
 		strings.Join(sets, ", "), nil
+}
+
+// RenderLock returns Postgres's row locking clause.
+//
+// Postgres has four strengths, of which these are the two worth naming: FOR
+// UPDATE, which blocks everything, and FOR SHARE, which blocks writers. The
+// other two, FOR NO KEY UPDATE and FOR KEY SHARE, differ only in how they
+// interact with foreign key checks, and are what Postgres itself takes on a
+// caller's behalf rather than something to reach for.
+func (Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait) (string, error) {
+	var b string
+	switch mode {
+	case orm.LockUpdate:
+		b = "FOR UPDATE"
+	case orm.LockShare:
+		b = "FOR SHARE"
+	default:
+		return "", fmt.Errorf("postgres: unknown lock mode %d", mode)
+	}
+	switch wait {
+	case orm.LockBlock:
+		return b, nil
+	case orm.LockSkip:
+		return b + " SKIP LOCKED", nil
+	case orm.LockNoWait:
+		return b + " NOWAIT", nil
+	}
+	return "", fmt.Errorf("postgres: unknown lock wait %d", wait)
 }
 
 // MaxBindParams reports Postgres's limit of 65535 parameters per

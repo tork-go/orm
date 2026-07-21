@@ -78,6 +78,10 @@ type queryState struct {
 	// statement of its own once the rows are in hand. See query_load.go.
 	loads []loadSpec
 
+	// lock is the row lock the read takes, nil when it takes none. See
+	// query_lock.go.
+	lock *lockClause
+
 	// whereCalled records that Where was called at all, however many
 	// conditions it went on to contribute. Reading rows does not care, but
 	// UpdateAll and DeleteAll do: a Where that narrowed nothing is a
@@ -322,12 +326,18 @@ func (q queryState) compileRead(c *compiler, list string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// The lock goes last, after LIMIT: it is a property of the read as a
+	// whole, and every dialect that has one puts it there.
+	lock, err := q.lockSuffix()
+	if err != nil {
+		return "", err
+	}
 	keyword := "SELECT "
 	if q.distinct {
 		keyword = "SELECT DISTINCT "
 	}
 	return keyword + list + " FROM " + c.d.QuoteIdent(q.st.name) +
-		where + order + limitOffset(q.limit, q.offset), nil
+		where + order + limitOffset(q.limit, q.offset) + lock, nil
 }
 
 // ready reports whether the query can run and scan rows into E.
@@ -477,6 +487,9 @@ func (f *Filtered[E]) First(ctx context.Context) (*E, error) {
 // how many match, and ORDER BY in a count is wasted work.
 func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	if err := f.ready(); err != nil {
+		return 0, err
+	}
+	if err := f.noLock("Count"); err != nil {
 		return 0, err
 	}
 	c := f.compiler()

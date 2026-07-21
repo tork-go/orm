@@ -338,6 +338,33 @@ func (d *Dialect) SupportsReturning() bool { return d.CanReturn }
 // would take to cross.
 func (d *Dialect) MaxBindParams() int { return d.BindLimit }
 
+// RenderLock spells the clause nothing like Postgres does, and fails when
+// NoLocking is set so the dialect whose database locks something other than
+// rows has somewhere to be tested.
+func (d *Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait) (string, error) {
+	if d.NoLocking {
+		return "", errors.New("fake: this database has no way to lock a row")
+	}
+	var b string
+	switch mode {
+	case orm.LockUpdate:
+		b = "LOCK EXCLUSIVE"
+	case orm.LockShare:
+		b = "LOCK SHARED"
+	default:
+		return "", fmt.Errorf("fake: unknown lock mode %d", mode)
+	}
+	switch wait {
+	case orm.LockBlock:
+		return b, nil
+	case orm.LockSkip:
+		return b + " PASSING OVER", nil
+	case orm.LockNoWait:
+		return b + " OR FAIL", nil
+	}
+	return "", fmt.Errorf("fake: unknown lock wait %d", wait)
+}
+
 // RenderUpsertDoNothing spells the clause nothing like Postgres does, for
 // the reason the group comment gives, and fails when NoUpsert is set so the
 // dialect that cannot express an upsert at all has somewhere to be tested.
@@ -394,6 +421,10 @@ type Dialect struct {
 	// NoUpsert makes both upsert renderers fail, standing in for a database
 	// whose SQL has no way to express one.
 	NoUpsert bool
+
+	// NoLocking makes RenderLock fail, standing in for a database that locks
+	// something coarser than a row, as SQLite does.
+	NoLocking bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

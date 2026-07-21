@@ -27,10 +27,15 @@ import (
 // fires that operation's pair, so a row is never told about two things
 // happening when only one did.
 //
-// The set operations that arrive with a filter fire nothing at all. They
-// never load a row, so there is nothing to call a method on. That is the
-// clearest reason for the split between Query and Filtered: hooks belong
-// to the operations on Query, which act on a row you are holding.
+// The batch operations fire the same hooks once per row, since they hold
+// rows exactly as their single row equivalents do. Every BeforeCreate in a
+// batch runs before any column list is worked out, because a hook that fills
+// in a field changes whether its column is written at all.
+//
+// UpdateAll and DeleteAll fire nothing. They never load a row, so there is
+// nothing to call a method on. That is the clearest reason for the split
+// between Query and Filtered: hooks belong to the operations on Query, which
+// act on a row you are holding.
 
 // BeforeCreater is called before a row is inserted.
 type BeforeCreater interface {

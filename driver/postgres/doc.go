@@ -2,8 +2,10 @@
 // It implements driver.Dialect: connecting, live schema introspection,
 // migration DDL rendering, and the migrations history table.
 //
-// Query execution beyond migrations (the round 3 query API) is not built
-// yet.
+// It also answers orm.QueryDialect, the handful of things the shared query
+// compiler cannot write for itself: identifier quoting, numbered parameter
+// markers, ILIKE, RETURNING support, and the 65535 parameter ceiling a bulk
+// write has to split statements to stay under.
 //
 // Foreign keys are read from pg_constraint rather than from
 // information_schema, which cannot express a composite key: its

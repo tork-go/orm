@@ -34,4 +34,15 @@ type QueryDialect interface {
 	// wrote. Where it can, generated values come back from the same
 	// statement; where it cannot, they have to be fetched separately.
 	SupportsReturning() bool
+
+	// MaxBindParams reports how many parameters one statement may bind, or
+	// 0 when the database sets no practical limit.
+	//
+	// It exists for the writes that bind a value per column per row, where
+	// the caller decides how many rows and so how close the statement comes
+	// to the ceiling. A bulk insert of a few thousand rows crosses it
+	// easily, and the failure is a driver error naming a number rather than
+	// anything a caller could act on, so the statement is split into as many
+	// as it takes instead. See rowsPerStatement.
+	MaxBindParams() int
 }

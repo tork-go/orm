@@ -38,3 +38,13 @@ func (Dialect) RenderLike(quotedColumn, placeholder string, caseInsensitive bool
 // SupportsReturning reports that Postgres can return the row an INSERT
 // wrote, so generated values come back from the same statement.
 func (Dialect) SupportsReturning() bool { return true }
+
+// MaxBindParams reports Postgres's limit of 65535 parameters per
+// statement.
+//
+// The number is not a configurable server setting but a consequence of the
+// wire protocol, which counts a Bind message's parameters in an Int16. That
+// makes it the same on every Postgres a driver can reach, and worth
+// splitting a statement to stay under rather than discovering from the
+// error.
+func (Dialect) MaxBindParams() int { return 65535 }

@@ -62,16 +62,30 @@ func (c *Column[T]) MarshalAny(v any) ([]byte, error) {
 // UnmarshalAny decodes b with the pair set by Serialize, or with
 // encoding/json when none was set. The returned value is always a T.
 func (c *Column[T]) UnmarshalAny(b []byte) (any, error) {
+	v, err := c.unmarshalTyped(b)
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// unmarshalTyped is UnmarshalAny without the type erasure.
+//
+// It exists for the callers that already know the column's T, which is every
+// caller reaching a column through Ref[T] rather than through ColumnMeta.
+// Those would otherwise have to assert the any back to a T and handle a
+// failure that cannot happen, since this is what produced the value.
+func (c *Column[T]) unmarshalTyped(b []byte) (T, error) {
+	var out T
 	if c.unmarshal != nil {
 		v, err := c.unmarshal(b)
 		if err != nil {
-			return nil, fmt.Errorf("orm: column %q: %w", c.name, err)
+			return out, fmt.Errorf("orm: column %q: %w", c.name, err)
 		}
 		return v, nil
 	}
-	var out T
 	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, fmt.Errorf("orm: column %q: %w", c.name, err)
+		return out, fmt.Errorf("orm: column %q: %w", c.name, err)
 	}
 	return out, nil
 }

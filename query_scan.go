@@ -36,7 +36,7 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 	if t.st == nil {
 		return e, errNoEntityMapping("")
 	}
-	if err := scanRowInto(t.st, rs, reflect.ValueOf(&e).Elem()); err != nil {
+	if err := scanRowInto(t.st, rs, reflect.ValueOf(&e).Elem(), t.st.cols); err != nil {
 		return e, err
 	}
 	return e, nil
@@ -49,11 +49,11 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 // as a *tableState rather than as a Table[E]: eager loading knows the
 // related table only through the registry, which is keyed by reflect.Type
 // and so cannot hand back anything parameterised by the related row type.
-func scanRowInto(st *tableState, rs Rows, dst reflect.Value) error {
+func scanRowInto(st *tableState, rs Rows, dst reflect.Value, cols []ColumnMeta) error {
 	if st.fieldIdx == nil {
 		return errNoEntityMapping(st.name)
 	}
-	dests, finish := rowDests(st, dst, st.cols)
+	dests, finish := rowDests(st, dst, cols)
 	if err := rs.Scan(dests...); err != nil {
 		return fmt.Errorf("orm: table %q: scanning row: %w", st.name, err)
 	}

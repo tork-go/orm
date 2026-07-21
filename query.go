@@ -42,7 +42,16 @@ type Query[E any] struct {
 //
 // Were they to share state, each branch would silently carry the other's
 // conditions and both would match nothing.
-type Filtered[E any] struct {
+type Filtered[E any] struct{ queryState }
+
+// queryState is everything a query is, minus the row type.
+//
+// It is split out because not everything built from a query is parameterised
+// by that type. Selecting one column yields a Scalars[T] whose T is the
+// column's, not the row's, and it needs the same conditions, ordering and
+// paging to run. Holding them here means the two share one representation
+// rather than one copying the other's fields.
+type queryState struct {
 	st  *tableState
 	db  *DB
 	err error
@@ -51,6 +60,14 @@ type Filtered[E any] struct {
 	ords   []Ordering
 	limit  *int
 	offset *int
+
+	// sel narrows which columns are read. Nil means the table's own, in
+	// declaration order, which is what every read did before projections
+	// existed and what scanning positionally still assumes.
+	sel []ColumnMeta
+
+	// distinct drops duplicate rows.
+	distinct bool
 
 	// whereCalled records that Where was called at all, however many
 	// conditions it went on to contribute. Reading rows does not care, but
@@ -61,10 +78,31 @@ type Filtered[E any] struct {
 	whereCalled bool
 }
 
+// columns returns the columns a read of this query covers.
+func (q queryState) columns() []ColumnMeta {
+	if q.sel != nil {
+		return q.sel
+	}
+	return q.st.cols
+}
+
+// QuerySource is a query something else can be built from, satisfied by
+// Query and Filtered and by nothing outside this package.
+//
+// It exists so orm.Select accepts either, since narrowing to one column is
+// as reasonable before a Where as after one. The method is unexported, which
+// is what stops anything else claiming to be a query.
+type QuerySource interface {
+	querySource() queryState
+}
+
+func (q *Query[E]) querySource() queryState    { return q.filtered().queryState }
+func (f *Filtered[E]) querySource() queryState { return f.queryState }
+
 // filtered starts a Filtered from an unfiltered query. Only Filtered can
 // carry an error, since only its builder methods can fail.
 func (q *Query[E]) filtered() *Filtered[E] {
-	return &Filtered[E]{st: q.st, db: q.db}
+	return &Filtered[E]{queryState{st: q.st, db: q.db}}
 }
 
 // Where narrows the query. Conditions are joined with AND; use orm.Or to
@@ -84,6 +122,12 @@ func (q *Query[E]) Limit(n int) *Filtered[E] { return q.filtered().Limit(n) }
 // Offset skips rows before returning any.
 func (q *Query[E]) Offset(n int) *Filtered[E] { return q.filtered().Offset(n) }
 
+// Select narrows the read to the given columns.
+func (q *Query[E]) Select(cols ...ColumnMeta) *Filtered[E] { return q.filtered().Select(cols...) }
+
+// Distinct drops duplicate rows from the result.
+func (q *Query[E]) Distinct() *Filtered[E] { return q.filtered().Distinct() }
+
 // clone copies the query so a builder method can narrow the copy and leave
 // the original alone.
 //
@@ -95,6 +139,12 @@ func (f *Filtered[E]) clone() *Filtered[E] {
 	out := *f
 	out.preds = append([]Predicate(nil), f.preds...)
 	out.ords = append([]Ordering(nil), f.ords...)
+	// sel is copied only when there is one, so the nil that means "every
+	// column" stays nil rather than becoming an empty slice, which means
+	// something else entirely.
+	if f.sel != nil {
+		out.sel = append([]ColumnMeta(nil), f.sel...)
+	}
 	return &out
 }
 
@@ -136,6 +186,59 @@ func (f *Filtered[E]) Offset(n int) *Filtered[E] {
 	}
 	out.offset = &n
 	return out
+}
+
+// Select narrows the read to the given columns, in the order given.
+//
+//	users, err := Users.With(db).Select(Users.ID, Users.Username).All(ctx)
+//
+// The rows still come back as *E. A field whose column was not selected keeps
+// its zero value, which is worth knowing: nothing distinguishes a name that
+// was not read from one that is genuinely empty. Where a single column is
+// what you actually want, orm.Select returns it typed and has no such
+// ambiguity.
+//
+// Selecting accumulates rather than replacing, so a projection assembled in
+// branches means what it reads as.
+func (f *Filtered[E]) Select(cols ...ColumnMeta) *Filtered[E] {
+	out := f.clone()
+	if len(cols) == 0 {
+		out.fail(fmt.Errorf("orm: table %q: Select was given no columns; "+
+			"leave it out to read every column", f.tableName()))
+		return out
+	}
+	for i, c := range cols {
+		if c == nil {
+			out.fail(fmt.Errorf("orm: table %q: Select column %d is nil", f.tableName(), i))
+			return out
+		}
+	}
+	// Appending to nil is what turns "every column" into "these", and
+	// appending to an existing selection is what makes calls accumulate.
+	out.sel = append(out.sel, cols...)
+	return out
+}
+
+// Distinct drops duplicate rows from the result.
+//
+//	countries, err := orm.Select(Users.With(db), Users.Country).Distinct().All(ctx)
+//
+// Over a whole row it rarely says much, since a table with a primary key has
+// no duplicate rows to drop. It earns its place on a projection, where the
+// columns left out are exactly what made the rows differ.
+func (f *Filtered[E]) Distinct() *Filtered[E] {
+	out := f.clone()
+	out.distinct = true
+	return out
+}
+
+// tableName is the table's name, or "" for a query with no table, so an error
+// built before ready has run does not dereference a nil.
+func (q queryState) tableName() string {
+	if q.st == nil {
+		return ""
+	}
+	return q.st.name
 }
 
 // fail records the first error a builder call hit.
@@ -181,34 +284,55 @@ func (f *Filtered[E]) compileSelect() (string, []any, error) {
 	if err := f.ready(); err != nil {
 		return "", nil, err
 	}
-	c := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
-
-	where, err := c.where(f.preds)
+	c := f.compiler()
+	list, err := c.selectList(f.columns())
 	if err != nil {
 		return "", nil, err
 	}
-	order, err := c.orderBy(f.ords)
+	sql, err := f.compileRead(c, list)
 	if err != nil {
 		return "", nil, err
 	}
-	sql := "SELECT " + c.selectList(f.st.cols) + " FROM " + c.d.QuoteIdent(f.st.name) +
-		where + order + limitOffset(f.limit, f.offset)
 	return sql, c.args.args, nil
 }
 
-// ready reports whether the query can run at all.
-func (f *Filtered[E]) ready() error {
-	if f.err != nil {
-		return f.err
+// compiler starts a compiler for this query's table.
+func (q queryState) compiler() *compiler {
+	return &compiler{d: q.db.d, args: &argBuilder{d: q.db.d}, table: q.st.name}
+}
+
+// compileRead wraps list in the clauses every read shares, so a projection, a
+// single column and a whole row differ only in what they select.
+func (q queryState) compileRead(c *compiler, list string) (string, error) {
+	where, err := c.where(q.preds)
+	if err != nil {
+		return "", err
 	}
-	if f.st == nil {
+	order, err := c.orderBy(q.ords)
+	if err != nil {
+		return "", err
+	}
+	keyword := "SELECT "
+	if q.distinct {
+		keyword = "SELECT DISTINCT "
+	}
+	return keyword + list + " FROM " + c.d.QuoteIdent(q.st.name) +
+		where + order + limitOffset(q.limit, q.offset), nil
+}
+
+// ready reports whether the query can run at all.
+func (q queryState) ready() error {
+	if q.err != nil {
+		return q.err
+	}
+	if q.st == nil {
 		return errNoEntityMapping("")
 	}
-	if f.db == nil {
-		return fmt.Errorf("orm: table %q: no database handle; pass one to With", f.st.name)
+	if q.db == nil {
+		return fmt.Errorf("orm: table %q: no database handle; pass one to With", q.st.name)
 	}
-	if f.st.fieldIdx == nil {
-		return errNoEntityMapping(f.st.name)
+	if q.st.fieldIdx == nil {
+		return errNoEntityMapping(q.st.name)
 	}
 	return nil
 }
@@ -235,10 +359,11 @@ func (f *Filtered[E]) collect(ctx context.Context, sql string, args []any) ([]*E
 	}
 	defer rows.Close()
 
+	cols := f.columns()
 	var out []*E
 	for rows.Next() {
 		e := new(E)
-		if err := scanRowInto(f.st, rows, reflect.ValueOf(e).Elem()); err != nil {
+		if err := scanRowInto(f.st, rows, reflect.ValueOf(e).Elem(), cols); err != nil {
 			return nil, err
 		}
 		if err := runHook(ctx, f.st.name, "AfterLoad", any(e), AfterLoader.AfterLoad); err != nil {
@@ -280,27 +405,46 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	if err := f.ready(); err != nil {
 		return 0, err
 	}
-	c := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
+	c := f.compiler()
 	where, err := c.where(f.preds)
 	if err != nil {
 		return 0, err
 	}
 	sql := "SELECT COUNT(*) FROM " + c.d.QuoteIdent(f.st.name) + where
 
-	rows, err := f.db.ex.Query(ctx, sql, c.args.args...)
+	if f.distinct {
+		// Counting a distinct query means counting the rows that query
+		// returns, which is a count over the read rather than over the table.
+		// The derived table is named because Postgres and MySQL both require
+		// it; leaving it out would work only where it is optional.
+		list, err := c.selectList(f.columns())
+		if err != nil {
+			return 0, err
+		}
+		sql = "SELECT COUNT(*) FROM (SELECT DISTINCT " + list + " FROM " +
+			c.d.QuoteIdent(f.st.name) + where + ") AS " + c.d.QuoteIdent("t")
+	}
+
+	return scanCount(ctx, f.db, f.st.name, sql, c.args.args)
+}
+
+// scanCount runs a statement whose one row is one number and reads it, shared
+// by counting rows and counting a single column's values.
+func scanCount(ctx context.Context, db *DB, table, sql string, args []any) (int64, error) {
+	rows, err := db.ex.Query(ctx, sql, args...)
 	if err != nil {
-		return 0, fmt.Errorf("orm: table %q: %w", f.st.name, err)
+		return 0, fmt.Errorf("orm: table %q: %w", table, err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return 0, fmt.Errorf("orm: table %q: counting: %w", f.st.name, err)
+			return 0, fmt.Errorf("orm: table %q: counting: %w", table, err)
 		}
-		return 0, fmt.Errorf("orm: table %q: COUNT returned no row", f.st.name)
+		return 0, fmt.Errorf("orm: table %q: COUNT returned no row", table)
 	}
 	var n int64
 	if err := rows.Scan(&n); err != nil {
-		return 0, fmt.Errorf("orm: table %q: scanning count: %w", f.st.name, err)
+		return 0, fmt.Errorf("orm: table %q: scanning count: %w", table, err)
 	}
 	return n, rows.Err()
 }

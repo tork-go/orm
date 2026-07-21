@@ -142,6 +142,13 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 		clause = "a Limit"
 	case f.offset != nil:
 		clause = "an Offset"
+	case f.sel != nil:
+		// Select says which columns a read returns, which is not a question a
+		// write answers: UpdateAll is told what to write by its assignments,
+		// and DeleteAll writes nothing at all.
+		clause = "a Select"
+	case f.distinct:
+		clause = "a Distinct"
 	default:
 		return nil
 	}

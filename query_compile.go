@@ -341,15 +341,20 @@ func limitOffset(limit, offset *int) string {
 	return b.String()
 }
 
-// selectList renders a table's columns in declaration order, which is the
-// order the scanner reads them back in.
+// selectList renders the columns a read covers, in the order the scanner
+// reads them back in.
 //
-// These are the statement's own columns, so unlike a caller's predicate
-// there is nothing to validate: they belong to the table by construction.
-func (c *compiler) selectList(cols []ColumnMeta) string {
+// It validates them, which it did not have to while the list was always the
+// table's own: those belong to the table by construction. A projection is a
+// caller's list, so a column from another table can reach here and has to be
+// reported rather than compiled into a reference the statement cannot resolve.
+func (c *compiler) selectList(cols []ColumnMeta) (string, error) {
 	parts := make([]string, len(cols))
 	for i, col := range cols {
+		if _, err := c.column(col); err != nil {
+			return "", err
+		}
 		parts[i] = c.d.QuoteIdent(col.Name())
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, ", "), nil
 }

@@ -58,19 +58,41 @@ ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position`
 // does not reliably preserve ordinal alignment for composite foreign
 // keys; round 1's model API only ever produces single-column foreign
 // keys, for which this is correct.
+// foreignKeyColumnsQuery reads foreign keys from pg_constraint rather than
+// from information_schema.
+//
+// information_schema.constraint_column_usage cannot express a composite
+// key: it lists the referenced columns without anything tying each one to
+// the key column it pairs with, so a two column key joins into four rows
+// and there is no way to tell which pairing was meant. pg_constraint keeps
+// conkey and confkey as ordered arrays, and unnesting them together with
+// ORDINALITY pairs them off exactly as declared.
+//
+// The referential actions come back as single characters here rather than
+// as information_schema's words, so the CASE clauses translate them and
+// parseAction keeps taking the same input either way.
 const foreignKeyColumnsQuery = `
-SELECT tc.table_name, tc.constraint_name, kcu.column_name, kcu.ordinal_position,
-       ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
-       rc.update_rule, rc.delete_rule
-FROM information_schema.table_constraints tc
-JOIN information_schema.key_column_usage kcu
-  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-JOIN information_schema.constraint_column_usage ccu
-  ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-JOIN information_schema.referential_constraints rc
-  ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
-WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public' AND tc.table_name = ANY($1)
-ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position`
+SELECT c.relname AS table_name,
+       con.conname AS constraint_name,
+       ka.attname AS column_name,
+       u.ord::int AS ordinal_position,
+       rc.relname AS referenced_table,
+       fa.attname AS referenced_column,
+       CASE con.confupdtype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+                            WHEN 'c' THEN 'CASCADE'   WHEN 'n' THEN 'SET NULL'
+                            WHEN 'd' THEN 'SET DEFAULT' END AS update_rule,
+       CASE con.confdeltype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+                            WHEN 'c' THEN 'CASCADE'   WHEN 'n' THEN 'SET NULL'
+                            WHEN 'd' THEN 'SET DEFAULT' END AS delete_rule
+FROM pg_constraint con
+JOIN pg_class c ON c.oid = con.conrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_class rc ON rc.oid = con.confrelid
+JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS u(conkey, confkey, ord) ON true
+JOIN pg_attribute ka ON ka.attrelid = con.conrelid AND ka.attnum = u.conkey
+JOIN pg_attribute fa ON fa.attrelid = con.confrelid AND fa.attnum = u.confkey
+WHERE con.contype = 'f' AND n.nspname = 'public' AND c.relname = ANY($1)
+ORDER BY c.relname, con.conname, u.ord`
 
 // indexColumnsQuery finds every plain (non-unique, non-primary-key) index
 // and its columns in order. information_schema has no view for this, so

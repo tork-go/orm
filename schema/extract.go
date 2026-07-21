@@ -105,6 +105,12 @@ func extractTable(m orm.Model) (Table, []EnumType, error) {
 		})
 	}
 
+	if fker, ok := m.(orm.ForeignKeyer); ok {
+		if err := mergeForeignKeyDefs(&table, name, fker.ForeignKeys()); err != nil {
+			return Table{}, nil, err
+		}
+	}
+
 	if indexer, ok := m.(orm.Indexer); ok {
 		if err := mergeIndexDefs(&table, name, indexer.Indexes()); err != nil {
 			return Table{}, nil, err
@@ -122,6 +128,48 @@ func extractTable(m orm.Model) (Table, []EnumType, error) {
 
 // mergeIndexDefs folds a model's optional, table-level Indexer definitions
 // into table, auto-naming any definition left unnamed.
+// mergeForeignKeyDefs folds a model's multi-column foreign keys into the
+// table. Single column keys arrive through orm.ForeignKeys instead, from
+// References on the column itself.
+func mergeForeignKeyDefs(table *Table, tableName string, defs []orm.ForeignKeyDef) error {
+	for _, d := range defs {
+		cols := make([]string, len(d.Columns()))
+		for i, c := range d.Columns() {
+			cols[i] = c.Name()
+		}
+		if len(cols) == 0 {
+			return fmt.Errorf("table %q: foreign key definition has no columns", tableName)
+		}
+		if d.ReferencedTable() == "" {
+			return fmt.Errorf("table %q: foreign key on %v references no table; "+
+				"the referenced columns must come from a model declared with "+
+				"DefineTable, or name the table with ReferencesTable",
+				tableName, cols)
+		}
+		// Order carries the pairing, so a mismatched count would silently
+		// pair the wrong columns.
+		if len(d.ReferencedColumns()) != len(cols) {
+			return fmt.Errorf("table %q: foreign key on %v references %d columns of %s, "+
+				"want %d: each column must reference exactly one",
+				tableName, cols, len(d.ReferencedColumns()), d.ReferencedTable(), len(cols))
+		}
+
+		fkName := d.Name()
+		if fkName == "" {
+			fkName = ForeignKeyConstraintName(tableName, cols)
+		}
+		table.ForeignKeys = append(table.ForeignKeys, ForeignKey{
+			Name:              fkName,
+			Columns:           cols,
+			ReferencedTable:   d.ReferencedTable(),
+			ReferencedColumns: d.ReferencedColumns(),
+			OnDelete:          convertAction(d.OnDeleteAction()),
+			OnUpdate:          convertAction(d.OnUpdateAction()),
+		})
+	}
+	return nil
+}
+
 func mergeIndexDefs(table *Table, tableName string, defs []orm.IndexDef) error {
 	for _, d := range defs {
 		cols := make([]string, len(d.Columns()))

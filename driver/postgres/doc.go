@@ -5,14 +5,12 @@
 // Query execution beyond migrations (the round 3 query API) is not built
 // yet.
 //
-// Composite foreign key introspection is a known, documented gap:
-// information_schema does not reliably preserve column-to-referenced-column
-// ordinal alignment for multi-column foreign keys. Rendering handles them,
-// since schema.ForeignKey carries both column lists, but the orm package's
-// References builder attaches a key to one column at a time and so only
-// ever produces single-column foreign keys. The gap is therefore correct
-// for every foreign key Tork ORM itself can create, and for the common
-// case of single-column foreign keys in a hand-written schema.
+// Foreign keys are read from pg_constraint rather than from
+// information_schema, which cannot express a composite key: its
+// constraint_column_usage view lists the referenced columns without tying
+// each to the key column it pairs with. pg_constraint keeps conkey and
+// confkey as ordered arrays, so unnesting them together pairs them off
+// exactly as declared.
 //
 // A column's ServerDefault is rendered into a migration's DDL but is not
 // read back by introspection, and is not compared by the diff engine.

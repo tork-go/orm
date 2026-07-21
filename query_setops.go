@@ -3,6 +3,7 @@ package orm
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // The set operations write every row a query matches, in one statement,
@@ -18,10 +19,17 @@ import (
 // vocabularies collide on exactly one word. UpdateAll here is
 // updateMany({where, data}) there.
 //
-// No hook fires. A set operation never loads a row, so there is no value to
-// call a method on: the rows it writes may not even be represented in Go.
-// That is the clearest thing the split between Query and Filtered buys, and
-// it is why the entity operations live on the other side of it.
+// No write hook fires. A set operation is given a condition rather than a
+// row, so there is no value to call BeforeUpdate on: the rows it writes may
+// not even be represented in Go. That is the clearest thing the split between
+// Query and Filtered buys, and it is why the entity operations live on the
+// other side of it.
+//
+// The Returning forms are the exception, and only for AfterLoad: they really
+// do read rows back, and a *E handed to a caller has been through AfterLoad
+// however it was read. Nothing else changes; they still cannot fire a write
+// hook, since the row they would call it on did not exist until the statement
+// that returned it had already run.
 
 // UpdateAll writes sets to every row of the table.
 //
@@ -37,6 +45,20 @@ func (q *Query[E]) UpdateAll(ctx context.Context, sets ...Assignment) (int64, er
 // first for anything else. See Filtered.DeleteAll.
 func (q *Query[E]) DeleteAll(ctx context.Context) (int64, error) {
 	return q.filtered().DeleteAll(ctx)
+}
+
+// UpdateAllReturning writes sets to every row of the table and returns them.
+//
+// It is the unfiltered form; see Filtered.UpdateAllReturning.
+func (q *Query[E]) UpdateAllReturning(ctx context.Context, sets ...Assignment) ([]*E, error) {
+	return q.filtered().UpdateAllReturning(ctx, sets...)
+}
+
+// DeleteAllReturning removes every row of the table and returns them.
+//
+// It is the unfiltered form; see Filtered.DeleteAllReturning.
+func (q *Query[E]) DeleteAllReturning(ctx context.Context) ([]*E, error) {
+	return q.filtered().DeleteAllReturning(ctx)
 }
 
 // UpdateAll writes sets to every row this query matches, in one statement,
@@ -55,12 +77,51 @@ func (q *Query[E]) DeleteAll(ctx context.Context) (int64, error) {
 // To write a batch of rows that each need different values, use UpdateMany
 // instead; this writes one set of values to many rows.
 func (f *Filtered[E]) UpdateAll(ctx context.Context, sets ...Assignment) (int64, error) {
-	if err := f.readyForSetOp("UpdateAll"); err != nil {
+	sql, args, err := f.compileUpdateAll("UpdateAll", sets)
+	if err != nil {
 		return 0, err
 	}
+	res, err := f.db.ex.Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, fmt.Errorf("orm: table %q: updating: %w", f.st.name, err)
+	}
+	return res.RowsAffected, nil
+}
+
+// UpdateAllReturning is UpdateAll, handing back the rows it wrote rather than
+// counting them.
+//
+//	users, err := Users.With(db).
+//	    Where(Users.Age.Lt(18)).
+//	    UpdateAllReturning(ctx, Users.Active.Set(false))
+//
+//	UPDATE "users" SET "active" = $1 WHERE "age" < $2
+//	    RETURNING "id", "username", "email", "age"
+//
+// The rows come back as they are after the write, which is what makes this
+// worth having over updating and then selecting: a column the database
+// computed, a trigger changed, or another transaction had a hand in is
+// readable without a second statement and without the gap between the two.
+//
+// Every column comes back, since a Select is not something a write takes; see
+// readyForSetOp.
+func (f *Filtered[E]) UpdateAllReturning(ctx context.Context, sets ...Assignment) ([]*E, error) {
+	sql, args, err := f.compileUpdateAll("UpdateAllReturning", sets)
+	if err != nil {
+		return nil, err
+	}
+	return f.returning(ctx, "UpdateAllReturning", "UpdateAll", sql, args)
+}
+
+// compileUpdateAll builds the UPDATE both spellings run, checking what only
+// a set operation can check on the way.
+func (f *Filtered[E]) compileUpdateAll(op string, sets []Assignment) (string, []any, error) {
+	if err := f.readyForSetOp(op); err != nil {
+		return "", nil, err
+	}
 	if len(sets) == 0 {
-		return 0, fmt.Errorf("orm: table %q: UpdateAll has nothing to write; "+
-			"pass at least one assignment, as Users.Active.Set(false)", f.st.name)
+		return "", nil, fmt.Errorf("orm: table %q: %s has nothing to write; "+
+			"pass at least one assignment, as Users.Active.Set(false)", f.st.name, op)
 	}
 
 	c := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
@@ -69,22 +130,17 @@ func (f *Filtered[E]) UpdateAll(ctx context.Context, sets ...Assignment) (int64,
 	// first, which is the order they appear in the statement.
 	assignments, err := c.set(sets)
 	if err != nil {
-		return 0, err
+		return "", nil, err
 	}
 	where, err := c.where(f.preds)
 	if err != nil {
-		return 0, err
+		return "", nil, err
 	}
-	if err := f.requireFilter("UpdateAll", "update", where); err != nil {
-		return 0, err
+	if err := f.requireFilter(op, "update", where); err != nil {
+		return "", nil, err
 	}
-
-	sql := "UPDATE " + c.d.QuoteIdent(f.st.name) + " SET " + assignments + where
-	res, err := f.db.ex.Exec(ctx, sql, c.args.args...)
-	if err != nil {
-		return 0, fmt.Errorf("orm: table %q: updating: %w", f.st.name, err)
-	}
-	return res.RowsAffected, nil
+	return "UPDATE " + c.d.QuoteIdent(f.st.name) + " SET " + assignments + where,
+		c.args.args, nil
 }
 
 // DeleteAll removes every row this query matches, in one statement, and
@@ -102,25 +158,72 @@ func (f *Filtered[E]) UpdateAll(ctx context.Context, sets ...Assignment) (int64,
 //
 // To remove a batch of rows already in hand, use DeleteMany.
 func (f *Filtered[E]) DeleteAll(ctx context.Context) (int64, error) {
-	if err := f.readyForSetOp("DeleteAll"); err != nil {
+	sql, args, err := f.compileDeleteAll("DeleteAll")
+	if err != nil {
 		return 0, err
+	}
+	res, err := f.db.ex.Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, fmt.Errorf("orm: table %q: deleting: %w", f.st.name, err)
+	}
+	return res.RowsAffected, nil
+}
+
+// DeleteAllReturning is DeleteAll, handing back the rows it removed rather
+// than counting them.
+//
+//	gone, err := Users.With(db).Where(Users.Draft.Eq(true)).DeleteAllReturning(ctx)
+//
+//	DELETE FROM "users" WHERE "draft" = $1
+//	    RETURNING "id", "username", "email", "age"
+//
+// This is the only way to see a row a set operation removed. Selecting the
+// rows first and then deleting them leaves a gap in which another transaction
+// can change what the second statement matches, so the two lists need not be
+// the same list; here they are the same statement.
+func (f *Filtered[E]) DeleteAllReturning(ctx context.Context) ([]*E, error) {
+	sql, args, err := f.compileDeleteAll("DeleteAllReturning")
+	if err != nil {
+		return nil, err
+	}
+	return f.returning(ctx, "DeleteAllReturning", "DeleteAll", sql, args)
+}
+
+// compileDeleteAll builds the DELETE both spellings run.
+func (f *Filtered[E]) compileDeleteAll(op string) (string, []any, error) {
+	if err := f.readyForSetOp(op); err != nil {
+		return "", nil, err
 	}
 
 	c := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
 	where, err := c.where(f.preds)
 	if err != nil {
-		return 0, err
+		return "", nil, err
 	}
-	if err := f.requireFilter("DeleteAll", "delete", where); err != nil {
-		return 0, err
+	if err := f.requireFilter(op, "delete", where); err != nil {
+		return "", nil, err
 	}
+	return "DELETE FROM " + c.d.QuoteIdent(f.st.name) + where, c.args.args, nil
+}
 
-	sql := "DELETE FROM " + c.d.QuoteIdent(f.st.name) + where
-	res, err := f.db.ex.Exec(ctx, sql, c.args.args...)
-	if err != nil {
-		return 0, fmt.Errorf("orm: table %q: deleting: %w", f.st.name, err)
+// returning appends the RETURNING clause and reads the rows back.
+//
+// plain is the counting spelling, named in the error so a caller on a driver
+// without RETURNING is pointed at the operation that does work there rather
+// than only told that this one does not.
+func (f *Filtered[E]) returning(ctx context.Context, op, plain, sql string, args []any) ([]*E, error) {
+	if !f.db.d.SupportsReturning() {
+		return nil, fmt.Errorf("orm: table %q: %s needs the database to hand back the rows "+
+			"a write touched, and this driver reports no support for that; use %s and read "+
+			"the rows in a statement of your own", f.st.name, op, plain)
 	}
-	return res.RowsAffected, nil
+	names := make([]string, len(f.st.cols))
+	for i, col := range f.st.cols {
+		names[i] = f.db.d.QuoteIdent(col.Name())
+	}
+	// collect is the ordinary row scanner, so a document column is decoded and
+	// AfterLoad runs exactly as they do for a read.
+	return f.collect(ctx, sql+" RETURNING "+strings.Join(names, ", "), args)
 }
 
 // readyForSetOp is ready, plus the clauses a set operation cannot carry.

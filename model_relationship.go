@@ -82,6 +82,11 @@ type relation struct {
 	owner  *tableState
 	entity reflect.Type
 
+	// field is the marker's own name on the model, which is also the name of
+	// the row type's field that loaded rows go into: UserModel.Posts fills
+	// User.Posts, the same convention a column's name matching a field uses.
+	field string
+
 	once     sync.Once
 	resolved RelationInfo
 	err      error
@@ -90,6 +95,15 @@ type relation struct {
 	// Through for a many to many.
 	localJoin   ColumnMeta
 	foreignJoin ColumnMeta
+
+	// targetOnce and target resolve where loaded rows go on the row type.
+	// Late, like everything else here, and for a further reason: a marker is
+	// worth declaring for what Relation reports even when the row type
+	// carries no field to load into, so a missing one is only a problem for
+	// a caller who actually asks for the rows.
+	targetOnce sync.Once
+	target     relationTarget
+	targetErr  error
 }
 
 // namedKey returns the key the owning model's Relations method names for
@@ -291,8 +305,46 @@ func columnNamed(st *tableState, name string) ColumnMeta {
 // relationBinder is how DefineTable attaches a marker to its table without
 // knowing which of the four it holds.
 type relationBinder interface {
-	bindRelation(owner *tableState)
+	bindRelation(owner *tableState, field string)
 	relationOf() *relation
+}
+
+// relationMarker is everything the four markers share: the relation itself,
+// and every method that only needs it.
+//
+// The methods take a value receiver, which is what lets a marker be passed to
+// Load without an ampersand. A marker holds its relation behind a pointer, so
+// a copy is the same relationship rather than a detached one; only binding
+// writes to the marker, and that keeps its pointer receiver.
+type relationMarker struct{ rel *relation }
+
+func (m relationMarker) relationOf() *relation { return m.rel }
+
+// Relation resolves the relationship and reports the columns a join matches
+// on.
+func (m relationMarker) Relation() (RelationInfo, error) { return m.rel.info() }
+
+// loadSpec makes a bare marker usable wherever a narrowed one is.
+func (m relationMarker) loadSpec() loadSpec { return loadSpec{rel: m.rel} }
+
+// Where narrows which related rows are loaded.
+func (m relationMarker) Where(preds ...Predicate) Preload {
+	return Preload{spec: m.loadSpec()}.Where(preds...)
+}
+
+// OrderBy sorts the related rows.
+func (m relationMarker) OrderBy(ords ...Ordering) Preload {
+	return Preload{spec: m.loadSpec()}.OrderBy(ords...)
+}
+
+// Limit caps how many related rows each row gets.
+func (m relationMarker) Limit(n int) Preload {
+	return Preload{spec: m.loadSpec()}.Limit(n)
+}
+
+// Load loads a relationship of the related rows in turn.
+func (m relationMarker) Load(rels ...Loadable) Preload {
+	return Preload{spec: m.loadSpec()}.Load(rels...)
 }
 
 // HasMany is the many side of a one to many. The foreign key lives on the
@@ -300,42 +352,27 @@ type relationBinder interface {
 //
 // It is legal left uninitialised in a model literal, which is what lets a
 // model mention a table declared after it.
-type HasMany[E any] struct{ rel *relation }
+type HasMany[E any] struct{ relationMarker }
 
-func (r *HasMany[E]) bindRelation(owner *tableState) {
-	r.rel = &relation{kind: KindHasMany, owner: owner, entity: reflect.TypeFor[E]()}
+func (r *HasMany[E]) bindRelation(owner *tableState, field string) {
+	r.rel = &relation{kind: KindHasMany, owner: owner, entity: reflect.TypeFor[E](), field: field}
 }
-func (r *HasMany[E]) relationOf() *relation { return r.rel }
-
-// Relation resolves the relationship and reports the columns a join
-// matches on.
-func (r *HasMany[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 
 // HasOne is the non-owning side of a one to one. The foreign key lives on
 // the related table.
-type HasOne[E any] struct{ rel *relation }
+type HasOne[E any] struct{ relationMarker }
 
-func (r *HasOne[E]) bindRelation(owner *tableState) {
-	r.rel = &relation{kind: KindHasOne, owner: owner, entity: reflect.TypeFor[E]()}
+func (r *HasOne[E]) bindRelation(owner *tableState, field string) {
+	r.rel = &relation{kind: KindHasOne, owner: owner, entity: reflect.TypeFor[E](), field: field}
 }
-func (r *HasOne[E]) relationOf() *relation { return r.rel }
-
-// Relation resolves the relationship and reports the columns a join
-// matches on.
-func (r *HasOne[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 
 // BelongsTo is the owning side of a one to many or one to one. The foreign
 // key lives on the declaring table.
-type BelongsTo[E any] struct{ rel *relation }
+type BelongsTo[E any] struct{ relationMarker }
 
-func (r *BelongsTo[E]) bindRelation(owner *tableState) {
-	r.rel = &relation{kind: KindBelongsTo, owner: owner, entity: reflect.TypeFor[E]()}
+func (r *BelongsTo[E]) bindRelation(owner *tableState, field string) {
+	r.rel = &relation{kind: KindBelongsTo, owner: owner, entity: reflect.TypeFor[E](), field: field}
 }
-func (r *BelongsTo[E]) relationOf() *relation { return r.rel }
-
-// Relation resolves the relationship and reports the columns a join
-// matches on.
-func (r *BelongsTo[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 
 // ManyToMany is either side of a many to many, through a join table.
 //
@@ -344,15 +381,11 @@ func (r *BelongsTo[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 // schema imply a particular join table. Name the join table's two keys
 // with Through in a Relations method, which settles the join table as
 // well, since a column knows the table it belongs to.
-type ManyToMany[E any] struct{ rel *relation }
+type ManyToMany[E any] struct{ relationMarker }
 
-func (r *ManyToMany[E]) bindRelation(owner *tableState) {
-	r.rel = &relation{kind: KindManyToMany, owner: owner, entity: reflect.TypeFor[E]()}
+func (r *ManyToMany[E]) bindRelation(owner *tableState, field string) {
+	r.rel = &relation{kind: KindManyToMany, owner: owner, entity: reflect.TypeFor[E](), field: field}
 }
-func (r *ManyToMany[E]) relationOf() *relation { return r.rel }
-
-// Relation reports that many to many resolution is not built yet.
-func (r *ManyToMany[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 
 // RelationDef names the keys a relationship uses.
 type RelationDef struct {

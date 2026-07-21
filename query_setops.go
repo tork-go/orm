@@ -149,6 +149,9 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 		clause = "a Select"
 	case f.distinct:
 		clause = "a Distinct"
+	case len(f.loads) > 0:
+		// Loading fills a field of rows that were read. A write reads none.
+		clause = "a Load"
 	default:
 		return nil
 	}

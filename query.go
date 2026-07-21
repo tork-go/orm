@@ -69,6 +69,10 @@ type queryState struct {
 	// distinct drops duplicate rows.
 	distinct bool
 
+	// loads are the relationships to fetch alongside the rows, each in a
+	// statement of its own once the rows are in hand. See query_load.go.
+	loads []loadSpec
+
 	// whereCalled records that Where was called at all, however many
 	// conditions it went on to contribute. Reading rows does not care, but
 	// UpdateAll and DeleteAll do: a Where that narrowed nothing is a
@@ -145,6 +149,7 @@ func (f *Filtered[E]) clone() *Filtered[E] {
 	if f.sel != nil {
 		out.sel = append([]ColumnMeta(nil), f.sel...)
 	}
+	out.loads = append([]loadSpec(nil), f.loads...)
 	return &out
 }
 
@@ -343,7 +348,57 @@ func (f *Filtered[E]) All(ctx context.Context) ([]*E, error) {
 	if err != nil {
 		return nil, err
 	}
-	return f.collect(ctx, sql, args)
+	rows, err := f.collect(ctx, sql, args)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.load(ctx, rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// load fetches whatever Load asked for, once the rows it fills are in hand.
+func (f *Filtered[E]) load(ctx context.Context, rows []*E) error {
+	if len(f.loads) == 0 || len(rows) == 0 {
+		return nil
+	}
+	if err := f.keysWereRead(); err != nil {
+		return err
+	}
+	parents := make([]reflect.Value, len(rows))
+	for i, r := range rows {
+		parents[i] = reflect.ValueOf(r).Elem()
+	}
+	return runLoads(ctx, f.db, f.st, parents, f.loads)
+}
+
+// keysWereRead rejects a load whose matching column the query did not read.
+//
+// Related rows are matched to their parent by a column of the parent, so a
+// projection that leaves it out gives every parent the same zero value to
+// match on. The rows would arrive somewhere plausible and wrong, which is
+// worth a statement that never runs.
+func (f *Filtered[E]) keysWereRead() error {
+	if f.sel == nil {
+		return nil
+	}
+	read := make(map[string]bool, len(f.sel))
+	for _, c := range f.sel {
+		read[c.Name()] = true
+	}
+	for _, spec := range f.loads {
+		info, err := spec.rel.info()
+		if err != nil {
+			return err
+		}
+		if !read[info.LocalColumn.Name()] {
+			return fmt.Errorf("orm: table %q: loading %s needs column %q, which this "+
+				"query does not select; add it to the Select, or drop the Select",
+				f.st.name, spec.rel.field, info.LocalColumn.Name())
+		}
+	}
+	return nil
 }
 
 // collect runs sql and scans every row.

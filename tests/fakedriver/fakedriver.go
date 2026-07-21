@@ -24,7 +24,7 @@ type Conn struct {
 	execArgs   [][]any
 	queryCalls []string
 	queryArgs  [][]any
-	queued     [][][]any
+	queued     []queuedRows
 	failOn     map[string]bool
 	txs        []*Tx
 	FailBegin  bool // if true, Begin returns an error, simulating a dropped connection
@@ -69,7 +69,26 @@ func (c *Conn) ExecCalls() []string {
 func (c *Conn) QueueRows(rows ...[]any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.queued = append(c.queued, rows)
+	c.queued = append(c.queued, queuedRows{rows: rows})
+}
+
+// QueueFailingRows queues a result set that serves its rows and then reports
+// err from Err, the way a real driver reports a connection lost partway
+// through iterating rather than from Next.
+//
+// It is per result set, unlike RowsErr, so a test can let a query succeed and
+// have the one after it fail; that is the only way to reach the failure
+// handling of a statement that runs on another's behalf.
+func (c *Conn) QueueFailingRows(err error, rows ...[]any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.queued = append(c.queued, queuedRows{rows: rows, err: err})
+}
+
+// queuedRows is one result set and the error its Err reports.
+type queuedRows struct {
+	rows [][]any
+	err  error
 }
 
 // QueryCalls returns every SQL string passed to Query, in call order.
@@ -104,7 +123,11 @@ func (c *Conn) Query(_ context.Context, sql string, args ...any) (driver.Rows, e
 	}
 	next := c.queued[0]
 	c.queued = c.queued[1:]
-	return &Rows{rows: next, err: c.RowsErr}, nil
+	err := c.RowsErr
+	if next.err != nil {
+		err = next.err
+	}
+	return &Rows{rows: next.rows, err: err}, nil
 }
 
 func (c *Conn) QueryRow(_ context.Context, sql string, args ...any) driver.Row {
@@ -112,10 +135,10 @@ func (c *Conn) QueryRow(_ context.Context, sql string, args ...any) driver.Row {
 	defer c.mu.Unlock()
 	c.queryCalls = append(c.queryCalls, sql)
 	c.queryArgs = append(c.queryArgs, args)
-	if len(c.queued) == 0 || len(c.queued[0]) == 0 {
+	if len(c.queued) == 0 || len(c.queued[0].rows) == 0 {
 		return &Row{}
 	}
-	next := c.queued[0][0]
+	next := c.queued[0].rows[0]
 	c.queued = c.queued[1:]
 	return &Row{values: next}
 }

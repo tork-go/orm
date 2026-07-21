@@ -379,7 +379,10 @@ func bindRelations(table string, m Model, st *tableState) error {
 			continue
 		}
 		if b, ok := fv.Addr().Interface().(relationBinder); ok {
-			b.bindRelation(st)
+			// The field's own name travels with the relationship: it is where
+			// loaded rows go on the row type, by the same convention that
+			// matches a column to a field.
+			b.bindRelation(st, t.Field(i).Name)
 		}
 	}
 

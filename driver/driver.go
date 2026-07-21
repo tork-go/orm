@@ -90,6 +90,9 @@ type Dialect interface {
 	RenderDropColumn(table, column string) []string
 	RenderAlterColumnType(table string, col schema.Column) ([]string, error)
 	RenderAlterColumnNullability(table, column string, notNull bool) []string
+	// RenderAlterColumnDefault sets a column's DEFAULT clause, or drops it
+	// when def is empty.
+	RenderAlterColumnDefault(table, column, def string) []string
 	RenderAddPrimaryKey(table string, pk schema.PrimaryKey) []string
 	RenderDropPrimaryKey(table, name string) []string
 	RenderAddUnique(table string, u schema.UniqueConstraint) []string

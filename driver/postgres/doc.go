@@ -12,12 +12,14 @@
 // confkey as ordered arrays, so unnesting them together pairs them off
 // exactly as declared.
 //
-// A column's ServerDefault is rendered into a migration's DDL but is not
-// read back by introspection, and is not compared by the diff engine.
-// Introspecting it would need reading pg_attrdef, and comparing it would
-// make every makemigrations run after the first propose the same "default
-// changed" operation forever, since introspection would always report an
-// empty default. This is a known, accepted limitation.
+// A column's ServerDefault is read back exactly as Postgres prints it,
+// which is not always how it was written: a literal gains a cast and a
+// call gains parentheses, so 'draft' comes back as 'draft'::text and
+// now()::text as (now())::text. Reporting that faithfully is deliberate,
+// since introspection says what the database contains; deciding that it
+// matches what a model declared is the diff engine's job. An identity
+// column reports no default, its sequence being an artefact of how
+// identity is implemented rather than anything declared.
 //
 // Expression indexes and partial indexes are excluded from introspection,
 // not misrepresented: schema.Index has no way to express either an

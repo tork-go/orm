@@ -21,6 +21,15 @@ type AlterColumnType struct {
 	Table  string
 	Column schema.Column
 }
+
+// AlterColumnDefault sets or drops a column's DEFAULT clause. An empty
+// Default drops it.
+type AlterColumnDefault struct {
+	Table   string
+	Column  string
+	Default string
+}
+
 type AlterColumnNullability struct {
 	Table, Column string
 	NotNull       bool
@@ -63,6 +72,7 @@ func (DropTable) isOperation()              {}
 func (AddColumn) isOperation()              {}
 func (DropColumn) isOperation()             {}
 func (AlterColumnType) isOperation()        {}
+func (AlterColumnDefault) isOperation()     {}
 func (AlterColumnNullability) isOperation() {}
 func (AddPrimaryKey) isOperation()          {}
 func (DropPrimaryKey) isOperation()         {}

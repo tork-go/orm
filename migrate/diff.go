@@ -50,7 +50,7 @@ func Diff(current, desired schema.Schema) ([]Operation, error) {
 
 	var (
 		dropFKs, dropUniques, dropChecks, dropIndexes, dropPKs, dropCols, dropTables []Operation
-		createTables, addCols, alterTypes, alterNulls                                []Operation
+		createTables, addCols, alterTypes, alterNulls, alterDefaults                 []Operation
 		addPKs, addIndexes, addChecks, addUniques, addFKs                            []Operation
 	)
 
@@ -73,6 +73,7 @@ func Diff(current, desired schema.Schema) ([]Operation, error) {
 		addCols = append(addCols, td.addCols...)
 		alterTypes = append(alterTypes, td.alterTypes...)
 		alterNulls = append(alterNulls, td.alterNulls...)
+		alterDefaults = append(alterDefaults, td.alterDefaults...)
 		addPKs = append(addPKs, td.addPKs...)
 		addIndexes = append(addIndexes, td.addIndexes...)
 		addChecks = append(addChecks, td.addChecks...)
@@ -108,6 +109,7 @@ func Diff(current, desired schema.Schema) ([]Operation, error) {
 		dropFKs, dropUniques, dropChecks, dropIndexes, dropPKs, dropCols, dropTables, dropEnumTypes,
 		// add side: exact reverse of the drop side
 		createEnumTypes, addEnumValues, createTables, addCols, alterTypes, alterNulls,
+		alterDefaults,
 		addPKs, addIndexes, addChecks, addUniques, addFKs,
 	}
 	var ops []Operation
@@ -215,7 +217,7 @@ func isSubsequence(cur, des []string) bool {
 
 type tableDiff struct {
 	dropFKs, dropUniques, dropChecks, dropIndexes, dropPKs, dropCols []Operation
-	addCols, alterTypes, alterNulls                                  []Operation
+	addCols, alterTypes, alterNulls, alterDefaults                   []Operation
 	addPKs, addIndexes, addChecks, addUniques, addFKs                []Operation
 }
 
@@ -241,6 +243,11 @@ func diffTable(name string, cur, des schema.Table) tableDiff {
 		}
 		if cc.NotNull != dc.NotNull {
 			td.alterNulls = append(td.alterNulls, AlterColumnNullability{Table: name, Column: dc.Name, NotNull: dc.NotNull})
+		}
+		if !defaultsEquivalent(cc.ServerDefault, dc.ServerDefault) {
+			td.alterDefaults = append(td.alterDefaults, AlterColumnDefault{
+				Table: name, Column: dc.Name, Default: dc.ServerDefault,
+			})
 		}
 	}
 
@@ -458,4 +465,71 @@ func sortOps(ops []Operation) {
 		}
 		return si < sj
 	})
+}
+
+// defaultsEquivalent reports whether two DEFAULT expressions mean the same
+// thing, one as a database reported it and one as a model declared it.
+//
+// It exists for the same reason normalizeExpr does for CHECK constraints:
+// a database re-prints an expression from its parsed form rather than
+// storing the text given, so comparing the two literally would have every
+// migration after the first propose changing a default back to what it
+// already is. That is why defaults went uncompared until now.
+//
+// Two differences matter in practice, and Postgres applies both while
+// printing: a cast added to the whole expression, so 'draft' comes back as
+// 'draft'::text, and parentheses around a call, so now()::text comes back
+// as (now())::text. Both sides are normalised rather than just the
+// introspected one, which is what a first attempt got wrong: a default
+// declared as now()::text already carries a cast, and stripping it from
+// one side only left the two permanently unequal.
+//
+// Anything more involved is compared as written. A database's printed form
+// is stable across runs, so such a default still compares equal to itself,
+// even where it does not compare equal to the way it was first spelled.
+func defaultsEquivalent(a, b string) bool {
+	return normalizeDefault(a) == normalizeDefault(b)
+}
+
+// normalizeDefault strips a whole-expression cast and any parentheses
+// wrapping what is left, which between them account for how Postgres
+// re-prints a default: now()::text comes back as (now())::text, and
+// 'draft' as 'draft'::text.
+func normalizeDefault(s string) string {
+	return unwrapOuterParens(stripTrailingCast(s))
+}
+
+// stripTrailingCast removes a `::type` suffix applied to a whole
+// expression, leaving one inside a literal alone.
+func stripTrailingCast(s string) string {
+	s = strings.TrimSpace(s)
+	i := strings.LastIndex(s, "::")
+	if i <= 0 || !castBalanced(s[:i]) {
+		return s
+	}
+	// A cast names a type, so anything with a paren or quote after the ::
+	// is not one.
+	if rest := s[i+2:]; rest == "" || strings.ContainsAny(rest, "()'") {
+		return s
+	}
+	return strings.TrimSpace(s[:i])
+}
+
+// castBalanced reports whether s leaves no parenthesis or quote open,
+// which is what makes a following :: a cast of the whole expression rather
+// than part of a literal.
+func castBalanced(s string) bool {
+	depth, inQuote := 0, false
+	for _, r := range s {
+		switch {
+		case r == '\'':
+			inQuote = !inQuote
+		case inQuote:
+		case r == '(':
+			depth++
+		case r == ')':
+			depth--
+		}
+	}
+	return depth == 0 && !inQuote
 }

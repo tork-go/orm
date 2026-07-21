@@ -126,6 +126,17 @@ func (Dialect) RenderAlterColumnType(table string, col schema.Column) ([]string,
 	return []string{sql}, nil
 }
 
+// RenderAlterColumnDefault sets a column's DEFAULT clause, or drops it
+// when def is empty.
+func (Dialect) RenderAlterColumnDefault(table, column, def string) []string {
+	if def == "" {
+		return []string{fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT",
+			quoteIdent(table), quoteIdent(column))}
+	}
+	return []string{fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s",
+		quoteIdent(table), quoteIdent(column), def)}
+}
+
 // RenderAlterColumnNullability renders an ALTER TABLE ... ALTER COLUMN ...
 // SET/DROP NOT NULL statement.
 func (Dialect) RenderAlterColumnNullability(table, column string, notNull bool) []string {

@@ -344,6 +344,13 @@ func (d *Dialect) RenderAlterColumnType(table string, col schema.Column) ([]stri
 	}
 	return []string{"ALTER COLUMN TYPE " + table + "." + col.Name}, nil
 }
+func (d *Dialect) RenderAlterColumnDefault(table, column, def string) []string {
+	if def == "" {
+		return []string{"ALTER " + table + " DROP DEFAULT " + column}
+	}
+	return []string{"ALTER " + table + " SET DEFAULT " + column + " " + def}
+}
+
 func (d *Dialect) RenderAlterColumnNullability(table, column string, notNull bool) []string {
 	return []string{fmt.Sprintf("ALTER COLUMN NULLABILITY %s.%s %v", table, column, notNull)}
 }

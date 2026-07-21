@@ -3,15 +3,24 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/tork-go/orm/driver"
 	"github.com/tork-go/orm/schema"
 )
 
+// columnsQuery reads each column's type, nullability, and default.
+//
+// column_default is deliberately blanked for an identity column. Postgres
+// reports one as having a nextval default over its own sequence, which is
+// an artefact of how identity is implemented rather than a default anyone
+// declared, and comparing it would have every migration after the first
+// propose changing it back.
 const columnsQuery = `
 SELECT c.table_name, c.column_name, c.data_type, c.udt_name,
        c.character_maximum_length, c.numeric_precision, c.numeric_scale,
-       c.is_nullable
+       c.is_nullable,
+       CASE WHEN c.is_identity = 'YES' THEN NULL ELSE c.column_default END AS column_default
 FROM information_schema.columns c
 WHERE c.table_schema = 'public' AND c.table_name = ANY($1)
 ORDER BY c.table_name, c.ordinal_position`
@@ -188,6 +197,7 @@ type rawColumnRow struct {
 	ColumnName string
 	Raw        rawColumnType
 	IsNullable string
+	Default    *string
 }
 
 // introspectColumns reads every column across tables in three passes:
@@ -208,7 +218,8 @@ func introspectColumns(ctx context.Context, conn driver.Conn, tables []string, t
 	for rows.Next() {
 		var r rawColumnRow
 		if err := rows.Scan(&r.TableName, &r.ColumnName, &r.Raw.DataType, &r.Raw.UDTName,
-			&r.Raw.CharMaxLen, &r.Raw.NumericPrecision, &r.Raw.NumericScale, &r.IsNullable); err != nil {
+			&r.Raw.CharMaxLen, &r.Raw.NumericPrecision, &r.Raw.NumericScale, &r.IsNullable,
+			&r.Default); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("postgres: scanning column: %w", err)
 		}
@@ -242,9 +253,10 @@ func introspectColumns(ctx context.Context, conn driver.Conn, tables []string, t
 		}
 		t := table(r.TableName)
 		t.Columns = append(t.Columns, schema.Column{
-			Name:    r.ColumnName,
-			Type:    colType,
-			NotNull: r.IsNullable == "NO",
+			Name:          r.ColumnName,
+			Type:          colType,
+			NotNull:       r.IsNullable == "NO",
+			ServerDefault: defaultOf(r.Default),
 		})
 	}
 	return enumTypes, nil
@@ -483,4 +495,19 @@ func introspectForeignKeys(ctx context.Context, conn driver.Conn, tables []strin
 		t.ForeignKeys[idx].ReferencedColumns = append(t.ForeignKeys[idx].ReferencedColumns, refColumn)
 	}
 	return rows.Err()
+}
+
+// defaultOf reports the column's default exactly as Postgres prints it.
+//
+// Postgres re-prints a default from its parsed form rather than storing
+// the text given, and adds a cast to the column's type while doing so, so
+// 'draft' comes back as 'draft'::text. Reporting that faithfully is right:
+// introspection says what the database contains, and deciding whether it
+// matches what a model declared is the diff engine's job, which has to
+// normalise the declared side to the same shape anyway.
+func defaultOf(d *string) string {
+	if d == nil {
+		return ""
+	}
+	return strings.TrimSpace(*d)
 }

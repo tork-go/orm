@@ -816,3 +816,85 @@ func typeName(op migrate.Operation) string {
 		return "unknown"
 	}
 }
+
+// A default a database re-printed has to compare equal to the one a model
+// declared, or every migration after the first proposes changing it back.
+// These are the exact forms Postgres produces.
+func TestDiff_ServerDefaultEquivalence(t *testing.T) {
+	col := func(def string) schema.Table {
+		return schema.Table{
+			Name: "t",
+			Columns: []schema.Column{{
+				Name:          "c",
+				Type:          schema.ColumnType{Kind: schema.KindText},
+				ServerDefault: def,
+			}},
+		}
+	}
+
+	same := []struct{ introspected, declared string }{
+		{"'draft'::text", "'draft'"},       // a literal gains a cast
+		{"(now())::text", "now()::text"},   // a call gains parentheses
+		{"0", "0"},                         // a number is printed bare
+		{"true", "true"},                   //
+		{"", ""},                           // no default either side
+		{"(now())::text", "(now())::text"}, // already identical
+	}
+	for _, tt := range same {
+		ops, err := migrate.Diff(
+			schema.Schema{Tables: []schema.Table{col(tt.introspected)}},
+			schema.Schema{Tables: []schema.Table{col(tt.declared)}},
+		)
+		if err != nil {
+			t.Fatalf("Diff(%q, %q) error = %v", tt.introspected, tt.declared, err)
+		}
+		if len(ops) != 0 {
+			t.Errorf("Diff(%q, %q) produced %d operations, want none", tt.introspected, tt.declared, len(ops))
+		}
+	}
+
+	differ := []struct{ introspected, declared string }{
+		{"'draft'::text", "'published'"}, // a genuinely changed default
+		{"", "'draft'"},                  // one added
+		{"'draft'::text", ""},            // one removed
+	}
+	for _, tt := range differ {
+		ops, err := migrate.Diff(
+			schema.Schema{Tables: []schema.Table{col(tt.introspected)}},
+			schema.Schema{Tables: []schema.Table{col(tt.declared)}},
+		)
+		if err != nil {
+			t.Fatalf("Diff(%q, %q) error = %v", tt.introspected, tt.declared, err)
+		}
+		if len(ops) != 1 {
+			t.Fatalf("Diff(%q, %q) produced %d operations, want 1", tt.introspected, tt.declared, len(ops))
+		}
+		op, ok := ops[0].(migrate.AlterColumnDefault)
+		if !ok {
+			t.Fatalf("got %T, want migrate.AlterColumnDefault", ops[0])
+		}
+		if op.Default != tt.declared {
+			t.Errorf("AlterColumnDefault.Default = %q, want %q", op.Default, tt.declared)
+		}
+	}
+}
+
+// A :: inside a literal is not a cast of the expression.
+func TestDiff_ServerDefaultCastInsideLiteral(t *testing.T) {
+	col := func(def string) schema.Table {
+		return schema.Table{
+			Name:    "t",
+			Columns: []schema.Column{{Name: "c", Type: schema.ColumnType{Kind: schema.KindText}, ServerDefault: def}},
+		}
+	}
+	ops, err := migrate.Diff(
+		schema.Schema{Tables: []schema.Table{col(`'a::b'`)}},
+		schema.Schema{Tables: []schema.Table{col(`'a::c'`)}},
+	)
+	if err != nil {
+		t.Fatalf("Diff error = %v", err)
+	}
+	if len(ops) != 1 {
+		t.Errorf("two different literals produced %d operations, want 1: the :: inside them is not a cast", len(ops))
+	}
+}

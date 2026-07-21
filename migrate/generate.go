@@ -45,6 +45,8 @@ func renderOp(dialect driver.Dialect, op Operation) ([]string, error) {
 		return dialect.RenderDropColumn(o.Table, o.Column), nil
 	case AlterColumnType:
 		return dialect.RenderAlterColumnType(o.Table, o.Column)
+	case AlterColumnDefault:
+		return dialect.RenderAlterColumnDefault(o.Table, o.Column, o.Default), nil
 	case AlterColumnNullability:
 		return dialect.RenderAlterColumnNullability(o.Table, o.Column, o.NotNull), nil
 	case AddPrimaryKey:

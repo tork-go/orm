@@ -344,7 +344,7 @@ type allBuilderModel struct {
 	Status          *orm.EnumColumn
 	NullableStatus  *orm.NullableEnumColumn
 	Prefs           *orm.JSONColumn[map[string]string]
-	Tags            *orm.ArrayColumn[string]
+	Tags            *orm.StringArrayColumn
 }
 
 // Every builder method, exercised through a table that resolves cleanly.
@@ -378,11 +378,11 @@ func TestTableBuilder_EveryColumnKind(t *testing.T) {
 				NullableUUID:    b.NullableUUID("nullable_uuid"),
 				Status:          b.Enum("status", "status_kind", "on", "off"),
 				NullableStatus:  b.NullableEnum("nullable_status", "status_kind", "on", "off"),
-				// JSON and array columns take a type parameter, so they are
-				// built with the package-level constructors rather than a
-				// builder method. DefineTable binds them all the same.
+				Tags:            b.StringArray("tags"),
+				// A JSON column takes a type parameter, so it is built with
+				// the package level constructor rather than a builder
+				// method. DefineTable binds it the same either way.
 				Prefs: orm.NewJSONColumn[map[string]string]("prefs"),
-				Tags:  orm.NewArrayColumn[string]("tags"),
 			}
 		})
 

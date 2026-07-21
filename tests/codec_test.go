@@ -25,7 +25,7 @@ func TestValueCodec_SatisfiedThroughColumnMeta(t *testing.T) {
 		orm.NewJSONColumn[prefs]("j"),
 		orm.NewNullableJSONColumn[prefs]("nj"),
 		orm.NewEnumColumn("e", "t", "a"),
-		orm.NewArrayColumn[string]("a"),
+		orm.NewStringArrayColumn("a"),
 		orm.NewUUIDColumn("u"),
 		orm.NewColumn[int]("plain"),
 	}

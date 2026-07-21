@@ -34,9 +34,9 @@ type typedKindsModel struct {
 	Enum        *orm.EnumColumn
 	JSONB       *orm.JSONColumn[prefsDoc]
 	JSON        *orm.JSONColumn[prefsDoc]
-	TextArray   *orm.ArrayColumn[string]
-	VarcharArr  *orm.ArrayColumn[string]
-	IntArray    *orm.ArrayColumn[int]
+	TextArray   *orm.StringArrayColumn
+	VarcharArr  *orm.StringArrayColumn
+	IntArray    *orm.IntArrayColumn
 	NullableInt *orm.NullableIntColumn
 }
 
@@ -58,9 +58,9 @@ func newTypedKindsModel() *typedKindsModel {
 		Enum:        orm.NewEnumColumn("enum", "order_status", "pending", "done"),
 		JSONB:       orm.NewJSONColumn[prefsDoc]("jsonb"),
 		JSON:        orm.NewJSONColumn[prefsDoc]("json").JSON(),
-		TextArray:   orm.NewArrayColumn[string]("text_array"),
-		VarcharArr:  orm.NewArrayColumn[string]("varchar_arr").MaxLen(20),
-		IntArray:    orm.NewArrayColumn[int]("int_array"),
+		TextArray:   orm.NewStringArrayColumn("text_array"),
+		VarcharArr:  orm.NewStringArrayColumn("varchar_arr").MaxLen(20),
+		IntArray:    orm.NewIntArrayColumn("int_array"),
 		NullableInt: orm.NewNullableIntColumn("nullable_int"),
 	}
 }
@@ -171,5 +171,84 @@ func TestExtractSchema_TypedEnumRegistersType(t *testing.T) {
 		if got.Values[i] != v {
 			t.Errorf("EnumTypes[0].Values[%d] = %q, want %q", i, got.Values[i], v)
 		}
+	}
+}
+
+// Each array kind is its own type, so the element builders land only where
+// they mean something. These check the element kind reaches the schema.
+type arrayKindsModel struct {
+	orm.Table[orm.NoEntity]
+	Bools    *orm.BoolArrayColumn
+	Ints     *orm.IntArrayColumn
+	BigInts  *orm.BigIntArrayColumn
+	Doubles  *orm.DoubleArrayColumn
+	Strings  *orm.StringArrayColumn
+	Varchars *orm.StringArrayColumn
+	Decimals *orm.DecimalArrayColumn
+	Times    *orm.TimeArrayColumn
+	UUIDs    *orm.UUIDArrayColumn
+	Nullable *orm.NullableStringArrayColumn
+}
+
+func TestExtractSchema_ArrayColumnKinds(t *testing.T) {
+	m := &arrayKindsModel{
+		Table:    orm.NewTable[orm.NoEntity]("array_kinds"),
+		Bools:    orm.NewBoolArrayColumn("bools"),
+		Ints:     orm.NewIntArrayColumn("ints"),
+		BigInts:  orm.NewBigIntArrayColumn("big_ints"),
+		Doubles:  orm.NewDoubleArrayColumn("doubles"),
+		Strings:  orm.NewStringArrayColumn("strings"),
+		Varchars: orm.NewStringArrayColumn("varchars").MaxLen(20),
+		Decimals: orm.NewDecimalArrayColumn("decimals").Numeric(10, 2),
+		Times:    orm.NewTimeArrayColumn("times"),
+		UUIDs:    orm.NewUUIDArrayColumn("uuids"),
+		Nullable: orm.NewNullableStringArrayColumn("nullable"),
+	}
+
+	s, err := schema.ExtractSchema(m)
+	if err != nil {
+		t.Fatalf("ExtractSchema() error = %v", err)
+	}
+	byName := map[string]schema.Column{}
+	for _, c := range s.Tables[0].Columns {
+		byName[c.Name] = c
+	}
+
+	tests := []struct {
+		column string
+		elem   schema.ColumnType
+	}{
+		{"bools", schema.ColumnType{Kind: schema.KindBoolean}},
+		{"ints", schema.ColumnType{Kind: schema.KindInteger}},
+		{"big_ints", schema.ColumnType{Kind: schema.KindBigInteger}},
+		{"doubles", schema.ColumnType{Kind: schema.KindDouble}},
+		{"strings", schema.ColumnType{Kind: schema.KindText}},
+		// MaxLen and Numeric size the element, not the array.
+		{"varchars", schema.ColumnType{Kind: schema.KindVarchar, Length: 20}},
+		{"decimals", schema.ColumnType{Kind: schema.KindNumeric, Precision: 10, Scale: 2}},
+		{"times", schema.ColumnType{Kind: schema.KindTimestamp}},
+		{"uuids", schema.ColumnType{Kind: schema.KindUUID}},
+		{"nullable", schema.ColumnType{Kind: schema.KindText}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.column, func(t *testing.T) {
+			got, ok := byName[tt.column]
+			if !ok {
+				t.Fatalf("column %q missing", tt.column)
+			}
+			if got.Type.Kind != schema.KindArray {
+				t.Fatalf("Kind = %v, want KindArray", got.Type.Kind)
+			}
+			if got.Type.Elem == nil || !got.Type.Elem.Equal(tt.elem) {
+				t.Errorf("element = %+v, want %+v", got.Type.Elem, tt.elem)
+			}
+		})
+	}
+
+	if byName["nullable"].NotNull {
+		t.Error("nullable array is NOT NULL, want nullable")
+	}
+	if !byName["strings"].NotNull {
+		t.Error("strings array is nullable, want NOT NULL")
 	}
 }

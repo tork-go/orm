@@ -56,7 +56,7 @@ type BookModel struct {
 	AuthorID      *orm.IntColumn
 	Pages         *orm.IntColumn
 	Status        *orm.EnumColumn
-	Tags          *orm.ArrayColumn[string]
+	Tags          *orm.StringArrayColumn
 	Price         *orm.NullableStringColumn
 	BookCreatedAt *orm.StringColumn
 	Author        orm.BelongsTo[Author]
@@ -84,7 +84,7 @@ var Books = orm.DefineTable[Book]("rich_books", func(t *orm.TableBuilder[Book]) 
 		AuthorID:      t.Int("author_id").NotNull().References(Authors.ID).OnDelete(orm.ActionCascade),
 		Pages:         t.Int("pages").NotNull(),
 		Status:        t.Enum("status", "rich_book_status", "draft", "published"),
-		Tags:          orm.NewArrayColumn[string]("tags"),
+		Tags:          t.StringArray("tags"),
 		Price:         t.NullableString("price"),
 		BookCreatedAt: t.String("book_created_at").NotNull(),
 	}

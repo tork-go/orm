@@ -136,6 +136,110 @@ func (b *TableBuilder[E]) NullableUUID(name string) *NullableUUIDColumn {
 	return NewNullableUUIDColumn(name)
 }
 
+// The array builders mirror the scalar ones. Every array kind has a
+// method here, which a single generic array type could not have offered:
+// a method cannot declare a type parameter.
+
+// BoolArray declares a non-nullable bool array column.
+func (b *TableBuilder[E]) BoolArray(name string) *BoolArrayColumn {
+	return NewBoolArrayColumn(name)
+}
+
+// NullableBoolArray declares a nullable bool array column.
+func (b *TableBuilder[E]) NullableBoolArray(name string) *NullableBoolArrayColumn {
+	return NewNullableBoolArrayColumn(name)
+}
+
+// IntArray declares a non-nullable int array column.
+func (b *TableBuilder[E]) IntArray(name string) *IntArrayColumn {
+	return NewIntArrayColumn(name)
+}
+
+// NullableIntArray declares a nullable int array column.
+func (b *TableBuilder[E]) NullableIntArray(name string) *NullableIntArrayColumn {
+	return NewNullableIntArrayColumn(name)
+}
+
+// Int32Array declares a non-nullable int32 array column.
+func (b *TableBuilder[E]) Int32Array(name string) *Int32ArrayColumn {
+	return NewInt32ArrayColumn(name)
+}
+
+// NullableInt32Array declares a nullable int32 array column.
+func (b *TableBuilder[E]) NullableInt32Array(name string) *NullableInt32ArrayColumn {
+	return NewNullableInt32ArrayColumn(name)
+}
+
+// BigIntArray declares a non-nullable int64 array column.
+func (b *TableBuilder[E]) BigIntArray(name string) *BigIntArrayColumn {
+	return NewBigIntArrayColumn(name)
+}
+
+// NullableBigIntArray declares a nullable int64 array column.
+func (b *TableBuilder[E]) NullableBigIntArray(name string) *NullableBigIntArrayColumn {
+	return NewNullableBigIntArrayColumn(name)
+}
+
+// FloatArray declares a non-nullable float32 array column.
+func (b *TableBuilder[E]) FloatArray(name string) *FloatArrayColumn {
+	return NewFloatArrayColumn(name)
+}
+
+// NullableFloatArray declares a nullable float32 array column.
+func (b *TableBuilder[E]) NullableFloatArray(name string) *NullableFloatArrayColumn {
+	return NewNullableFloatArrayColumn(name)
+}
+
+// DoubleArray declares a non-nullable float64 array column.
+func (b *TableBuilder[E]) DoubleArray(name string) *DoubleArrayColumn {
+	return NewDoubleArrayColumn(name)
+}
+
+// NullableDoubleArray declares a nullable float64 array column.
+func (b *TableBuilder[E]) NullableDoubleArray(name string) *NullableDoubleArrayColumn {
+	return NewNullableDoubleArrayColumn(name)
+}
+
+// DecimalArray declares a non-nullable decimal.Decimal array column.
+func (b *TableBuilder[E]) DecimalArray(name string) *DecimalArrayColumn {
+	return NewDecimalArrayColumn(name)
+}
+
+// NullableDecimalArray declares a nullable decimal.Decimal array column.
+func (b *TableBuilder[E]) NullableDecimalArray(name string) *NullableDecimalArrayColumn {
+	return NewNullableDecimalArrayColumn(name)
+}
+
+// StringArray declares a non-nullable string array column.
+func (b *TableBuilder[E]) StringArray(name string) *StringArrayColumn {
+	return NewStringArrayColumn(name)
+}
+
+// NullableStringArray declares a nullable string array column.
+func (b *TableBuilder[E]) NullableStringArray(name string) *NullableStringArrayColumn {
+	return NewNullableStringArrayColumn(name)
+}
+
+// TimeArray declares a non-nullable time.Time array column.
+func (b *TableBuilder[E]) TimeArray(name string) *TimeArrayColumn {
+	return NewTimeArrayColumn(name)
+}
+
+// NullableTimeArray declares a nullable time.Time array column.
+func (b *TableBuilder[E]) NullableTimeArray(name string) *NullableTimeArrayColumn {
+	return NewNullableTimeArrayColumn(name)
+}
+
+// UUIDArray declares a non-nullable uuid.UUID array column.
+func (b *TableBuilder[E]) UUIDArray(name string) *UUIDArrayColumn {
+	return NewUUIDArrayColumn(name)
+}
+
+// NullableUUIDArray declares a nullable uuid.UUID array column.
+func (b *TableBuilder[E]) NullableUUIDArray(name string) *NullableUUIDArrayColumn {
+	return NewNullableUUIDArrayColumn(name)
+}
+
 // JSON and array columns have no builder method here. Their element or
 // document type is a type parameter, and Go does not allow a method to
 // declare one, so they are built with the package-level NewJSONColumn and

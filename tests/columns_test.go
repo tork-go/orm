@@ -48,8 +48,8 @@ type allKindsModel struct {
 	NEnum    *orm.NullableEnumColumn
 	JSON     *orm.JSONColumn[jsonDoc]
 	NJSON    *orm.NullableJSONColumn[jsonDoc]
-	Array    *orm.ArrayColumn[string]
-	NArray   *orm.NullableArrayColumn[string]
+	Array    *orm.StringArrayColumn
+	NArray   *orm.NullableStringArrayColumn
 }
 
 func newAllKindsModel() *allKindsModel {
@@ -79,8 +79,8 @@ func newAllKindsModel() *allKindsModel {
 		NEnum:    orm.NewNullableEnumColumn("n_enum", "status", "on", "off"),
 		JSON:     orm.NewJSONColumn[jsonDoc]("json"),
 		NJSON:    orm.NewNullableJSONColumn[jsonDoc]("n_json"),
-		Array:    orm.NewArrayColumn[string]("array"),
-		NArray:   orm.NewNullableArrayColumn[string]("n_array"),
+		Array:    orm.NewStringArrayColumn("array"),
+		NArray:   orm.NewNullableStringArrayColumn("n_array"),
 	}
 }
 
@@ -163,7 +163,7 @@ var (
 	_ *orm.StringColumn         = orm.NewStringColumn("s").PrimaryKey().Unique().NotNull().Index().MaxLen(30)
 	_ *orm.StringColumn         = orm.NewStringColumn("s").ServerDefault("''")
 	_ *orm.EnumColumn           = orm.NewEnumColumn("e", "t", "a", "b").NotNull().Index()
-	_ *orm.ArrayColumn[string]  = orm.NewArrayColumn[string]("a").NotNull().MaxLen(20)
+	_ *orm.StringArrayColumn    = orm.NewStringArrayColumn("a").NotNull().MaxLen(20)
 	_ *orm.JSONColumn[jsonDoc]  = orm.NewJSONColumn[jsonDoc]("j").NotNull().JSON()
 	_ *orm.IntColumn            = orm.NewIntColumn("i").PrimaryKey().NotNull().Index()
 	_ *orm.DecimalColumn        = orm.NewDecimalColumn("d").Numeric(10, 2).NotNull()

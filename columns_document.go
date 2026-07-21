@@ -1,0 +1,198 @@
+package orm
+
+// JSONColumn is a non-nullable JSON document column holding a T.
+//
+// It is constructed as JSONB, matching Postgres's own recommendation of
+// jsonb over json; chain JSON() to store it as json instead. T is whatever
+// Go value the document marshals from, so it is usually a struct or a map,
+// and it needs no entry in the Go-type-to-kind table: schema extraction
+// checks for a JSON kind before it consults that table.
+//
+// It offers no comparison operations. Postgres's json type has no equality
+// operator at all, so `json_col = json_col` is an error rather than a
+// false, and a JSONColumn may be either kind. Exposing Eq would hand out a
+// method that fails at query time for half its instantiations. Containment and
+// path operators need AST nodes and dialect rendering that do not exist
+// yet; until then a JSON column is written and read, not filtered on.
+type JSONColumn[T any] struct {
+	chain[T, *JSONColumn[T]]
+	jsonBuilder[T, *JSONColumn[T]]
+	assignable[T]
+}
+
+var _ ColumnMeta = (*JSONColumn[struct{}])(nil)
+
+// NewJSONColumn declares a non-nullable JSON document column named name,
+// stored as JSONB. Chain JSON() to store it as json, or Serialize to
+// replace the default encoding/json marshal and unmarshal pair.
+func NewJSONColumn[T any](name string) *JSONColumn[T] {
+	x := &JSONColumn[T]{}
+	x.chain = newChain[T](name, x)
+	c := x.chain.c
+	c.JSONB()
+	x.jsonBuilder = jsonBuilder[T, *JSONColumn[T]]{c: c, self: x}
+	x.assignable = assignable[T]{c: c}
+	return x
+}
+
+// NullableJSONColumn is a nullable JSON document column holding a T.
+type NullableJSONColumn[T any] struct {
+	chain[*T, *NullableJSONColumn[T]]
+	jsonBuilder[*T, *NullableJSONColumn[T]]
+	nullAssignable[T]
+	nullness
+}
+
+var _ ColumnMeta = (*NullableJSONColumn[struct{}])(nil)
+
+// NewNullableJSONColumn declares a nullable JSON document column named
+// name, stored as JSONB.
+func NewNullableJSONColumn[T any](name string) *NullableJSONColumn[T] {
+	x := &NullableJSONColumn[T]{}
+	x.chain = newChain[*T](name, x)
+	c := x.chain.c
+	c.JSONB()
+	x.jsonBuilder = jsonBuilder[*T, *NullableJSONColumn[T]]{c: c, self: x}
+	x.nullAssignable = nullAssignable[T]{c: c}
+	x.nullness = nullness{c: c}
+	return x
+}
+
+// EnumColumn is a non-nullable native enum column, backed by a string.
+//
+// It is separate from StringColumn rather than a mode of it, which is what
+// makes MaxLen and Enum mutually exclusive at compile time: an enum column
+// with a length is rejected during extraction, and a type that offers only
+// one of the two builders cannot get into that state. For the same reason
+// it omits textOps. LIKE against an enum needs an explicit cast to text in
+// Postgres, so offering Contains here would generate SQL that does not
+// run.
+//
+// Values are ordered by their declaration order, which is what Asc and
+// Desc sort by.
+type EnumColumn struct {
+	chain[string, *EnumColumn]
+	enumBuilder[string, *EnumColumn]
+	equatable[string]
+	assignable[string]
+	sortable
+}
+
+var _ ColumnMeta = (*EnumColumn)(nil)
+
+// NewEnumColumn declares a non-nullable enum column named name of the
+// database enum type typeName, with the given values in order.
+func NewEnumColumn(name, typeName string, values ...string) *EnumColumn {
+	x := &EnumColumn{}
+	x.chain = newChain[string](name, x)
+	c := x.chain.c
+	c.Enum(typeName, values...)
+	x.enumBuilder = enumBuilder[string, *EnumColumn]{c: c, self: x}
+	x.equatable = equatable[string]{c: c}
+	x.assignable = assignable[string]{c: c}
+	x.sortable = sortable{c: c}
+	return x
+}
+
+// NullableEnumColumn is a nullable native enum column.
+type NullableEnumColumn struct {
+	chain[*string, *NullableEnumColumn]
+	enumBuilder[*string, *NullableEnumColumn]
+	nullEquatable[string]
+	nullAssignable[string]
+	nullness
+	sortable
+}
+
+var _ ColumnMeta = (*NullableEnumColumn)(nil)
+
+// NewNullableEnumColumn declares a nullable enum column named name of the
+// database enum type typeName, with the given values in order.
+func NewNullableEnumColumn(name, typeName string, values ...string) *NullableEnumColumn {
+	x := &NullableEnumColumn{}
+	x.chain = newChain[*string](name, x)
+	c := x.chain.c
+	c.Enum(typeName, values...)
+	x.enumBuilder = enumBuilder[*string, *NullableEnumColumn]{c: c, self: x}
+	x.nullEquatable = nullEquatable[string]{c: c}
+	x.nullAssignable = nullAssignable[string]{c: c}
+	x.nullness = nullness{c: c}
+	x.sortable = sortable{c: c}
+	return x
+}
+
+// ArrayColumn is a non-nullable array column with elements of type T.
+//
+// The element kind comes from T, so ArrayColumn[string] is TEXT[] and
+// ArrayColumn[int] is INTEGER[]. Arrays of arrays are rejected during
+// extraction; Postgres's own multi-dimensional arrays are a different
+// feature and are not modelled.
+//
+// It embeds lengthBuilder and numericBuilder because those apply to the
+// *element*: MaxLen(n) on an ArrayColumn[string] makes it VARCHAR(n)[],
+// and Numeric(p, s) on an ArrayColumn[decimal.Decimal] makes it
+// NUMERIC(p,s)[]. Being generic over T, it cannot narrow which of the two
+// is available the way the scalar types do, so using the wrong one is
+// still caught during extraction rather than at compile time. This is the
+// one place the concrete types do not fully close that gap.
+//
+// Equality compares whole arrays, which every dialect Tork targets
+// supports. Containment and overlap need AST nodes that do not exist yet.
+type ArrayColumn[T any] struct {
+	chain[[]T, *ArrayColumn[T]]
+	lengthBuilder[[]T, *ArrayColumn[T]]
+	numericBuilder[[]T, *ArrayColumn[T]]
+	equatable[[]T]
+	assignable[[]T]
+	sortable
+}
+
+var _ ColumnMeta = (*ArrayColumn[string])(nil)
+
+// NewArrayColumn declares a non-nullable array column named name with
+// elements of type T.
+func NewArrayColumn[T any](name string) *ArrayColumn[T] {
+	x := &ArrayColumn[T]{}
+	x.chain = newChain[[]T](name, x)
+	c := x.chain.c
+	x.lengthBuilder = lengthBuilder[[]T, *ArrayColumn[T]]{c: c, self: x}
+	x.numericBuilder = numericBuilder[[]T, *ArrayColumn[T]]{c: c, self: x}
+	x.equatable = equatable[[]T]{c: c}
+	x.assignable = assignable[[]T]{c: c}
+	x.sortable = sortable{c: c}
+	return x
+}
+
+// NullableArrayColumn is a nullable array column with elements of type T.
+//
+// It is backed by Column[*[]T], not Column[[]T]. A nil slice would be the
+// natural way to spell NULL, but nullability here is decided by whether
+// the Go type is a pointer, and a slice is not one, so an unpointered
+// slice column would report itself non-nullable. The entity field must
+// therefore be a *[]T as well.
+type NullableArrayColumn[T any] struct {
+	chain[*[]T, *NullableArrayColumn[T]]
+	lengthBuilder[*[]T, *NullableArrayColumn[T]]
+	numericBuilder[*[]T, *NullableArrayColumn[T]]
+	nullEquatable[[]T]
+	nullAssignable[[]T]
+	nullness
+	sortable
+}
+
+var _ ColumnMeta = (*NullableArrayColumn[string])(nil)
+
+// NewNullableArrayColumn declares a nullable array column named name with
+// elements of type T.
+func NewNullableArrayColumn[T any](name string) *NullableArrayColumn[T] {
+	x := &NullableArrayColumn[T]{}
+	x.chain = newChain[*[]T](name, x)
+	c := x.chain.c
+	x.lengthBuilder = lengthBuilder[*[]T, *NullableArrayColumn[T]]{c: c, self: x}
+	x.numericBuilder = numericBuilder[*[]T, *NullableArrayColumn[T]]{c: c, self: x}
+	x.nullEquatable = nullEquatable[[]T]{c: c}
+	x.nullAssignable = nullAssignable[[]T]{c: c}
+	x.nullness = nullness{c: c}
+	x.sortable = sortable{c: c}
+	return x
+}

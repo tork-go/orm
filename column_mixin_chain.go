@@ -38,7 +38,7 @@ import "reflect"
 //
 // Only the six builders meaningful for every T live here. MaxLen, Numeric,
 // JSON/JSONB/Serialize, and Enum apply to some kinds only, so they live in
-// separate mixins (see mixin_builders.go) that a concrete type embeds only
+// separate mixins (see column_mixin_builders.go) that a concrete type embeds only
 // when they apply.
 type chain[T any, Self any] struct {
 	c    *Column[T]

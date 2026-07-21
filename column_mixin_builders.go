@@ -9,7 +9,7 @@ package orm
 // method to only some instantiations of a generic type, which is the
 // limitation these mixins exist to work around one level up. Each mixin
 // holds the column in a named field rather than embedding it, so chain
-// stays the single promotion path to ColumnMeta (see mixin_chain.go), and
+// stays the single promotion path to ColumnMeta (see column_mixin_chain.go), and
 // carries self for the same covariance reason chain does.
 
 // lengthBuilder supplies MaxLen to string-like columns.

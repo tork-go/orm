@@ -3,7 +3,7 @@ package orm
 import "github.com/shopspring/decimal"
 
 // The concrete column types follow one shape throughout, here and in
-// columns_string.go, columns_misc.go, and columns_document.go.
+// column_string.go, column_misc.go, and column_document.go.
 //
 // Each embeds chain (which carries the universal builders and republishes
 // every ColumnMeta accessor), then whichever builder and operation mixins
@@ -12,7 +12,7 @@ import "github.com/shopspring/decimal"
 // omits lengthBuilder has no MaxLen, and calling any of them is a compile
 // error rather than a runtime failure. That is the entire point of having
 // concrete types instead of exposing Column[T] directly, and it only holds
-// because chain declines to embed Column. See mixin_chain.go.
+// because chain declines to embed Column. See column_mixin_chain.go.
 //
 // Every type is followed by a `var _ ColumnMeta` assertion. A mixin that
 // accidentally shadowed an accessor would make that method ambiguous, and
@@ -24,7 +24,7 @@ import "github.com/shopspring/decimal"
 //
 // Constructors are two-phase because the builder mixins return the address
 // stored in their self field, which cannot be taken before the value
-// exists. See mixin_chain.go.
+// exists. See column_mixin_chain.go.
 //
 // The numeric types map one-to-one onto the schema kinds rather than onto
 // Go's convenient names: Float is float32 (KindFloat, REAL) and Double is

@@ -11,7 +11,7 @@ import (
 // They are named for All rather than for Many because All already means
 // "every row this query matches" on the read side: All returns those rows,
 // UpdateAll and DeleteAll write them. The Many operations are the other
-// thing entirely, a batch of rows the caller is already holding; see bulk.go.
+// thing entirely, a batch of rows the caller is already holding; see query_bulk.go.
 //
 // Coming from Prisma, these are updateMany and deleteMany. Prisma spells the
 // set operation with Many and has no name for the entity batch, so the two

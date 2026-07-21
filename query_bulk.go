@@ -8,7 +8,7 @@ import (
 
 // The Many operations write a batch of rows the caller is already holding,
 // as against the All operations, which write every row a filter matches
-// without loading any of them. See setops.go.
+// without loading any of them. See query_setops.go.
 //
 // The distinction is not stylistic. These have rows, so hooks fire on each
 // one and values the database generates are read back into them; the set

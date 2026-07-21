@@ -315,6 +315,10 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 
 	cols := Columns(m)
 	st.cols = cols
+	st.pk = primaryKeyColumns(st)
+	if id, ok := identityOf(cols); ok {
+		st.identity = id
+	}
 	for _, c := range cols {
 		if s, ok := c.(ownerSetter); ok {
 			s.setOwner(name)

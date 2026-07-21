@@ -50,29 +50,32 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 // related table only through the registry, which is keyed by reflect.Type
 // and so cannot hand back anything parameterised by the related row type.
 func scanRowInto(st *tableState, rs Rows, dst reflect.Value) error {
-	dests, finish, err := rowDests(st, dst)
-	if err != nil {
-		return err
+	if st.fieldIdx == nil {
+		return errNoEntityMapping(st.name)
 	}
+	dests, finish := rowDests(st, dst, st.cols)
 	if err := rs.Scan(dests...); err != nil {
 		return fmt.Errorf("orm: table %q: scanning row: %w", st.name, err)
 	}
 	return finish()
 }
 
-// rowDests builds the destinations for one row of st, pointed at dst, and
-// returns a function that finishes decoding once Scan has run.
+// rowDests builds the destinations for cols, pointed at dst, and returns
+// a function that finishes decoding once Scan has run.
 //
 // It hands back destinations rather than doing the scan because a caller
 // sometimes has a column of its own to read alongside these. Eager loading
 // a many to many selects the join table's key in front of the related
 // row's columns, and prepends its own destination to this slice.
-func rowDests(st *tableState, dst reflect.Value) ([]any, func() error, error) {
-	if st.fieldIdx == nil {
-		return nil, nil, errNoEntityMapping(st.name)
-	}
-
-	dests := make([]any, len(st.cols))
+//
+// The columns are a parameter rather than always the table's own, because
+// an insert reads back only what it left to the database.
+//
+// It assumes the entity mapping exists, which every caller has already
+// established: there is no way to reach a row without one, so checking
+// again here would be a branch nothing could take.
+func rowDests(st *tableState, dst reflect.Value, cols []ColumnMeta) ([]any, func() error) {
+	dests := make([]any, len(cols))
 
 	// staged records which positions hold encoded bytes rather than a
 	// final value, so they can be decoded once the scan has filled them.
@@ -83,7 +86,7 @@ func rowDests(st *tableState, dst reflect.Value) ([]any, func() error, error) {
 	}
 	var staged []stagedField
 
-	for i, c := range st.cols {
+	for i, c := range cols {
 		field := fieldByIndexAlloc(dst, st.fieldIdx[c.Name()])
 		if isDocumentColumn(c) {
 			buf := new([]byte)
@@ -123,7 +126,7 @@ func rowDests(st *tableState, dst reflect.Value) ([]any, func() error, error) {
 		return nil
 	}
 
-	return dests, finish, nil
+	return dests, finish
 }
 
 // errNoEntityMapping is the one failure both scan entry points share, so

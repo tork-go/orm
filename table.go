@@ -39,6 +39,12 @@ type tableState struct {
 	// driver.Rows exposes no column names, so this ordering is what ties
 	// a result row back to its fields.
 	cols []ColumnMeta
+
+	// pk is the primary key columns in declaration order, and identity is
+	// the one the database generates, or nil. Both are worked out once by
+	// DefineTable rather than on every statement that needs them.
+	pk       []ColumnMeta
+	identity ColumnMeta
 }
 
 // Table gives a model struct its database identity and, through E, the row
@@ -76,4 +82,16 @@ func (t Table[E]) TableName() string {
 		return ""
 	}
 	return t.st.name
+}
+
+// primaryKeyColumns returns the table's primary key columns in declaration
+// order.
+func primaryKeyColumns(st *tableState) []ColumnMeta {
+	var pk []ColumnMeta
+	for _, c := range st.cols {
+		if c.IsPrimaryKey() {
+			pk = append(pk, c)
+		}
+	}
+	return pk
 }

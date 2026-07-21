@@ -294,7 +294,7 @@ func (q *Query[E]) Find(ctx context.Context, key any) (*E, error) {
 	if q.st.fieldIdx == nil {
 		return nil, errNoEntityMapping(q.st.name)
 	}
-	pk := primaryKeyColumns(q.st)
+	pk := q.st.pk
 	switch {
 	case len(pk) == 0:
 		return nil, fmt.Errorf("orm: table %q: Find needs a primary key, and this "+
@@ -315,16 +315,4 @@ func (q *Query[E]) Find(ctx context.Context, key any) (*E, error) {
 			q.st.name, kt, pk[0].Name(), pk[0].GoType())
 	}
 	return q.Where(Comparison{Col: pk[0], Op: OpEq, Value: key}).First(ctx)
-}
-
-// primaryKeyColumns returns the table's primary key columns in declaration
-// order.
-func primaryKeyColumns(st *tableState) []ColumnMeta {
-	var pk []ColumnMeta
-	for _, c := range st.cols {
-		if c.IsPrimaryKey() {
-			pk = append(pk, c)
-		}
-	}
-	return pk
 }

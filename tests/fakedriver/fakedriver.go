@@ -19,6 +19,7 @@ import (
 type Conn struct {
 	mu         sync.Mutex
 	execCalls  []string
+	execArgs   [][]any
 	queryCalls []string
 	queryArgs  [][]any
 	queued     [][][]any
@@ -32,6 +33,10 @@ type Conn struct {
 	// simulate a connection dropping partway through one. Real drivers
 	// report a mid-iteration failure that way rather than from Next.
 	RowsErr error
+
+	// LastInsertID is what Exec reports back as a generated key, for the
+	// databases that report one that way rather than through RETURNING.
+	LastInsertID int64
 }
 
 // NewConn returns a ready-to-use fake connection.
@@ -111,14 +116,27 @@ func (c *Conn) QueryRow(_ context.Context, sql string, args ...any) driver.Row {
 	return &Row{values: next}
 }
 
-func (c *Conn) Exec(_ context.Context, sql string, _ ...any) (driver.Result, error) {
+func (c *Conn) Exec(_ context.Context, sql string, args ...any) (driver.Result, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.execCalls = append(c.execCalls, sql)
+	c.execArgs = append(c.execArgs, args)
 	if c.failOn[sql] {
 		return driver.Result{}, errors.New("fakedriver: simulated Exec failure")
 	}
-	return driver.Result{RowsAffected: c.RowsAffected}, nil
+	return driver.Result{RowsAffected: c.RowsAffected, LastInsertID: c.LastInsertID}, nil
+}
+
+// ExecArgs returns the bound arguments of the nth Exec call, so a test can
+// assert what a write actually sent rather than only which statement it
+// ran.
+func (c *Conn) ExecArgs(n int) []any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n < 0 || n >= len(c.execArgs) {
+		return nil
+	}
+	return c.execArgs[n]
 }
 
 func (c *Conn) Begin(context.Context) (driver.Tx, error) {

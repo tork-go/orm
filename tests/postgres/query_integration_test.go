@@ -200,3 +200,147 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 		}
 	})
 }
+
+// Writing against a real database is the only way to learn that the
+// generated statements are accepted, that a generated key really comes
+// back, and that a document survives a round trip through the column type
+// rather than only through the fake driver.
+func TestQuery_WritesAgainstPostgres(t *testing.T) {
+	ctx := context.Background()
+	dialect := postgres.Dialect{}
+	conn, err := dialect.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+
+	const drop = `DROP TABLE IF EXISTS q_users CASCADE`
+	t.Cleanup(func() { _, _ = conn.Exec(context.Background(), drop) })
+	if _, err := conn.Exec(ctx, drop); err != nil {
+		t.Fatalf("pre-test cleanup failed: %v", err)
+	}
+
+	desired, err := schema.ExtractSchema(qUsers)
+	if err != nil {
+		t.Fatalf("ExtractSchema failed: %v", err)
+	}
+	ops, _ := migrate.Diff(schema.Schema{}, desired)
+	ddl, err := migrate.Generate(dialect, ops)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if _, err := conn.Exec(ctx, ddl); err != nil {
+		t.Fatalf("applying schema failed: %v", err)
+	}
+
+	db := orm.NewDB(conn, dialect)
+	joined := time.Date(2024, 5, 1, 10, 0, 0, 0, time.UTC)
+
+	u := &qUser{
+		Username: "alice",
+		Email:    ptrTo("alice@example.com"),
+		Age:      30,
+		Prefs:    qPrefs{Theme: "dark"},
+		Joined:   joined,
+	}
+
+	t.Run("insert fills the generated key", func(t *testing.T) {
+		if err := qUsers.With(db).Insert(ctx, u); err != nil {
+			t.Fatalf("Insert() error = %v", err)
+		}
+		if u.ID == 0 {
+			t.Fatal("ID is still zero, want the key Postgres generated")
+		}
+	})
+
+	t.Run("the stored row matches what was written", func(t *testing.T) {
+		got, err := qUsers.With(db).Find(ctx, u.ID)
+		if err != nil {
+			t.Fatalf("Find() error = %v", err)
+		}
+		if got.Username != "alice" || got.Age != 30 {
+			t.Errorf("stored row = %+v", got)
+		}
+		if got.Email == nil || *got.Email != "alice@example.com" {
+			t.Errorf("Email = %v, want the address", got.Email)
+		}
+		if got.Prefs.Theme != "dark" {
+			t.Errorf("Prefs = %+v, want the document round tripped", got.Prefs)
+		}
+		if !got.Joined.Equal(joined) {
+			t.Errorf("Joined = %v, want %v", got.Joined, joined)
+		}
+	})
+
+	t.Run("update writes every column", func(t *testing.T) {
+		u.Username = "hasan"
+		u.Age = 15
+		u.Email = nil
+		u.Prefs = qPrefs{Theme: "light"}
+		if err := qUsers.With(db).Update(ctx, u); err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+		got, err := qUsers.With(db).Find(ctx, u.ID)
+		if err != nil {
+			t.Fatalf("Find() error = %v", err)
+		}
+		if got.Username != "hasan" || got.Age != 15 {
+			t.Errorf("stored row = %+v, want the update applied", got)
+		}
+		if got.Email != nil {
+			t.Errorf("Email = %v, want the nil written through", got.Email)
+		}
+		if got.Prefs.Theme != "light" {
+			t.Errorf("Prefs = %+v, want the new document", got.Prefs)
+		}
+	})
+
+	t.Run("save inserts then updates", func(t *testing.T) {
+		fresh := &qUser{Username: "carol", Age: 22, Joined: joined}
+		if err := qUsers.With(db).Save(ctx, fresh); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+		if fresh.ID == 0 {
+			t.Fatal("Save did not insert: the key is still zero")
+		}
+		first := fresh.ID
+
+		fresh.Age = 23
+		if err := qUsers.With(db).Save(ctx, fresh); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+		if fresh.ID != first {
+			t.Errorf("Save inserted a second row: ID went %d to %d", first, fresh.ID)
+		}
+		got, err := qUsers.With(db).Find(ctx, first)
+		if err != nil {
+			t.Fatalf("Find() error = %v", err)
+		}
+		if got.Age != 23 {
+			t.Errorf("Age = %d, want the update Save performed", got.Age)
+		}
+	})
+
+	t.Run("delete removes the row", func(t *testing.T) {
+		if err := qUsers.With(db).Delete(ctx, u); err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+		if _, err := qUsers.With(db).Find(ctx, u.ID); !errors.Is(err, orm.ErrNoRows) {
+			t.Errorf("Find() error = %v, want ErrNoRows after the delete", err)
+		}
+	})
+
+	// A write that matched nothing is reported rather than passed off as
+	// success, which is the whole reason the row count is read back.
+	t.Run("writing a row that is not there", func(t *testing.T) {
+		gone := &qUser{ID: 999999, Username: "x", Joined: joined}
+		if err := qUsers.With(db).Update(ctx, gone); !errors.Is(err, orm.ErrNoRows) {
+			t.Errorf("Update() error = %v, want ErrNoRows", err)
+		}
+		if err := qUsers.With(db).Delete(ctx, gone); !errors.Is(err, orm.ErrNoRows) {
+			t.Errorf("Delete() error = %v, want ErrNoRows", err)
+		}
+	})
+}
+
+func ptrTo[T any](v T) *T { return &v }

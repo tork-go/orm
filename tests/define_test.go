@@ -429,3 +429,131 @@ func BenchmarkDefineTable(b *testing.B) {
 		})
 	}
 }
+
+// Embedding a shared base struct in the row type is a standard Go pattern,
+// so a column has to find a field promoted from one. The index paths this
+// produces are multi element, which is the case a single level walk would
+// have got wrong.
+type auditFields struct {
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type embeddedEntity struct {
+	auditFields
+	ID    int
+	Title string
+}
+
+type embeddedModel struct {
+	orm.Table[embeddedEntity]
+	ID        *orm.IntColumn
+	Title     *orm.StringColumn
+	CreatedAt *orm.TimeColumn
+	UpdatedAt *orm.TimeColumn
+}
+
+func TestDefineTable_EmbeddedEntityFields(t *testing.T) {
+	m := orm.DefineTable[embeddedEntity]("articles",
+		func(b *orm.TableBuilder[embeddedEntity]) *embeddedModel {
+			return &embeddedModel{
+				Table:     b.Table(),
+				ID:        b.Int("id"),
+				Title:     b.String("title"),
+				CreatedAt: b.Time("created_at"),
+				UpdatedAt: b.Time("updated_at"),
+			}
+		})
+	if got := len(orm.Columns(m)); got != 4 {
+		t.Errorf("Columns() returned %d columns, want 4", got)
+	}
+}
+
+// A field declared directly on the entity shadows one promoted from an
+// embedded struct, matching Go's own selector rules.
+func TestDefineTable_OuterFieldShadowsEmbedded(t *testing.T) {
+	type base struct{ Title string }
+	type entity struct {
+		base
+		Title int // shadows base.Title, and the column is an int
+	}
+	type model struct {
+		orm.Table[entity]
+		Title *orm.IntColumn
+	}
+
+	// Resolving against base.Title (a string) would be a type mismatch, so
+	// defining at all proves the outer field won.
+	m := orm.DefineTable[entity]("t", func(b *orm.TableBuilder[entity]) *model {
+		return &model{Table: b.Table(), Title: b.Int("title")}
+	})
+	if got := len(orm.Columns(m)); got != 1 {
+		t.Errorf("Columns() returned %d columns, want 1", got)
+	}
+}
+
+// Two embedded structs promoting the same name at the same depth is
+// ambiguous in Go, and reporting it beats silently picking one.
+func TestDefineTable_AmbiguousEmbeddedField_Panics(t *testing.T) {
+	type left struct{ Name string }
+	type right struct{ Name string }
+	type entity struct {
+		left
+		right
+	}
+	type model struct {
+		orm.Table[entity]
+		Name *orm.StringColumn
+	}
+
+	got := mustPanic(t, func() {
+		orm.DefineTable[entity]("t", func(b *orm.TableBuilder[entity]) *model {
+			return &model{Table: b.Table(), Name: b.String("name")}
+		})
+	})
+	if !strings.Contains(got, "ambiguous") {
+		t.Errorf("panic message %q does not report the ambiguity", got)
+	}
+}
+
+// An ambiguous name no column references is not a problem, exactly as an
+// ambiguous selector nobody writes is not a compile error.
+func TestDefineTable_UnreferencedAmbiguityIsFine(t *testing.T) {
+	type left struct{ Name string }
+	type right struct{ Name string }
+	type entity struct {
+		left
+		right
+		ID int
+	}
+	type model struct {
+		orm.Table[entity]
+		ID *orm.IntColumn
+	}
+
+	m := orm.DefineTable[entity]("t", func(b *orm.TableBuilder[entity]) *model {
+		return &model{Table: b.Table(), ID: b.Int("id")}
+	})
+	if got := len(orm.Columns(m)); got != 1 {
+		t.Errorf("Columns() returned %d columns, want 1", got)
+	}
+}
+
+// A struct that embeds its own type transitively must not queue forever.
+func TestDefineTable_RecursiveEmbeddingTerminates(t *testing.T) {
+	type node struct {
+		ID   int
+		Next *node
+	}
+	type model struct {
+		orm.Table[node]
+		ID *orm.IntColumn
+	}
+
+	m := orm.DefineTable[node]("nodes", func(b *orm.TableBuilder[node]) *model {
+		return &model{Table: b.Table(), ID: b.Int("id")}
+	})
+	if got := len(orm.Columns(m)); got != 1 {
+		t.Errorf("Columns() returned %d columns, want 1", got)
+	}
+}

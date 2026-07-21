@@ -226,6 +226,112 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 	return m
 }
 
+// entityField is a resolved field of the entity: where it sits and what
+// type it holds. The index is a path rather than a single index because a
+// field promoted from an embedded struct lives one or more levels down,
+// which is exactly what reflect.Value.FieldByIndex walks.
+type entityField struct {
+	index []int
+	typ   reflect.Type
+	// ambiguous marks a name reachable at the same depth through two
+	// different embedded structs. Go rejects such a selector only where it
+	// is written, so this is reported only if a column actually wants it.
+	ambiguous bool
+}
+
+// collectEntityFields walks entity breadth first and returns its fields
+// keyed by db tag and by snake-cased name.
+//
+// Breadth first is what makes shadowing match Go's own rules: a field
+// declared directly on the entity wins over one promoted from an embedded
+// struct, and a shallower embedded struct wins over a deeper one. Two
+// fields reachable at the same depth are ambiguous, exactly as they would
+// be in a selector, and are marked rather than rejected outright since a
+// name nobody references is not a problem.
+//
+// An embedded struct is walked whether or not its own type is exported,
+// since reflect happily takes the address of an exported field reached
+// through an unexported embedded one, which is all scanning needs. The
+// embedded field itself is only registered as a candidate when it is
+// exported, because an unexported name is not one a column could match.
+//
+// Embedded pointers are not walked. FieldByIndex panics rather than
+// allocate when it meets a nil pointer partway down a path, so scanning
+// into one would depend on the caller having filled it in first. Leaving
+// it out is better than a nil dereference on the first row.
+func collectEntityFields(entity reflect.Type) (byTag, byName map[string]entityField) {
+	byTag = make(map[string]entityField)
+	byName = make(map[string]entityField)
+
+	type queued struct {
+		typ    reflect.Type
+		prefix []int
+	}
+	level := []queued{{typ: entity}}
+	// Guards against a struct that embeds its own type transitively, which
+	// would otherwise queue forever.
+	seen := map[reflect.Type]bool{entity: true}
+
+	for len(level) > 0 {
+		var next []queued
+		tagHere := make(map[string]entityField)
+		nameHere := make(map[string]entityField)
+
+		for _, q := range level {
+			for i := range q.typ.NumField() {
+				f := q.typ.Field(i)
+				index := append(append([]int{}, q.prefix...), i)
+
+				if f.Anonymous && f.Type.Kind() == reflect.Struct && !seen[f.Type] {
+					seen[f.Type] = true
+					next = append(next, queued{typ: f.Type, prefix: index})
+				}
+				if !f.IsExported() {
+					continue
+				}
+
+				candidate := entityField{index: index, typ: f.Type}
+				if tag, ok := f.Tag.Lookup("db"); ok {
+					if tag == "-" {
+						continue
+					}
+					record(tagHere, tag, candidate)
+					continue
+				}
+				record(nameHere, snakeCase(f.Name), candidate)
+			}
+		}
+
+		// Only names not already claimed at a shallower depth are taken,
+		// which is what gives the outer declaration precedence.
+		promote(byTag, tagHere)
+		promote(byName, nameHere)
+		level = next
+	}
+	return byTag, byName
+}
+
+// record adds candidate under key, marking the entry ambiguous if key is
+// already taken at this depth.
+func record(m map[string]entityField, key string, candidate entityField) {
+	if existing, ok := m[key]; ok {
+		existing.ambiguous = true
+		m[key] = existing
+		return
+	}
+	m[key] = candidate
+}
+
+// promote copies this depth's fields into the accumulated map, leaving
+// anything already found at a shallower depth alone.
+func promote(dst, src map[string]entityField) {
+	for k, v := range src {
+		if _, ok := dst[k]; !ok {
+			dst[k] = v
+		}
+	}
+}
+
 // resolveEntityFields maps each column to the index path of the entity
 // field it scans into.
 //
@@ -243,39 +349,32 @@ func resolveEntityFields(table string, entity reflect.Type, cols []ColumnMeta) (
 			table, entity, len(cols))
 	}
 
-	byTag := make(map[string][]int)
-	byName := make(map[string][]int)
-	for i := range entity.NumField() {
-		f := entity.Field(i)
-		if !f.IsExported() {
-			continue
-		}
-		if tag, ok := f.Tag.Lookup("db"); ok {
-			if tag == "-" {
-				continue
-			}
-			byTag[tag] = f.Index
-			continue
-		}
-		byName[snakeCase(f.Name)] = f.Index
-	}
+	byTag, byName := collectEntityFields(entity)
 
 	out := make(map[string][]int, len(cols))
 	for _, c := range cols {
-		idx, ok := byTag[c.Name()]
+		field, ok := byTag[c.Name()]
 		if !ok {
-			idx, ok = byName[c.Name()]
+			field, ok = byName[c.Name()]
 		}
 		if !ok {
 			return nil, fmt.Errorf("orm: table %q: column %q has no field on %s "+
 				"(looked for a field whose name snake-cases to %q, or one tagged `db:%q`)",
 				table, c.Name(), entity, c.Name(), c.Name())
 		}
-		if ft := entity.FieldByIndex(idx).Type; ft != c.GoType() {
-			return nil, fmt.Errorf("orm: table %q: column %q is %s but %s.%s is %s",
-				table, c.Name(), c.GoType(), entity, entity.FieldByIndex(idx).Name, ft)
+		if field.ambiguous {
+			return nil, fmt.Errorf("orm: table %q: column %q is ambiguous on %s: "+
+				"two embedded structs promote a field named %q at the same depth; "+
+				"declare it directly on %s, or point one of them at another column "+
+				"with a `db:` tag",
+				table, c.Name(), entity, c.Name(), entity)
 		}
-		out[c.Name()] = idx
+		if field.typ != c.GoType() {
+			return nil, fmt.Errorf("orm: table %q: column %q is %s but %s.%s is %s",
+				table, c.Name(), c.GoType(), entity,
+				entity.FieldByIndex(field.index).Name, field.typ)
+		}
+		out[c.Name()] = field.index
 	}
 	return out, nil
 }

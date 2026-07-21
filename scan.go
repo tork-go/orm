@@ -81,11 +81,11 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 		if err != nil {
 			return e, fmt.Errorf("orm: table %q: %w", t.TableName(), err)
 		}
+		// A Column[T]'s codec always hands back a T, so the check below
+		// only bites for a ColumnMeta implemented outside this package,
+		// where nothing constrains what the codec returns.
 		dv := reflect.ValueOf(decoded)
-		if !dv.IsValid() {
-			continue
-		}
-		if !dv.Type().AssignableTo(s.field.Type()) {
+		if !dv.IsValid() || !dv.Type().AssignableTo(s.field.Type()) {
 			return e, fmt.Errorf("orm: table %q: column %q decoded to %s, want %s",
 				t.TableName(), s.col.Name(), dv.Type(), s.field.Type())
 		}

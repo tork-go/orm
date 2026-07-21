@@ -226,3 +226,67 @@ func TestColumns_OnZeroTable(t *testing.T) {
 		t.Errorf("Columns() = %v, want nil on a zero table", got)
 	}
 }
+
+// ColumnMeta is exported, so a caller can implement it themselves. Such a
+// column carries no guarantee of a codec, and nothing constrains what its
+// codec returns, so scanning guards both. These stubs are the only way to
+// reach those guards, since every column this package builds satisfies
+// ValueCodec and always decodes to its own T.
+//
+// Each embeds a real column as a ColumnMeta, which supplies the sixteen
+// methods without carrying ValueCodec across: embedding an interface
+// promotes that interface's methods and nothing else.
+
+type noCodecColumn struct{ orm.ColumnMeta }
+
+type wrongCodecColumn struct{ orm.ColumnMeta }
+
+func (wrongCodecColumn) GenerateAny() (any, bool)         { return nil, false }
+func (wrongCodecColumn) MarshalAny(any) ([]byte, error)   { return nil, nil }
+func (wrongCodecColumn) UnmarshalAny([]byte) (any, error) { return 12345, nil }
+
+type stubbedRow struct{ Prefs prefs }
+
+type stubbedModel struct {
+	orm.Table[stubbedRow]
+	Prefs orm.ColumnMeta
+}
+
+// scanStubbed builds a table whose one document column is col, queues an
+// encoded value for it, and returns whatever scanning reports.
+func scanStubbed(t *testing.T, name string, col orm.ColumnMeta) error {
+	t.Helper()
+	tbl := orm.DefineTable[stubbedRow](name, func(b *orm.TableBuilder[stubbedRow]) *stubbedModel {
+		return &stubbedModel{Table: b.Table(), Prefs: col}
+	})
+
+	c := fakedriver.NewConn()
+	c.QueueRows([]any{[]byte(`{"theme":"dark"}`)})
+	rows, _ := c.Query(context.Background(), "SELECT ...")
+	defer rows.Close()
+	rows.Next()
+	_, err := tbl.ScanRow(rows)
+	return err
+}
+
+func TestScanRow_ColumnWithoutCodec(t *testing.T) {
+	err := scanStubbed(t, "no_codec", noCodecColumn{orm.NewJSONColumn[prefs]("prefs")})
+	if err == nil {
+		t.Fatal("ScanRow() error = nil, want a missing codec error")
+	}
+	if !strings.Contains(err.Error(), "cannot decode") {
+		t.Errorf("error %q does not report the missing codec", err)
+	}
+}
+
+func TestScanRow_CodecReturnsWrongType(t *testing.T) {
+	err := scanStubbed(t, "wrong_codec", wrongCodecColumn{orm.NewJSONColumn[prefs]("prefs")})
+	if err == nil {
+		t.Fatal("ScanRow() error = nil, want a decoded type mismatch")
+	}
+	for _, want := range []string{"decoded to", "int"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}

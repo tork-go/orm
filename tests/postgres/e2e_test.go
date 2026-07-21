@@ -44,7 +44,7 @@ func TestEndToEnd_MakeMigrationsUpDownHistory(t *testing.T) {
 	dir := t.TempDir()
 	run := func(args ...string) (stdout, stderr string, code int) {
 		var out, errOut bytes.Buffer
-		code = cli.RunWithArgs(args, &out, &errOut, dialect, dsn(), dir, fixtures.Users, fixtures.Posts)
+		code = cli.RunWithArgs(args, &out, &errOut, dsn(), dir, fixtures.Users, fixtures.Posts)
 		return out.String(), errOut.String(), code
 	}
 

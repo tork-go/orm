@@ -17,7 +17,13 @@ import (
 // file under dir and returns it. It returns (nil, nil) if there is
 // nothing to do, matching Alembic's own behavior of never writing an
 // empty migration.
-func MakeMigrations(ctx context.Context, dialect driver.Dialect, dsn, dir, message string, models ...orm.Model) (*migrate.Migration, error) {
+//
+// Which database this is comes from dsn's scheme; see driver.For.
+func MakeMigrations(ctx context.Context, dsn, dir, message string, models ...orm.Model) (*migrate.Migration, error) {
+	dialect, err := driver.For(dsn)
+	if err != nil {
+		return nil, err
+	}
 	conn, err := dialect.Connect(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("cli: connecting: %w", err)
@@ -79,7 +85,7 @@ func MakeMigrations(ctx context.Context, dialect driver.Dialect, dsn, dir, messa
 	return &m, nil
 }
 
-func runMakeMigrations(ctx context.Context, args []string, out, errOut io.Writer, dialect driver.Dialect, dsn, dir string, models []orm.Model) int {
+func runMakeMigrations(ctx context.Context, args []string, out, errOut io.Writer, dsn, dir string, models []orm.Model) int {
 	fs := flag.NewFlagSet("makemigrations", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	message := fs.String("m", "", "short message describing this migration")
@@ -87,7 +93,7 @@ func runMakeMigrations(ctx context.Context, args []string, out, errOut io.Writer
 		return 2
 	}
 
-	m, err := MakeMigrations(ctx, dialect, dsn, dir, *message, models...)
+	m, err := MakeMigrations(ctx, dsn, dir, *message, models...)
 	if err != nil {
 		fmt.Fprintln(errOut, "makemigrations:", err)
 		return 1

@@ -1,5 +1,10 @@
 package orm
 
+import (
+	"context"
+	"fmt"
+)
+
 // DB is a database handle: somewhere to run statements, and the dialect
 // that says how to write them.
 //
@@ -34,4 +39,18 @@ type DB struct {
 // both migrations and queries.
 func NewDB(conn Conn, d QueryDialect) *DB {
 	return &DB{ex: conn, d: d, conn: conn}
+}
+
+// Close releases whatever is behind the handle, which for a driver that pools
+// is every connection in the pool.
+//
+// A handle bound to a transaction has nothing of its own to close and says so
+// rather than closing the connection the transaction is running on, which
+// would abandon it mid-way.
+func (db *DB) Close(ctx context.Context) error {
+	if db.conn == nil {
+		return fmt.Errorf("orm: this handle is a transaction, so it has no connection " +
+			"to close; close the handle Connect returned instead")
+	}
+	return db.conn.Close(ctx)
 }

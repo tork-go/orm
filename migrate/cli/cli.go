@@ -18,22 +18,26 @@ const usage = `usage:
 `
 
 // Run parses os.Args[1:] and runs the requested subcommand (makemigrations,
-// migrate up, migrate down, history) against dialect and dsn, using
-// models for makemigrations. It returns a process exit code suitable for
-// os.Exit:
+// migrate up, migrate down, history) against dsn, using models for
+// makemigrations. It returns a process exit code suitable for os.Exit:
+//
+//	import _ "github.com/tork-go/orm/driver/postgres"
 //
 //	func main() {
-//	    os.Exit(cli.Run(postgres.Dialect{}, os.Getenv("DATABASE_URL"), "migrations",
-//	        models.User, models.Post))
+//	    os.Exit(cli.Run(os.Getenv("DATABASE_URL"), "migrations",
+//	        models.Users, models.Posts))
 //	}
-func Run(dialect driver.Dialect, dsn, migrationsDir string, models ...orm.Model) int {
-	return RunWithArgs(os.Args[1:], os.Stdout, os.Stderr, dialect, dsn, migrationsDir, models...)
+//
+// Which database this is comes from the connection string's scheme, so the
+// blank import above is the only place a driver is named.
+func Run(dsn, migrationsDir string, models ...orm.Model) int {
+	return RunWithArgs(os.Args[1:], os.Stdout, os.Stderr, dsn, migrationsDir, models...)
 }
 
 // RunWithArgs is Run with its arguments and output streams explicit,
 // letting callers (including this package's own tests) drive it without
 // touching the real process's os.Args or stdio.
-func RunWithArgs(args []string, out, errOut io.Writer, dialect driver.Dialect, dsn, migrationsDir string, models ...orm.Model) int {
+func RunWithArgs(args []string, out, errOut io.Writer, dsn, migrationsDir string, models ...orm.Model) int {
 	if migrationsDir == "" {
 		migrationsDir = "migrations"
 	}
@@ -42,10 +46,18 @@ func RunWithArgs(args []string, out, errOut io.Writer, dialect driver.Dialect, d
 		return 2
 	}
 
+	// Resolved once, before any subcommand runs, so an unlinked driver is
+	// reported the same way whichever one was asked for.
+	dialect, err := driver.For(dsn)
+	if err != nil {
+		fmt.Fprintln(errOut, err)
+		return 1
+	}
+
 	ctx := context.Background()
 	switch args[0] {
 	case "makemigrations":
-		return runMakeMigrations(ctx, args[1:], out, errOut, dialect, dsn, migrationsDir, models)
+		return runMakeMigrations(ctx, args[1:], out, errOut, dsn, migrationsDir, models)
 	case "migrate":
 		if len(args) < 2 {
 			fmt.Fprint(errOut, usage)

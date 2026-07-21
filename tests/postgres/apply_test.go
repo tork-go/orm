@@ -39,7 +39,7 @@ func TestApply_BringsSchemaUpToDate(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	m, err := cli.MakeMigrations(ctx, dialect, dsn(), dir, "add users", fixtures.Users)
+	m, err := cli.MakeMigrations(ctx, dsn(), dir, "add users", fixtures.Users)
 	if err != nil {
 		t.Fatalf("MakeMigrations failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestApply_BringsSchemaUpToDate(t *testing.T) {
 	// checking), so its history row would otherwise outlive the test.
 	t.Cleanup(func() { _ = dialect.DeleteHistoryRow(context.Background(), conn, m.Revision) })
 
-	if err := migrate.Apply(ctx, dialect, dsn(), dir); err != nil {
+	if err := migrate.Apply(ctx, dsn(), dir); err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
 
@@ -61,7 +61,7 @@ func TestApply_BringsSchemaUpToDate(t *testing.T) {
 
 	// Calling Apply again with nothing new pending must be a no-op, not
 	// an error (this is what makes it safe to call on every app startup).
-	if err := migrate.Apply(ctx, dialect, dsn(), dir); err != nil {
+	if err := migrate.Apply(ctx, dsn(), dir); err != nil {
 		t.Fatalf("second Apply call (nothing pending) failed: %v", err)
 	}
 }

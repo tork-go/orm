@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/tork-go/orm"
 	"github.com/tork-go/orm/driver"
 	"github.com/tork-go/orm/schema"
 )
@@ -334,6 +336,30 @@ func (d *Dialect) Connect(context.Context, string) (driver.Conn, error) {
 		return nil, d.ConnectErr
 	}
 	return NewConn(), nil
+}
+
+// Open is Connect in the shape orm.Driver asks for, so a fake dialect can be
+// registered and reached through orm.Connect like a real one.
+func (d *Dialect) Open(ctx context.Context, _ orm.Config) (driver.Conn, error) {
+	return d.Connect(ctx, "")
+}
+
+// registered counts the fake drivers handed to orm.Register, so each gets a
+// name of its own.
+var registered atomic.Int64
+
+// Register makes d reachable by name and returns a connection string whose
+// scheme is that name.
+//
+// A fresh name per call, rather than one shared "fake", because a Dialect
+// carries per-test state: which calls fail, what Introspect returns. Sharing
+// one would make a test's setup visible to every other test in the binary, and
+// orm.Register rejects a duplicate name precisely so that cannot be done by
+// accident.
+func Register(d *Dialect) string {
+	name := fmt.Sprintf("fake%d", registered.Add(1))
+	orm.Register(d, name)
+	return name + "://memory"
 }
 
 func (d *Dialect) Introspect(context.Context, driver.Conn, []string) (schema.Schema, error) {

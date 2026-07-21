@@ -83,7 +83,7 @@ func TestIndexDef_ZeroColumns(t *testing.T) {
 
 // indexerModel proves orm.Indexer is satisfiable by an ordinary model.
 type indexerModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	A *orm.Column[int]
 	B *orm.Column[int]
 }
@@ -93,7 +93,7 @@ func (m *indexerModel) Indexes() []orm.IndexDef {
 }
 
 func TestIndexerModel_SatisfiesIndexer(t *testing.T) {
-	m := &indexerModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	m := &indexerModel{Table: orm.NewTable[orm.NoEntity]("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
 
 	var indexer orm.Indexer = m
 	defs := indexer.Indexes()

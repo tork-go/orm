@@ -19,8 +19,8 @@ func TestColumn_FreshState(t *testing.T) {
 	if c.IsUnique() {
 		t.Error("IsUnique() = true on a fresh column, want false")
 	}
-	if c.IsNotNull() {
-		t.Error("IsNotNull() = true on a fresh column, want false")
+	if c.HasNotNull() {
+		t.Error("HasNotNull() = true on a fresh column, want false")
 	}
 	if n, ok := c.MaxLength(); ok {
 		t.Errorf("MaxLength() = (%d, %v), want ok=false on a fresh column", n, ok)
@@ -67,7 +67,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !c.IsPrimaryKey() {
 					t.Error("IsPrimaryKey() = false, want true")
 				}
-				if c.IsUnique() || c.IsNotNull() {
+				if c.IsUnique() || c.HasNotNull() {
 					t.Error("PrimaryKey() unexpectedly set Unique or NotNull")
 				}
 			},
@@ -79,7 +79,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !c.IsUnique() {
 					t.Error("IsUnique() = false, want true")
 				}
-				if c.IsPrimaryKey() || c.IsNotNull() {
+				if c.IsPrimaryKey() || c.HasNotNull() {
 					t.Error("Unique() unexpectedly set PrimaryKey or NotNull")
 				}
 			},
@@ -88,8 +88,8 @@ func TestColumn_BuilderMethods(t *testing.T) {
 			name:  "NotNull sets only not null",
 			build: func(c *orm.Column[string]) *orm.Column[string] { return c.NotNull() },
 			check: func(t *testing.T, c *orm.Column[string]) {
-				if !c.IsNotNull() {
-					t.Error("IsNotNull() = false, want true")
+				if !c.HasNotNull() {
+					t.Error("HasNotNull() = false, want true")
 				}
 				if c.IsPrimaryKey() || c.IsUnique() {
 					t.Error("NotNull() unexpectedly set PrimaryKey or Unique")
@@ -104,7 +104,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !ok || n != 30 {
 					t.Errorf("MaxLength() = (%d, %v), want (30, true)", n, ok)
 				}
-				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() {
+				if c.IsPrimaryKey() || c.IsUnique() || c.HasNotNull() {
 					t.Error("MaxLen() unexpectedly set another constraint")
 				}
 			},
@@ -116,7 +116,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !c.IsIndexed() {
 					t.Error("IsIndexed() = false, want true")
 				}
-				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() {
+				if c.IsPrimaryKey() || c.IsUnique() || c.HasNotNull() {
 					t.Error("Index() unexpectedly set another constraint")
 				}
 			},
@@ -129,7 +129,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !ok || expr != "now()" {
 					t.Errorf("ServerDefaultExpr() = (%q, %v), want (\"now()\", true)", expr, ok)
 				}
-				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
+				if c.IsPrimaryKey() || c.IsUnique() || c.HasNotNull() || c.IsIndexed() {
 					t.Error("ServerDefault() unexpectedly set another constraint")
 				}
 			},
@@ -143,7 +143,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !c.IsClientGenerated() {
 					t.Error("IsClientGenerated() = false, want true")
 				}
-				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
+				if c.IsPrimaryKey() || c.IsUnique() || c.HasNotNull() || c.IsIndexed() {
 					t.Error("GeneratedByClient() unexpectedly set another constraint")
 				}
 			},
@@ -156,7 +156,7 @@ func TestColumn_BuilderMethods(t *testing.T) {
 				if !ok || p != 10 || s != 2 {
 					t.Errorf("NumericPrecisionScale() = (%d, %d, %v), want (10, 2, true)", p, s, ok)
 				}
-				if c.IsPrimaryKey() || c.IsUnique() || c.IsNotNull() || c.IsIndexed() {
+				if c.IsPrimaryKey() || c.IsUnique() || c.HasNotNull() || c.IsIndexed() {
 					t.Error("Numeric() unexpectedly set another constraint")
 				}
 			},
@@ -239,9 +239,9 @@ func TestColumn_BuilderMethods(t *testing.T) {
 			},
 			check: func(t *testing.T, c *orm.Column[string]) {
 				n, ok := c.MaxLength()
-				if !c.IsPrimaryKey() || !c.IsUnique() || !c.IsNotNull() || !ok || n != 30 {
+				if !c.IsPrimaryKey() || !c.IsUnique() || !c.HasNotNull() || !ok || n != 30 {
 					t.Errorf("combined builders did not set all constraints: pk=%v unique=%v notnull=%v maxlen=(%d,%v)",
-						c.IsPrimaryKey(), c.IsUnique(), c.IsNotNull(), n, ok)
+						c.IsPrimaryKey(), c.IsUnique(), c.HasNotNull(), n, ok)
 				}
 			},
 		},
@@ -274,7 +274,7 @@ func TestColumn_ChainOrderIndependence(t *testing.T) {
 	reversed := orm.NewColumn[string]("username").ServerDefault("x").Index().MaxLen(30).NotNull().Unique()
 
 	if forward.IsUnique() != reversed.IsUnique() ||
-		forward.IsNotNull() != reversed.IsNotNull() ||
+		forward.HasNotNull() != reversed.HasNotNull() ||
 		forward.IsIndexed() != reversed.IsIndexed() {
 		t.Fatal("chain order affected Unique/NotNull/Index flags")
 	}

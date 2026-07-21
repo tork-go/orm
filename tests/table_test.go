@@ -18,7 +18,7 @@ func TestTable_TableName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tbl := orm.NewTable(tt.tableName)
+			tbl := orm.NewTable[orm.NoEntity](tt.tableName)
 			if got := tbl.TableName(); got != tt.tableName {
 				t.Errorf("TableName() = %q, want %q", got, tt.tableName)
 			}
@@ -31,10 +31,10 @@ func TestTable_TableName(t *testing.T) {
 // used throughout the target model-declaration API.
 func TestTable_ValueEmbedding(t *testing.T) {
 	type Model struct {
-		orm.Table
+		orm.Table[orm.NoEntity]
 	}
 
-	m := &Model{Table: orm.NewTable("widgets")}
+	m := &Model{Table: orm.NewTable[orm.NoEntity]("widgets")}
 	if got, want := m.TableName(), "widgets"; got != want {
 		t.Errorf("TableName() = %q, want %q", got, want)
 	}

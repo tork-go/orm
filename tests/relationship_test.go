@@ -6,7 +6,7 @@ import (
 	"github.com/tork-go/orm"
 )
 
-type relatedModel struct{ orm.Table }
+type relatedModel struct{ orm.Table[orm.NoEntity] }
 
 // TestHasMany_ZeroValueUsable proves HasMany[T] is safe to leave
 // uninitialized in a model's composite literal, as in the target API's
@@ -50,14 +50,14 @@ func TestManyToMany_ZeroValueUsable(t *testing.T) {
 // the same way the target API leaves Posts/Author unset.
 func TestRelationshipMarkers_InStruct(t *testing.T) {
 	type Model struct {
-		orm.Table
+		orm.Table[orm.NoEntity]
 		Children orm.HasMany[relatedModel]
 		Parent   orm.BelongsTo[relatedModel]
 		Profile  orm.HasOne[relatedModel]
 		Tags     orm.ManyToMany[relatedModel]
 	}
 
-	m := &Model{Table: orm.NewTable("models")}
+	m := &Model{Table: orm.NewTable[orm.NoEntity]("models")}
 
 	if m.Children != (orm.HasMany[relatedModel]{}) {
 		t.Error("uninitialized Children field is not the zero value")

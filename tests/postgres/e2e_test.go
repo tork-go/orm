@@ -16,7 +16,7 @@ import (
 
 // TestEndToEnd_MakeMigrationsUpDownHistory drives the full round trip
 // against a real Postgres instance: generate a migration from
-// fixtures.User/Post, apply it, verify the tables and constraints exist
+// fixtures.Users/Post, apply it, verify the tables and constraints exist
 // via a follow-up introspection, roll it back, and verify they're gone.
 func TestEndToEnd_MakeMigrationsUpDownHistory(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -44,7 +44,7 @@ func TestEndToEnd_MakeMigrationsUpDownHistory(t *testing.T) {
 	dir := t.TempDir()
 	run := func(args ...string) (stdout, stderr string, code int) {
 		var out, errOut bytes.Buffer
-		code = cli.RunWithArgs(args, &out, &errOut, dialect, dsn(), dir, fixtures.User, fixtures.Post)
+		code = cli.RunWithArgs(args, &out, &errOut, dialect, dsn(), dir, fixtures.Users, fixtures.Posts)
 		return out.String(), errOut.String(), code
 	}
 

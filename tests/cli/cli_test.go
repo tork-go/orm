@@ -16,7 +16,7 @@ import (
 func run(t *testing.T, dialect *fakedriver.Dialect, dir string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code = cli.RunWithArgs(args, &out, &errOut, dialect, "fake-dsn", dir, fixtures.User, fixtures.Post)
+	code = cli.RunWithArgs(args, &out, &errOut, dialect, "fake-dsn", dir, fixtures.Users, fixtures.Posts)
 	return out.String(), errOut.String(), code
 }
 
@@ -198,7 +198,7 @@ func TestRunWithArgs_EmptyMigrationsDir_DefaultsToMigrations(t *testing.T) {
 
 	dialect := fakedriver.NewDialect()
 	var out, errOut bytes.Buffer
-	code := cli.RunWithArgs([]string{"makemigrations"}, &out, &errOut, dialect, "fake-dsn", "", fixtures.User)
+	code := cli.RunWithArgs([]string{"makemigrations"}, &out, &errOut, dialect, "fake-dsn", "", fixtures.Users)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%q", code, errOut.String())
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 func TestExtractSchema_UserTable(t *testing.T) {
-	s, err := schema.ExtractSchema(fixtures.User)
+	s, err := schema.ExtractSchema(fixtures.Users)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestExtractSchema_UserTable(t *testing.T) {
 }
 
 func TestExtractSchema_PostTable(t *testing.T) {
-	s, err := schema.ExtractSchema(fixtures.Post)
+	s, err := schema.ExtractSchema(fixtures.Posts)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestExtractSchema_PostTable(t *testing.T) {
 }
 
 func TestExtractSchema_MultipleModels(t *testing.T) {
-	s, err := schema.ExtractSchema(fixtures.User, fixtures.Post)
+	s, err := schema.ExtractSchema(fixtures.Users, fixtures.Posts)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
 	}
@@ -118,19 +118,19 @@ func TestExtractSchema_MultipleModels(t *testing.T) {
 }
 
 type maxLenOnIntModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	N *orm.Column[int]
 }
 
 func TestExtractSchema_MaxLenOnNonStringColumn_Error(t *testing.T) {
-	m := &maxLenOnIntModel{Table: orm.NewTable("t"), N: orm.NewColumn[int]("n").MaxLen(10)}
+	m := &maxLenOnIntModel{Table: orm.NewTable[orm.NoEntity]("t"), N: orm.NewColumn[int]("n").MaxLen(10)}
 	if _, err := schema.ExtractSchema(m); err == nil {
 		t.Fatal("expected an error for MaxLen used on a non-string column, got nil")
 	}
 }
 
 type nonPositiveMaxLenModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	S *orm.Column[string]
 }
 
@@ -144,7 +144,7 @@ func TestExtractSchema_NonPositiveMaxLenOnStringColumn_Error(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &nonPositiveMaxLenModel{Table: orm.NewTable("t"), S: orm.NewColumn[string]("s").MaxLen(tt.maxLen)}
+			m := &nonPositiveMaxLenModel{Table: orm.NewTable[orm.NoEntity]("t"), S: orm.NewColumn[string]("s").MaxLen(tt.maxLen)}
 			if _, err := schema.ExtractSchema(m); err == nil {
 				t.Fatalf("expected an error for MaxLen(%d) on a string column, got nil", tt.maxLen)
 			}
@@ -153,24 +153,24 @@ func TestExtractSchema_NonPositiveMaxLenOnStringColumn_Error(t *testing.T) {
 }
 
 type unsupportedTypeModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Data *orm.Column[[]byte]
 }
 
 func TestExtractSchema_UnsupportedGoType_Error(t *testing.T) {
-	m := &unsupportedTypeModel{Table: orm.NewTable("t"), Data: orm.NewColumn[[]byte]("data")}
+	m := &unsupportedTypeModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[[]byte]("data")}
 	if _, err := schema.ExtractSchema(m); err == nil {
 		t.Fatal("expected an error for an unsupported Go type, got nil")
 	}
 }
 
 type indexedOnlyModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Email *orm.Column[string]
 }
 
 func TestExtractSchema_IndexAlone_ProducesIndexNotUnique(t *testing.T) {
-	m := &indexedOnlyModel{Table: orm.NewTable("t"), Email: orm.NewColumn[string]("email").Index()}
+	m := &indexedOnlyModel{Table: orm.NewTable[orm.NoEntity]("t"), Email: orm.NewColumn[string]("email").Index()}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -186,12 +186,12 @@ func TestExtractSchema_IndexAlone_ProducesIndexNotUnique(t *testing.T) {
 }
 
 type indexedAndUniqueModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Email *orm.Column[string]
 }
 
 func TestExtractSchema_IndexAndUnique_FoldsIntoUniqueOnly(t *testing.T) {
-	m := &indexedAndUniqueModel{Table: orm.NewTable("t"), Email: orm.NewColumn[string]("email").Unique().Index()}
+	m := &indexedAndUniqueModel{Table: orm.NewTable[orm.NoEntity]("t"), Email: orm.NewColumn[string]("email").Unique().Index()}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -207,7 +207,7 @@ func TestExtractSchema_IndexAndUnique_FoldsIntoUniqueOnly(t *testing.T) {
 }
 
 type indexerCompoundModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	A *orm.Column[int]
 	B *orm.Column[int]
 }
@@ -217,7 +217,7 @@ func (m *indexerCompoundModel) Indexes() []orm.IndexDef {
 }
 
 func TestExtractSchema_Indexer_UnnamedCompoundIndex_AutoNamed(t *testing.T) {
-	m := &indexerCompoundModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	m := &indexerCompoundModel{Table: orm.NewTable[orm.NoEntity]("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -229,7 +229,7 @@ func TestExtractSchema_Indexer_UnnamedCompoundIndex_AutoNamed(t *testing.T) {
 }
 
 type indexerCompoundNamedModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	A *orm.Column[int]
 	B *orm.Column[int]
 }
@@ -239,7 +239,7 @@ func (m *indexerCompoundNamedModel) Indexes() []orm.IndexDef {
 }
 
 func TestExtractSchema_Indexer_NamedCompoundIndex_UsesOverride(t *testing.T) {
-	m := &indexerCompoundNamedModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	m := &indexerCompoundNamedModel{Table: orm.NewTable[orm.NoEntity]("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -251,7 +251,7 @@ func TestExtractSchema_Indexer_NamedCompoundIndex_UsesOverride(t *testing.T) {
 }
 
 type indexerCompoundUniqueModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	A *orm.Column[int]
 	B *orm.Column[int]
 }
@@ -261,7 +261,7 @@ func (m *indexerCompoundUniqueModel) Indexes() []orm.IndexDef {
 }
 
 func TestExtractSchema_Indexer_CompoundUnique_LandsInUniques(t *testing.T) {
-	m := &indexerCompoundUniqueModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
+	m := &indexerCompoundUniqueModel{Table: orm.NewTable[orm.NoEntity]("t"), A: orm.NewColumn[int]("a"), B: orm.NewColumn[int]("b")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -277,7 +277,7 @@ func TestExtractSchema_Indexer_CompoundUnique_LandsInUniques(t *testing.T) {
 }
 
 type indexerZeroColumnsModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	A *orm.Column[int]
 }
 
@@ -286,7 +286,7 @@ func (m *indexerZeroColumnsModel) Indexes() []orm.IndexDef {
 }
 
 func TestExtractSchema_IndexerZeroColumns_Error(t *testing.T) {
-	m := &indexerZeroColumnsModel{Table: orm.NewTable("t"), A: orm.NewColumn[int]("a")}
+	m := &indexerZeroColumnsModel{Table: orm.NewTable[orm.NoEntity]("t"), A: orm.NewColumn[int]("a")}
 	_, err := schema.ExtractSchema(m)
 	if err == nil {
 		t.Fatal("expected an error for a zero-column index definition, got nil")
@@ -297,12 +297,12 @@ func TestExtractSchema_IndexerZeroColumns_Error(t *testing.T) {
 }
 
 type serverDefaultModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	CreatedAt *orm.Column[string]
 }
 
 func TestExtractSchema_ServerDefault_Populates(t *testing.T) {
-	m := &serverDefaultModel{Table: orm.NewTable("t"), CreatedAt: orm.NewColumn[string]("created_at").ServerDefault("now()")}
+	m := &serverDefaultModel{Table: orm.NewTable[orm.NoEntity]("t"), CreatedAt: orm.NewColumn[string]("created_at").ServerDefault("now()")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -313,7 +313,7 @@ func TestExtractSchema_ServerDefault_Populates(t *testing.T) {
 }
 
 func TestExtractSchema_ServerDefault_Empty_Error(t *testing.T) {
-	m := &serverDefaultModel{Table: orm.NewTable("t"), CreatedAt: orm.NewColumn[string]("created_at").ServerDefault("")}
+	m := &serverDefaultModel{Table: orm.NewTable[orm.NoEntity]("t"), CreatedAt: orm.NewColumn[string]("created_at").ServerDefault("")}
 	_, err := schema.ExtractSchema(m)
 	if err == nil || !strings.Contains(err.Error(), "ServerDefault must not be empty") {
 		t.Fatalf("error = %v, want it to contain %q", err, "ServerDefault must not be empty")
@@ -321,20 +321,20 @@ func TestExtractSchema_ServerDefault_Empty_Error(t *testing.T) {
 }
 
 type identityConflictModel[T int | int64] struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	ID *orm.Column[T]
 }
 
 func TestExtractSchema_ServerDefault_IdentityConflict_Error(t *testing.T) {
 	t.Run("int", func(t *testing.T) {
-		m := &identityConflictModel[int]{Table: orm.NewTable("t"), ID: orm.NewColumn[int]("id").PrimaryKey().ServerDefault("1")}
+		m := &identityConflictModel[int]{Table: orm.NewTable[orm.NoEntity]("t"), ID: orm.NewColumn[int]("id").PrimaryKey().ServerDefault("1")}
 		_, err := schema.ExtractSchema(m)
 		if err == nil || !strings.Contains(err.Error(), "GENERATED ALWAYS AS IDENTITY") {
 			t.Fatalf("error = %v, want it to mention GENERATED ALWAYS AS IDENTITY", err)
 		}
 	})
 	t.Run("int64", func(t *testing.T) {
-		m := &identityConflictModel[int64]{Table: orm.NewTable("t"), ID: orm.NewColumn[int64]("id").PrimaryKey().ServerDefault("1")}
+		m := &identityConflictModel[int64]{Table: orm.NewTable[orm.NoEntity]("t"), ID: orm.NewColumn[int64]("id").PrimaryKey().ServerDefault("1")}
 		_, err := schema.ExtractSchema(m)
 		if err == nil || !strings.Contains(err.Error(), "GENERATED ALWAYS AS IDENTITY") {
 			t.Fatalf("error = %v, want it to mention GENERATED ALWAYS AS IDENTITY", err)
@@ -343,14 +343,14 @@ func TestExtractSchema_ServerDefault_IdentityConflict_Error(t *testing.T) {
 }
 
 type nonPKServerDefaultModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	ID    *orm.Column[int]
 	Count *orm.Column[int]
 }
 
 func TestExtractSchema_ServerDefault_NonPKInteger_OK(t *testing.T) {
 	m := &nonPKServerDefaultModel{
-		Table: orm.NewTable("t"),
+		Table: orm.NewTable[orm.NoEntity]("t"),
 		ID:    orm.NewColumn[int]("id").PrimaryKey(),
 		Count: orm.NewColumn[int]("count").ServerDefault("0"),
 	}
@@ -360,14 +360,14 @@ func TestExtractSchema_ServerDefault_NonPKInteger_OK(t *testing.T) {
 }
 
 type compositePKServerDefaultModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	A *orm.Column[int]
 	B *orm.Column[int]
 }
 
 func TestExtractSchema_ServerDefault_CompositePK_OK(t *testing.T) {
 	m := &compositePKServerDefaultModel{
-		Table: orm.NewTable("t"),
+		Table: orm.NewTable[orm.NoEntity]("t"),
 		A:     orm.NewColumn[int]("a").PrimaryKey().ServerDefault("0"),
 		B:     orm.NewColumn[int]("b").PrimaryKey(),
 	}
@@ -377,12 +377,12 @@ func TestExtractSchema_ServerDefault_CompositePK_OK(t *testing.T) {
 }
 
 type uuidColumnModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	ID *orm.Column[uuid.UUID]
 }
 
 func TestExtractSchema_UUIDColumn(t *testing.T) {
-	m := &uuidColumnModel{Table: orm.NewTable("t"), ID: orm.NewColumn[uuid.UUID]("id").ServerDefault("gen_random_uuid()")}
+	m := &uuidColumnModel{Table: orm.NewTable[orm.NoEntity]("t"), ID: orm.NewColumn[uuid.UUID]("id").ServerDefault("gen_random_uuid()")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -397,7 +397,7 @@ func TestExtractSchema_UUIDColumn(t *testing.T) {
 }
 
 func TestExtractSchema_MaxLenOnUUIDColumn_Error(t *testing.T) {
-	m := &uuidColumnModel{Table: orm.NewTable("t"), ID: orm.NewColumn[uuid.UUID]("id").MaxLen(10)}
+	m := &uuidColumnModel{Table: orm.NewTable[orm.NoEntity]("t"), ID: orm.NewColumn[uuid.UUID]("id").MaxLen(10)}
 	if _, err := schema.ExtractSchema(m); err == nil {
 		t.Fatal("expected an error for MaxLen used on a UUID column, got nil")
 	}
@@ -406,12 +406,12 @@ func TestExtractSchema_MaxLenOnUUIDColumn_Error(t *testing.T) {
 // --- Numeric ---
 
 type numericModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Amount *orm.Column[decimal.Decimal]
 }
 
 func TestExtractSchema_Numeric_Bare(t *testing.T) {
-	m := &numericModel{Table: orm.NewTable("t"), Amount: orm.NewColumn[decimal.Decimal]("amount")}
+	m := &numericModel{Table: orm.NewTable[orm.NoEntity]("t"), Amount: orm.NewColumn[decimal.Decimal]("amount")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -423,7 +423,7 @@ func TestExtractSchema_Numeric_Bare(t *testing.T) {
 }
 
 func TestExtractSchema_Numeric_WithPrecisionAndScale(t *testing.T) {
-	m := &numericModel{Table: orm.NewTable("t"), Amount: orm.NewColumn[decimal.Decimal]("amount").Numeric(10, 2)}
+	m := &numericModel{Table: orm.NewTable[orm.NoEntity]("t"), Amount: orm.NewColumn[decimal.Decimal]("amount").Numeric(10, 2)}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -435,7 +435,7 @@ func TestExtractSchema_Numeric_WithPrecisionAndScale(t *testing.T) {
 }
 
 func TestExtractSchema_Numeric_OnNonNumericColumn_Error(t *testing.T) {
-	m := &maxLenOnIntModel{Table: orm.NewTable("t"), N: orm.NewColumn[int]("n").Numeric(10, 2)}
+	m := &maxLenOnIntModel{Table: orm.NewTable[orm.NoEntity]("t"), N: orm.NewColumn[int]("n").Numeric(10, 2)}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Numeric is only valid on numeric columns") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Numeric is only valid on numeric columns")
 	}
@@ -455,7 +455,7 @@ func TestExtractSchema_Numeric_InvalidPrecisionScale_Error(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &numericModel{Table: orm.NewTable("t"), Amount: orm.NewColumn[decimal.Decimal]("amount").Numeric(tt.precision, tt.scale)}
+			m := &numericModel{Table: orm.NewTable[orm.NoEntity]("t"), Amount: orm.NewColumn[decimal.Decimal]("amount").Numeric(tt.precision, tt.scale)}
 			_, err := schema.ExtractSchema(m)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErrContain) {
 				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErrContain)
@@ -467,12 +467,12 @@ func TestExtractSchema_Numeric_InvalidPrecisionScale_Error(t *testing.T) {
 // --- Enum ---
 
 type enumModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Status *orm.Column[string]
 }
 
 func TestExtractSchema_Enum_Populates(t *testing.T) {
-	m := &enumModel{Table: orm.NewTable("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "pending", "done")}
+	m := &enumModel{Table: orm.NewTable[orm.NoEntity]("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "pending", "done")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -488,55 +488,55 @@ func TestExtractSchema_Enum_Populates(t *testing.T) {
 }
 
 func TestExtractSchema_Enum_OnNonStringColumn_Error(t *testing.T) {
-	m := &maxLenOnIntModel{Table: orm.NewTable("t"), N: orm.NewColumn[int]("n").Enum("t", "a")}
+	m := &maxLenOnIntModel{Table: orm.NewTable[orm.NoEntity]("t"), N: orm.NewColumn[int]("n").Enum("t", "a")}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Enum is only valid on a string-kind column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Enum is only valid on a string-kind column")
 	}
 }
 
 func TestExtractSchema_Enum_EmptyTypeName_Error(t *testing.T) {
-	m := &enumModel{Table: orm.NewTable("t"), Status: orm.NewColumn[string]("status").Enum("", "a")}
+	m := &enumModel{Table: orm.NewTable[orm.NoEntity]("t"), Status: orm.NewColumn[string]("status").Enum("", "a")}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Enum type name must not be empty") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Enum type name must not be empty")
 	}
 }
 
 func TestExtractSchema_Enum_NoValues_Error(t *testing.T) {
-	m := &enumModel{Table: orm.NewTable("t"), Status: orm.NewColumn[string]("status").Enum("order_status")}
+	m := &enumModel{Table: orm.NewTable[orm.NoEntity]("t"), Status: orm.NewColumn[string]("status").Enum("order_status")}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Enum must have at least one value") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Enum must have at least one value")
 	}
 }
 
 func TestExtractSchema_Enum_DuplicateValues_Error(t *testing.T) {
-	m := &enumModel{Table: orm.NewTable("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "a", "a")}
+	m := &enumModel{Table: orm.NewTable[orm.NoEntity]("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "a", "a")}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Enum values must be unique") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Enum values must be unique")
 	}
 }
 
 func TestExtractSchema_Enum_MaxLenConflict_Error(t *testing.T) {
-	m := &enumModel{Table: orm.NewTable("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "a").MaxLen(10)}
+	m := &enumModel{Table: orm.NewTable[orm.NoEntity]("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "a").MaxLen(10)}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "MaxLen is not valid on an Enum column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "MaxLen is not valid on an Enum column")
 	}
 }
 
 func TestExtractSchema_Enum_NumericConflict_Error(t *testing.T) {
-	m := &enumModel{Table: orm.NewTable("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "a").Numeric(5, 0)}
+	m := &enumModel{Table: orm.NewTable[orm.NoEntity]("t"), Status: orm.NewColumn[string]("status").Enum("order_status", "a").Numeric(5, 0)}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Numeric is not valid on an Enum column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Numeric is not valid on an Enum column")
 	}
 }
 
 type enumModelB struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Kind *orm.Column[string]
 }
 
 func TestExtractSchema_Enum_CrossModelValueMismatch_Error(t *testing.T) {
-	a := &enumModel{Table: orm.NewTable("a"), Status: orm.NewColumn[string]("status").Enum("shared_enum", "x", "y")}
-	b := &enumModelB{Table: orm.NewTable("b"), Kind: orm.NewColumn[string]("kind").Enum("shared_enum", "x", "z")}
+	a := &enumModel{Table: orm.NewTable[orm.NoEntity]("a"), Status: orm.NewColumn[string]("status").Enum("shared_enum", "x", "y")}
+	b := &enumModelB{Table: orm.NewTable[orm.NoEntity]("b"), Kind: orm.NewColumn[string]("kind").Enum("shared_enum", "x", "z")}
 	_, err := schema.ExtractSchema(a, b)
 	if err == nil || !strings.Contains(err.Error(), "declared with different values") {
 		t.Fatalf("error = %v, want it to contain %q", err, "declared with different values")
@@ -544,8 +544,8 @@ func TestExtractSchema_Enum_CrossModelValueMismatch_Error(t *testing.T) {
 }
 
 func TestExtractSchema_Enum_CrossModelSameValues_Dedupes(t *testing.T) {
-	a := &enumModel{Table: orm.NewTable("a"), Status: orm.NewColumn[string]("status").Enum("shared_enum", "x", "y")}
-	b := &enumModelB{Table: orm.NewTable("b"), Kind: orm.NewColumn[string]("kind").Enum("shared_enum", "x", "y")}
+	a := &enumModel{Table: orm.NewTable[orm.NoEntity]("a"), Status: orm.NewColumn[string]("status").Enum("shared_enum", "x", "y")}
+	b := &enumModelB{Table: orm.NewTable[orm.NoEntity]("b"), Kind: orm.NewColumn[string]("kind").Enum("shared_enum", "x", "y")}
 	s, err := schema.ExtractSchema(a, b)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -558,12 +558,12 @@ func TestExtractSchema_Enum_CrossModelSameValues_Dedupes(t *testing.T) {
 // --- JSON / JSONB ---
 
 type jsonModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Data *orm.Column[string]
 }
 
 func TestExtractSchema_JSON(t *testing.T) {
-	m := &jsonModel{Table: orm.NewTable("t"), Data: orm.NewColumn[string]("data").JSON()}
+	m := &jsonModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[string]("data").JSON()}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -574,7 +574,7 @@ func TestExtractSchema_JSON(t *testing.T) {
 }
 
 func TestExtractSchema_JSONB(t *testing.T) {
-	m := &jsonModel{Table: orm.NewTable("t"), Data: orm.NewColumn[string]("data").JSONB()}
+	m := &jsonModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[string]("data").JSONB()}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -585,7 +585,7 @@ func TestExtractSchema_JSONB(t *testing.T) {
 }
 
 func TestExtractSchema_Serialize_AloneImpliesJSONB(t *testing.T) {
-	m := &jsonModel{Table: orm.NewTable("t"), Data: orm.NewColumn[string]("data").Serialize(
+	m := &jsonModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[string]("data").Serialize(
 		func(s string) ([]byte, error) { return []byte(s), nil },
 		func(b []byte) (string, error) { return string(b), nil },
 	)}
@@ -599,21 +599,21 @@ func TestExtractSchema_Serialize_AloneImpliesJSONB(t *testing.T) {
 }
 
 func TestExtractSchema_JSON_MaxLenConflict_Error(t *testing.T) {
-	m := &jsonModel{Table: orm.NewTable("t"), Data: orm.NewColumn[string]("data").JSON().MaxLen(10)}
+	m := &jsonModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[string]("data").JSON().MaxLen(10)}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "MaxLen is not valid on a JSON/JSONB column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "MaxLen is not valid on a JSON/JSONB column")
 	}
 }
 
 func TestExtractSchema_JSON_NumericConflict_Error(t *testing.T) {
-	m := &jsonModel{Table: orm.NewTable("t"), Data: orm.NewColumn[string]("data").JSON().Numeric(5, 0)}
+	m := &jsonModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[string]("data").JSON().Numeric(5, 0)}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Numeric is not valid on a JSON/JSONB column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Numeric is not valid on a JSON/JSONB column")
 	}
 }
 
 func TestExtractSchema_JSON_EnumConflict_Error(t *testing.T) {
-	m := &jsonModel{Table: orm.NewTable("t"), Data: orm.NewColumn[string]("data").JSON().Enum("t", "a")}
+	m := &jsonModel{Table: orm.NewTable[orm.NoEntity]("t"), Data: orm.NewColumn[string]("data").JSON().Enum("t", "a")}
 	if _, err := schema.ExtractSchema(m); err == nil || !strings.Contains(err.Error(), "Enum cannot be combined with JSON/JSONB") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Enum cannot be combined with JSON/JSONB")
 	}
@@ -622,12 +622,12 @@ func TestExtractSchema_JSON_EnumConflict_Error(t *testing.T) {
 // --- Array ---
 
 type stringArrayModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Tags *orm.Column[[]string]
 }
 
 func TestExtractSchema_Array_Bare(t *testing.T) {
-	m := &stringArrayModel{Table: orm.NewTable("t"), Tags: orm.NewColumn[[]string]("tags")}
+	m := &stringArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Tags: orm.NewColumn[[]string]("tags")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -640,7 +640,7 @@ func TestExtractSchema_Array_Bare(t *testing.T) {
 }
 
 func TestExtractSchema_Array_MaxLenAppliesToElement(t *testing.T) {
-	m := &stringArrayModel{Table: orm.NewTable("t"), Tags: orm.NewColumn[[]string]("tags").MaxLen(30)}
+	m := &stringArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Tags: orm.NewColumn[[]string]("tags").MaxLen(30)}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -653,12 +653,12 @@ func TestExtractSchema_Array_MaxLenAppliesToElement(t *testing.T) {
 }
 
 type numericArrayModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Amounts *orm.Column[[]decimal.Decimal]
 }
 
 func TestExtractSchema_Array_NumericAppliesToElement(t *testing.T) {
-	m := &numericArrayModel{Table: orm.NewTable("t"), Amounts: orm.NewColumn[[]decimal.Decimal]("amounts").Numeric(10, 2)}
+	m := &numericArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Amounts: orm.NewColumn[[]decimal.Decimal]("amounts").Numeric(10, 2)}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -672,10 +672,10 @@ func TestExtractSchema_Array_NumericAppliesToElement(t *testing.T) {
 
 func TestExtractSchema_Array_MaxLenOnNonStringElement_Error(t *testing.T) {
 	type intArrayModel struct {
-		orm.Table
+		orm.Table[orm.NoEntity]
 		Nums *orm.Column[[]int]
 	}
-	m := &intArrayModel{Table: orm.NewTable("t"), Nums: orm.NewColumn[[]int]("nums").MaxLen(10)}
+	m := &intArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Nums: orm.NewColumn[[]int]("nums").MaxLen(10)}
 	_, err := schema.ExtractSchema(m)
 	if err == nil || !strings.Contains(err.Error(), "MaxLen is only valid on a string column or a string-array column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "MaxLen is only valid on a string column or a string-array column")
@@ -683,7 +683,7 @@ func TestExtractSchema_Array_MaxLenOnNonStringElement_Error(t *testing.T) {
 }
 
 func TestExtractSchema_Array_NumericOnNonNumericElement_Error(t *testing.T) {
-	m := &stringArrayModel{Table: orm.NewTable("t"), Tags: orm.NewColumn[[]string]("tags").Numeric(10, 2)}
+	m := &stringArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Tags: orm.NewColumn[[]string]("tags").Numeric(10, 2)}
 	_, err := schema.ExtractSchema(m)
 	if err == nil || !strings.Contains(err.Error(), "Numeric is only valid on a numeric column or a numeric-array column") {
 		t.Fatalf("error = %v, want it to contain %q", err, "Numeric is only valid on a numeric column or a numeric-array column")
@@ -692,10 +692,10 @@ func TestExtractSchema_Array_NumericOnNonNumericElement_Error(t *testing.T) {
 
 func TestExtractSchema_Array_MultiDimensional_Error(t *testing.T) {
 	type nestedArrayModel struct {
-		orm.Table
+		orm.Table[orm.NoEntity]
 		Grid *orm.Column[[][]string]
 	}
-	m := &nestedArrayModel{Table: orm.NewTable("t"), Grid: orm.NewColumn[[][]string]("grid")}
+	m := &nestedArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Grid: orm.NewColumn[[][]string]("grid")}
 	_, err := schema.ExtractSchema(m)
 	if err == nil || !strings.Contains(err.Error(), "multi-dimensional arrays are not supported") {
 		t.Fatalf("error = %v, want it to contain %q", err, "multi-dimensional arrays are not supported")
@@ -707,12 +707,12 @@ func TestExtractSchema_Array_MultiDimensional_Error(t *testing.T) {
 type orderStatus string
 
 type enumArrayModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Statuses *orm.Column[[]orderStatus]
 }
 
 func TestExtractSchema_ArrayOfEnumType_WithoutEnumCall_Error(t *testing.T) {
-	m := &enumArrayModel{Table: orm.NewTable("t"), Statuses: orm.NewColumn[[]orderStatus]("statuses")}
+	m := &enumArrayModel{Table: orm.NewTable[orm.NoEntity]("t"), Statuses: orm.NewColumn[[]orderStatus]("statuses")}
 	if _, err := schema.ExtractSchema(m); err == nil {
 		t.Fatal("expected an error for an array of a named string type with no Enum() call, got nil")
 	}
@@ -721,7 +721,7 @@ func TestExtractSchema_ArrayOfEnumType_WithoutEnumCall_Error(t *testing.T) {
 // --- CHECK constraints ---
 
 type checkExtractModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Age *orm.Column[int]
 }
 
@@ -730,7 +730,7 @@ func (m *checkExtractModel) Checks() []orm.CheckDef {
 }
 
 func TestExtractSchema_Checker_UnnamedCheck_AutoNamed(t *testing.T) {
-	m := &checkExtractModel{Table: orm.NewTable("accounts"), Age: orm.NewColumn[int]("age")}
+	m := &checkExtractModel{Table: orm.NewTable[orm.NoEntity]("accounts"), Age: orm.NewColumn[int]("age")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -742,7 +742,7 @@ func TestExtractSchema_Checker_UnnamedCheck_AutoNamed(t *testing.T) {
 }
 
 type multiCheckModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Age  *orm.Column[int]
 	Cash *orm.Column[int]
 }
@@ -756,7 +756,7 @@ func (m *multiCheckModel) Checks() []orm.CheckDef {
 }
 
 func TestExtractSchema_Checker_MixedNamedAndUnnamed(t *testing.T) {
-	m := &multiCheckModel{Table: orm.NewTable("accounts"), Age: orm.NewColumn[int]("age"), Cash: orm.NewColumn[int]("cash")}
+	m := &multiCheckModel{Table: orm.NewTable[orm.NoEntity]("accounts"), Age: orm.NewColumn[int]("age"), Cash: orm.NewColumn[int]("cash")}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
 		t.Fatalf("ExtractSchema failed: %v", err)
@@ -772,7 +772,7 @@ func TestExtractSchema_Checker_MixedNamedAndUnnamed(t *testing.T) {
 }
 
 type emptyCheckModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Age *orm.Column[int]
 }
 
@@ -781,7 +781,7 @@ func (m *emptyCheckModel) Checks() []orm.CheckDef {
 }
 
 func TestExtractSchema_Checker_EmptyExpression_Error(t *testing.T) {
-	m := &emptyCheckModel{Table: orm.NewTable("t"), Age: orm.NewColumn[int]("age")}
+	m := &emptyCheckModel{Table: orm.NewTable[orm.NoEntity]("t"), Age: orm.NewColumn[int]("age")}
 	_, err := schema.ExtractSchema(m)
 	if err == nil || !strings.Contains(err.Error(), "check definition has no expression") {
 		t.Fatalf("error = %v, want it to contain %q", err, "check definition has no expression")
@@ -791,17 +791,16 @@ func TestExtractSchema_Checker_EmptyExpression_Error(t *testing.T) {
 // --- Foreign key referential actions ---
 
 type fkActionModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	ID       *orm.Column[int]
-	AuthorID *orm.ForeignKey[int]
+	AuthorID *orm.Column[int]
 }
 
 func TestExtractSchema_ForeignKey_ActionsDefaultToNoAction(t *testing.T) {
-	users := orm.NewColumn[int]("id")
 	m := &fkActionModel{
-		Table:    orm.NewTable("posts"),
+		Table:    orm.NewTable[orm.NoEntity]("posts"),
 		ID:       orm.NewColumn[int]("id"),
-		AuthorID: orm.NewForeignKey("author_id", "users", users),
+		AuthorID: orm.NewColumn[int]("author_id").ReferencesTable("users", "id"),
 	}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
@@ -814,11 +813,10 @@ func TestExtractSchema_ForeignKey_ActionsDefaultToNoAction(t *testing.T) {
 }
 
 func TestExtractSchema_ForeignKey_ActionsPropagate(t *testing.T) {
-	users := orm.NewColumn[int]("id")
 	m := &fkActionModel{
-		Table:    orm.NewTable("posts"),
+		Table:    orm.NewTable[orm.NoEntity]("posts"),
 		ID:       orm.NewColumn[int]("id"),
-		AuthorID: orm.NewForeignKey("author_id", "users", users).OnDelete(orm.ActionCascade).OnUpdate(orm.ActionSetNull),
+		AuthorID: orm.NewColumn[int]("author_id").ReferencesTable("users", "id").OnDelete(orm.ActionCascade).OnUpdate(orm.ActionSetNull),
 	}
 	s, err := schema.ExtractSchema(m)
 	if err != nil {
@@ -845,11 +843,10 @@ func TestExtractSchema_ForeignKey_EveryAction(t *testing.T) {
 		{orm.ActionRestrict, schema.ActionRestrict},
 	}
 	for _, tt := range tests {
-		users := orm.NewColumn[int]("id")
 		m := &fkActionModel{
-			Table:    orm.NewTable("posts"),
+			Table:    orm.NewTable[orm.NoEntity]("posts"),
 			ID:       orm.NewColumn[int]("id"),
-			AuthorID: orm.NewForeignKey("author_id", "users", users).OnDelete(tt.ormAction),
+			AuthorID: orm.NewColumn[int]("author_id").ReferencesTable("users", "id").OnDelete(tt.ormAction),
 		}
 		s, err := schema.ExtractSchema(m)
 		if err != nil {

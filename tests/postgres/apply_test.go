@@ -39,7 +39,7 @@ func TestApply_BringsSchemaUpToDate(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	m, err := cli.MakeMigrations(ctx, dialect, dsn(), dir, "add users", fixtures.User)
+	m, err := cli.MakeMigrations(ctx, dialect, dsn(), dir, "add users", fixtures.Users)
 	if err != nil {
 		t.Fatalf("MakeMigrations failed: %v", err)
 	}

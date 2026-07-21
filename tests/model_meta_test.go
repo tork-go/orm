@@ -8,7 +8,7 @@ import (
 )
 
 func TestColumns_UserModel(t *testing.T) {
-	cols := orm.Columns(fixtures.User)
+	cols := orm.Columns(fixtures.Users)
 
 	names := columnNames(cols)
 	want := []string{"id", "username", "email"}
@@ -18,7 +18,7 @@ func TestColumns_UserModel(t *testing.T) {
 }
 
 func TestColumns_PostModel_IncludesForeignKey(t *testing.T) {
-	cols := orm.Columns(fixtures.Post)
+	cols := orm.Columns(fixtures.Posts)
 
 	names := columnNames(cols)
 	want := []string{"id", "title", "content", "author_id"}
@@ -28,7 +28,7 @@ func TestColumns_PostModel_IncludesForeignKey(t *testing.T) {
 }
 
 func TestForeignKeys_PostModel(t *testing.T) {
-	fks := orm.ForeignKeys(fixtures.Post)
+	fks := orm.ForeignKeys(fixtures.Posts)
 
 	if len(fks) != 1 {
 		t.Fatalf("ForeignKeys(Post) returned %d entries, want 1", len(fks))
@@ -46,7 +46,7 @@ func TestForeignKeys_PostModel(t *testing.T) {
 }
 
 func TestForeignKeys_UserModel_None(t *testing.T) {
-	if fks := orm.ForeignKeys(fixtures.User); len(fks) != 0 {
+	if fks := orm.ForeignKeys(fixtures.Users); len(fks) != 0 {
 		t.Errorf("ForeignKeys(User) = %v, want none", fks)
 	}
 }
@@ -55,12 +55,12 @@ func TestForeignKeys_UserModel_None(t *testing.T) {
 
 func TestColumns_ExcludesTableAndRelationshipFields(t *testing.T) {
 	type Model struct {
-		orm.Table
+		orm.Table[orm.NoEntity]
 		ID       *orm.Column[int]
 		Children orm.HasMany[relatedModel]
 		Parent   orm.BelongsTo[relatedModel]
 	}
-	m := &Model{Table: orm.NewTable("models"), ID: orm.NewColumn[int]("id")}
+	m := &Model{Table: orm.NewTable[orm.NoEntity]("models"), ID: orm.NewColumn[int]("id")}
 
 	cols := orm.Columns(m)
 	if len(cols) != 1 || cols[0].Name() != "id" {
@@ -70,11 +70,11 @@ func TestColumns_ExcludesTableAndRelationshipFields(t *testing.T) {
 
 func TestColumns_SkipsNilColumnField(t *testing.T) {
 	type Model struct {
-		orm.Table
+		orm.Table[orm.NoEntity]
 		ID    *orm.Column[int]
 		Extra *orm.Column[string] // deliberately left nil
 	}
-	m := &Model{Table: orm.NewTable("models"), ID: orm.NewColumn[int]("id")}
+	m := &Model{Table: orm.NewTable[orm.NoEntity]("models"), ID: orm.NewColumn[int]("id")}
 
 	cols := orm.Columns(m)
 	if len(cols) != 1 || cols[0].Name() != "id" {
@@ -105,13 +105,13 @@ func equalStrings(a, b []string) bool {
 func BenchmarkColumns(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = orm.Columns(fixtures.Post)
+		_ = orm.Columns(fixtures.Posts)
 	}
 }
 
 func BenchmarkForeignKeys(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = orm.ForeignKeys(fixtures.Post)
+		_ = orm.ForeignKeys(fixtures.Posts)
 	}
 }

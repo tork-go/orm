@@ -52,7 +52,7 @@ func TestCheckDef_EmptyExpression(t *testing.T) {
 
 // checkerModel proves orm.Checker is satisfiable by an ordinary model.
 type checkerModel struct {
-	orm.Table
+	orm.Table[orm.NoEntity]
 	Age *orm.Column[int]
 }
 
@@ -61,7 +61,7 @@ func (m *checkerModel) Checks() []orm.CheckDef {
 }
 
 func TestCheckerModel_SatisfiesChecker(t *testing.T) {
-	m := &checkerModel{Table: orm.NewTable("accounts"), Age: orm.NewColumn[int]("age")}
+	m := &checkerModel{Table: orm.NewTable[orm.NoEntity]("accounts"), Age: orm.NewColumn[int]("age")}
 
 	var checker orm.Checker = m
 	defs := checker.Checks()

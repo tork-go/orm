@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -16,10 +17,16 @@ import (
 
 // Conn is an in-memory fake driver.Conn.
 type Conn struct {
-	mu        sync.Mutex
-	execCalls []string
-	failOn    map[string]bool
-	FailBegin bool // if true, Begin returns an error, simulating a dropped connection
+	mu         sync.Mutex
+	execCalls  []string
+	queryCalls []string
+	queryArgs  [][]any
+	queued     [][][]any
+	failOn     map[string]bool
+	FailBegin  bool // if true, Begin returns an error, simulating a dropped connection
+
+	// RowsAffected is what Exec reports back. Zero unless a test sets it.
+	RowsAffected int64
 }
 
 // NewConn returns a ready-to-use fake connection.
@@ -39,17 +46,74 @@ func (c *Conn) ExecCalls() []string {
 	return out
 }
 
-func (c *Conn) Query(context.Context, string, ...any) (driver.Rows, error) { return &Rows{}, nil }
-func (c *Conn) QueryRow(context.Context, string, ...any) driver.Row        { return &Row{} }
+// QueueRows sets the result the next Query returns. Each element is one
+// row, and its values are handed to Scan in order, so they have to line up
+// with the SELECT list under test.
+//
+// Without this a query layer could only be tested against a live database,
+// since Query otherwise reports no rows at all.
+func (c *Conn) QueueRows(rows ...[]any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.queued = append(c.queued, rows)
+}
 
-func (c *Conn) Exec(_ context.Context, sql string, _ ...any) error {
+// QueryCalls returns every SQL string passed to Query, in call order.
+func (c *Conn) QueryCalls() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.queryCalls))
+	copy(out, c.queryCalls)
+	return out
+}
+
+// QueryArgs returns the bound arguments of the nth Query call.
+func (c *Conn) QueryArgs(n int) []any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n < 0 || n >= len(c.queryArgs) {
+		return nil
+	}
+	return c.queryArgs[n]
+}
+
+func (c *Conn) Query(_ context.Context, sql string, args ...any) (driver.Rows, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.queryCalls = append(c.queryCalls, sql)
+	c.queryArgs = append(c.queryArgs, args)
+	if c.failOn[sql] {
+		return nil, errors.New("fakedriver: simulated Query failure")
+	}
+	if len(c.queued) == 0 {
+		return &Rows{}, nil
+	}
+	next := c.queued[0]
+	c.queued = c.queued[1:]
+	return &Rows{rows: next}, nil
+}
+
+func (c *Conn) QueryRow(_ context.Context, sql string, args ...any) driver.Row {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.queryCalls = append(c.queryCalls, sql)
+	c.queryArgs = append(c.queryArgs, args)
+	if len(c.queued) == 0 || len(c.queued[0]) == 0 {
+		return &Row{}
+	}
+	next := c.queued[0][0]
+	c.queued = c.queued[1:]
+	return &Row{values: next}
+}
+
+func (c *Conn) Exec(_ context.Context, sql string, _ ...any) (driver.Result, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.execCalls = append(c.execCalls, sql)
 	if c.failOn[sql] {
-		return errors.New("fakedriver: simulated Exec failure")
+		return driver.Result{}, errors.New("fakedriver: simulated Exec failure")
 	}
-	return nil
+	return driver.Result{RowsAffected: c.RowsAffected}, nil
 }
 
 func (c *Conn) Begin(context.Context) (driver.Tx, error) {
@@ -73,24 +137,85 @@ func (t *Tx) Query(ctx context.Context, sql string, args ...any) (driver.Rows, e
 func (t *Tx) QueryRow(ctx context.Context, sql string, args ...any) driver.Row {
 	return t.conn.QueryRow(ctx, sql, args...)
 }
-func (t *Tx) Exec(ctx context.Context, sql string, args ...any) error {
+func (t *Tx) Exec(ctx context.Context, sql string, args ...any) (driver.Result, error) {
 	return t.conn.Exec(ctx, sql, args...)
 }
 func (t *Tx) Commit(context.Context) error   { t.Committed = true; return nil }
 func (t *Tx) Rollback(context.Context) error { t.RolledBack = true; return nil }
 
-// Rows is an always-empty fake driver.Rows.
-type Rows struct{}
+// Rows is a fake driver.Rows over a queued result set, empty unless the
+// test queued one with Conn.QueueRows.
+type Rows struct {
+	rows   [][]any
+	cursor int
+	closed bool
+}
 
-func (*Rows) Next() bool        { return false }
-func (*Rows) Scan(...any) error { return errors.New("fakedriver: no rows") }
-func (*Rows) Err() error        { return nil }
-func (*Rows) Close()            {}
+func (r *Rows) Next() bool {
+	if r.cursor >= len(r.rows) {
+		return false
+	}
+	r.cursor++
+	return true
+}
 
-// Row is an always-empty fake driver.Row.
-type Row struct{}
+// Scan copies the current row into dest, which is what a real driver does
+// with the pointers a caller hands it.
+func (r *Rows) Scan(dest ...any) error {
+	if r.cursor == 0 || r.cursor > len(r.rows) {
+		return errors.New("fakedriver: Scan called outside a row")
+	}
+	return assign(r.rows[r.cursor-1], dest)
+}
 
-func (*Row) Scan(...any) error { return errors.New("fakedriver: no row") }
+func (r *Rows) Err() error { return nil }
+func (r *Rows) Close()     { r.closed = true }
+
+// Closed reports whether Close was called, so a test can check a query
+// releases its cursor.
+func (r *Rows) Closed() bool { return r.closed }
+
+// Row is a fake driver.Row over a single queued row, empty unless the test
+// queued one.
+type Row struct {
+	values []any
+}
+
+func (r *Row) Scan(dest ...any) error {
+	if r.values == nil {
+		return errors.New("fakedriver: no row")
+	}
+	return assign(r.values, dest)
+}
+
+// assign copies values into the pointers in dest, the same way a driver
+// fills in the destinations a caller passed to Scan. Types have to match
+// exactly; a mismatch is reported rather than coerced, since silently
+// converting would hide the very bug a scan test is looking for.
+func assign(values, dest []any) error {
+	if len(values) != len(dest) {
+		return fmt.Errorf("fakedriver: scanning %d values into %d destinations",
+			len(values), len(dest))
+	}
+	for i, v := range values {
+		d := reflect.ValueOf(dest[i])
+		if d.Kind() != reflect.Pointer || d.IsNil() {
+			return fmt.Errorf("fakedriver: destination %d is %T, want a non-nil pointer", i, dest[i])
+		}
+		target := d.Elem()
+		if v == nil {
+			target.SetZero()
+			continue
+		}
+		rv := reflect.ValueOf(v)
+		if !rv.Type().AssignableTo(target.Type()) {
+			return fmt.Errorf("fakedriver: cannot scan %T into %s at position %d",
+				v, target.Type(), i)
+		}
+		target.Set(rv)
+	}
+	return nil
+}
 
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully

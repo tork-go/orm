@@ -32,9 +32,9 @@ func TestApply_BringsSchemaUpToDate(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS users CASCADE`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS users CASCADE`)
 	})
-	if err := conn.Exec(ctx, `DROP TABLE IF EXISTS users CASCADE`); err != nil {
+	if _, err := conn.Exec(ctx, `DROP TABLE IF EXISTS users CASCADE`); err != nil {
 		t.Fatalf("pre-test cleanup failed: %v", err)
 	}
 

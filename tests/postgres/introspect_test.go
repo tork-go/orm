@@ -54,11 +54,11 @@ CREATE TABLE test_introspect_child (
 );
 
 CREATE INDEX ix_test_introspect_child_active_score ON test_introspect_child (active, score);`
-	if err := conn.Exec(ctx, setup); err != nil {
+	if _, err := conn.Exec(ctx, setup); err != nil {
 		t.Fatalf("test setup failed: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_introspect_child, test_introspect_parent CASCADE`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_introspect_child, test_introspect_parent CASCADE`)
 	})
 
 	got, err := dialect.Introspect(ctx, conn, []string{"test_introspect_parent", "test_introspect_child"})
@@ -146,7 +146,7 @@ func TestIntrospect_PartialAndExpressionIndexes_Excluded(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_introspect_special CASCADE`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_introspect_special CASCADE`)
 	})
 	setup := `
 DROP TABLE IF EXISTS test_introspect_special CASCADE;
@@ -157,7 +157,7 @@ CREATE TABLE test_introspect_special (
 );
 CREATE INDEX ix_special_partial ON test_introspect_special (id) WHERE active;
 CREATE INDEX ix_special_expr ON test_introspect_special (lower(name));`
-	if err := conn.Exec(ctx, setup); err != nil {
+	if _, err := conn.Exec(ctx, setup); err != nil {
 		t.Fatalf("test setup failed: %v", err)
 	}
 
@@ -209,7 +209,7 @@ func TestIntrospect_NewColumnKindsAndConstraints(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_v2_child, test_v2_parent CASCADE; DROP TYPE IF EXISTS test_order_status`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_v2_child, test_v2_parent CASCADE; DROP TYPE IF EXISTS test_order_status`)
 	})
 	setup := `
 DROP TABLE IF EXISTS test_v2_child, test_v2_parent CASCADE;
@@ -237,7 +237,7 @@ CREATE TABLE test_v2_child (
     CONSTRAINT fk_test_v2_child_parent FOREIGN KEY (parent_id) REFERENCES test_v2_parent (id)
         ON DELETE CASCADE ON UPDATE SET NULL
 );`
-	if err := conn.Exec(ctx, setup); err != nil {
+	if _, err := conn.Exec(ctx, setup); err != nil {
 		t.Fatalf("test setup failed: %v", err)
 	}
 
@@ -329,14 +329,14 @@ func TestIntrospect_UnsupportedUserDefinedType_Errors(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_composite_col CASCADE; DROP TYPE IF EXISTS test_point_type`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_composite_col CASCADE; DROP TYPE IF EXISTS test_point_type`)
 	})
 	setup := `
 DROP TABLE IF EXISTS test_composite_col CASCADE;
 DROP TYPE IF EXISTS test_point_type;
 CREATE TYPE test_point_type AS (x INTEGER, y INTEGER);
 CREATE TABLE test_composite_col (p test_point_type);`
-	if err := conn.Exec(ctx, setup); err != nil {
+	if _, err := conn.Exec(ctx, setup); err != nil {
 		t.Fatalf("test setup failed: %v", err)
 	}
 
@@ -364,7 +364,7 @@ func TestIntrospect_CheckExpression_NormalizedRoundTrip(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_check_roundtrip CASCADE`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_check_roundtrip CASCADE`)
 	})
 
 	tests := []struct {
@@ -395,7 +395,7 @@ func TestIntrospect_CheckExpression_NormalizedRoundTrip(t *testing.T) {
 			setup := `DROP TABLE IF EXISTS test_check_roundtrip CASCADE;
 CREATE TABLE test_check_roundtrip (a INTEGER, b INTEGER, age INTEGER, name TEXT, status TEXT,
     CONSTRAINT ck_roundtrip CHECK (` + tt.expression + `));`
-			if err := conn.Exec(ctx, setup); err != nil {
+			if _, err := conn.Exec(ctx, setup); err != nil {
 				t.Fatalf("test setup failed: %v", err)
 			}
 
@@ -439,7 +439,7 @@ func TestIntrospect_ForeignKeyActions_AllValues(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_fk_action_child, test_fk_action_parent CASCADE`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_fk_action_child, test_fk_action_parent CASCADE`)
 	})
 
 	tests := []struct {
@@ -460,7 +460,7 @@ CREATE TABLE test_fk_action_child (
     parent_id INTEGER DEFAULT NULL,
     CONSTRAINT fk_test_fk_action_child_parent FOREIGN KEY (parent_id) REFERENCES test_fk_action_parent (id) ` + tt.clause + `
 );`
-			if err := conn.Exec(ctx, setup); err != nil {
+			if _, err := conn.Exec(ctx, setup); err != nil {
 				t.Fatalf("test setup failed: %v", err)
 			}
 			got, err := dialect.Introspect(ctx, conn, []string{"test_fk_action_parent", "test_fk_action_child"})

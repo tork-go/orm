@@ -118,7 +118,7 @@ func applyOne(ctx context.Context, dialect driver.Dialect, conn driver.Conn, m M
 	if err != nil {
 		return err
 	}
-	if err := tx.Exec(ctx, m.UpSQL); err != nil {
+	if _, err := tx.Exec(ctx, m.UpSQL); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}
@@ -134,7 +134,7 @@ func revertOne(ctx context.Context, dialect driver.Dialect, conn driver.Conn, m 
 	if err != nil {
 		return err
 	}
-	if err := tx.Exec(ctx, m.DownSQL); err != nil {
+	if _, err := tx.Exec(ctx, m.DownSQL); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}

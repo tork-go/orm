@@ -91,9 +91,9 @@ func TestTx_Rollback_DiscardsChanges(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
-	t.Cleanup(func() { _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_tx_rollback`) })
+	t.Cleanup(func() { _, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_tx_rollback`) })
 
-	if err := conn.Exec(ctx, `DROP TABLE IF EXISTS test_tx_rollback`); err != nil {
+	if _, err := conn.Exec(ctx, `DROP TABLE IF EXISTS test_tx_rollback`); err != nil {
 		t.Fatalf("pre-test cleanup failed: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestTx_Rollback_DiscardsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin failed: %v", err)
 	}
-	if err := tx.Exec(ctx, `CREATE TABLE test_tx_rollback (id INTEGER)`); err != nil {
+	if _, err := tx.Exec(ctx, `CREATE TABLE test_tx_rollback (id INTEGER)`); err != nil {
 		t.Fatalf("tx.Exec failed: %v", err)
 	}
 	if err := tx.Rollback(ctx); err != nil {
@@ -149,5 +149,51 @@ func TestHistoryMethods_OnClosedConnection_Errors(t *testing.T) {
 	}
 	if _, err := dialect.Introspect(ctx, conn, []string{"users"}); err == nil {
 		t.Error("Introspect on a closed connection succeeded, want an error")
+	}
+}
+
+// RowsAffected has to come from the database, not from the wrapper
+// guessing. Only a live statement proves pgx's command tag is being read
+// and passed on rather than a zero value being returned.
+func TestExec_RowsAffectedComesFromPostgres(t *testing.T) {
+	ctx := context.Background()
+	conn, err := postgres.Dialect{}.Connect(ctx, dsn())
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS test_rows_affected`)
+	})
+
+	if _, err := conn.Exec(ctx, `DROP TABLE IF EXISTS test_rows_affected`); err != nil {
+		t.Fatalf("pre-test cleanup failed: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `CREATE TABLE test_rows_affected (id INTEGER)`); err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", err)
+	}
+
+	res, err := conn.Exec(ctx, `INSERT INTO test_rows_affected (id) VALUES (1), (2), (3)`)
+	if err != nil {
+		t.Fatalf("INSERT failed: %v", err)
+	}
+	if res.RowsAffected != 3 {
+		t.Errorf("INSERT RowsAffected = %d, want 3", res.RowsAffected)
+	}
+
+	res, err = conn.Exec(ctx, `UPDATE test_rows_affected SET id = id + 10 WHERE id > 1`)
+	if err != nil {
+		t.Fatalf("UPDATE failed: %v", err)
+	}
+	if res.RowsAffected != 2 {
+		t.Errorf("UPDATE RowsAffected = %d, want 2", res.RowsAffected)
+	}
+
+	res, err = conn.Exec(ctx, `DELETE FROM test_rows_affected WHERE id = 999`)
+	if err != nil {
+		t.Fatalf("DELETE failed: %v", err)
+	}
+	if res.RowsAffected != 0 {
+		t.Errorf("DELETE RowsAffected = %d, want 0 for a statement matching nothing", res.RowsAffected)
 	}
 }

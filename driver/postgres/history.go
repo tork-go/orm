@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS ` + historyTable + ` (
 // EnsureHistoryTable creates the migrations history table if it doesn't
 // already exist. It is safe to call more than once.
 func (Dialect) EnsureHistoryTable(ctx context.Context, conn driver.Conn) error {
-	if err := conn.Exec(ctx, ensureHistoryTableSQL); err != nil {
+	if _, err := conn.Exec(ctx, ensureHistoryTableSQL); err != nil {
 		return fmt.Errorf("postgres: ensuring history table: %w", err)
 	}
 	return nil
@@ -32,7 +32,7 @@ func (Dialect) EnsureHistoryTable(ctx context.Context, conn driver.Conn) error {
 // InsertHistoryRow records that revision has been applied.
 func (Dialect) InsertHistoryRow(ctx context.Context, exec driver.Execer, revision, downRevision string) error {
 	sql := `INSERT INTO ` + historyTable + ` (revision, down_revision) VALUES ($1, $2)`
-	if err := exec.Exec(ctx, sql, revision, downRevision); err != nil {
+	if _, err := exec.Exec(ctx, sql, revision, downRevision); err != nil {
 		return fmt.Errorf("postgres: recording revision %s as applied: %w", revision, err)
 	}
 	return nil
@@ -41,7 +41,7 @@ func (Dialect) InsertHistoryRow(ctx context.Context, exec driver.Execer, revisio
 // DeleteHistoryRow removes revision's history record.
 func (Dialect) DeleteHistoryRow(ctx context.Context, exec driver.Execer, revision string) error {
 	sql := `DELETE FROM ` + historyTable + ` WHERE revision = $1`
-	if err := exec.Exec(ctx, sql, revision); err != nil {
+	if _, err := exec.Exec(ctx, sql, revision); err != nil {
 		return fmt.Errorf("postgres: removing revision %s from history: %w", revision, err)
 	}
 	return nil

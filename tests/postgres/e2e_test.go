@@ -35,9 +35,9 @@ func TestEndToEnd_MakeMigrationsUpDownHistory(t *testing.T) {
 	// the database clean for the next run. On the success path, "migrate
 	// down base" below already drops these tables and its history row.
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS posts, users CASCADE`)
+		_, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS posts, users CASCADE`)
 	})
-	if err := conn.Exec(ctx, `DROP TABLE IF EXISTS posts, users CASCADE`); err != nil {
+	if _, err := conn.Exec(ctx, `DROP TABLE IF EXISTS posts, users CASCADE`); err != nil {
 		t.Fatalf("pre-test cleanup failed: %v", err)
 	}
 

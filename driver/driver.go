@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/tork-go/orm"
 	"github.com/tork-go/orm/schema"
 )
 
@@ -13,46 +14,33 @@ type AppliedRevision struct {
 	AppliedAt time.Time
 }
 
-// Row scans a single query result row.
-type Row interface {
-	Scan(dest ...any) error
-}
-
-// Rows is a cursor over query results.
-type Rows interface {
-	Next() bool
-	Scan(dest ...any) error
-	Err() error
-	Close()
-}
-
-// Tx is a transaction-scoped Conn, without Begin or Close.
-type Tx interface {
-	Query(ctx context.Context, sql string, args ...any) (Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) Row
-	Exec(ctx context.Context, sql string, args ...any) error
-	Commit(ctx context.Context) error
-	Rollback(ctx context.Context) error
-}
-
-// Conn is the minimal query and exec surface each driver adapts its
-// native client to.
-type Conn interface {
-	Query(ctx context.Context, sql string, args ...any) (Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) Row
-	Exec(ctx context.Context, sql string, args ...any) error
-	Begin(ctx context.Context) (Tx, error)
-	Close(ctx context.Context) error
-}
-
-// Execer is satisfied by both Conn and Tx (they share this method set),
-// letting a Dialect's history methods run against either a plain
-// connection or an open transaction.
-type Execer interface {
-	Query(ctx context.Context, sql string, args ...any) (Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) Row
-	Exec(ctx context.Context, sql string, args ...any) error
-}
+// The execution interfaces are declared in orm and re-exported here as
+// aliases, not redeclared. An alias is the same type rather than a copy,
+// so a driver.Conn is an orm.Conn and every reference to these names in
+// this package, in migrate, and in each driver keeps working unchanged.
+//
+// They live in orm because query building hangs off Table[E], which is
+// there, and a query has to reach a connection to run. orm cannot import
+// driver without closing a cycle through schema, and a matching set
+// redeclared here would not satisfy orm's, since Go interface satisfaction
+// needs identical signatures and named types from different packages are
+// different types however alike they look.
+type (
+	// Result is what a statement did.
+	Result = orm.Result
+	// Row scans a single query result row.
+	Row = orm.Row
+	// Rows is a cursor over query results.
+	Rows = orm.Rows
+	// Execer is the statement surface shared by a connection and an open
+	// transaction, letting a Dialect's history methods run against either.
+	Execer = orm.Execer
+	// Tx is a transaction scoped Execer, without Begin or Close.
+	Tx = orm.Tx
+	// Conn is the minimal query and exec surface each driver adapts its
+	// native client to.
+	Conn = orm.Conn
+)
 
 // Dialect knows how to connect to, introspect, and generate SQL for one
 // specific database. Each driver package (driver/postgres, and future

@@ -49,19 +49,30 @@ func (k RelationKind) String() string {
 	return "unknown"
 }
 
-// RelationInfo is a resolved relationship: the two columns a join matches
-// on, and the tables on either side.
+// RelationInfo is a resolved relationship: the columns a join matches on,
+// and the tables on either side.
 type RelationInfo struct {
 	Kind RelationKind
 
 	// LocalColumn is on the declaring table and ForeignColumn on the
-	// related one. A BelongsTo holds the key locally; the other shapes
+	// related one. A BelongsTo holds the key locally; HasMany and HasOne
 	// have it on the far side.
+	//
+	// For a many to many neither table holds a key, so these name the two
+	// columns the join table points at, and the join is made in two hops
+	// through JoinTable.
 	LocalColumn   ColumnMeta
 	ForeignColumn ColumnMeta
 
 	LocalTable   string
 	ForeignTable string
+
+	// JoinTable is set only for a many to many. LocalJoinColumn is the
+	// join table's key into the declaring table and ForeignJoinColumn its
+	// key into the related one.
+	JoinTable         string
+	LocalJoinColumn   ColumnMeta
+	ForeignJoinColumn ColumnMeta
 }
 
 // relation is the state behind every marker, so the four differ only in
@@ -74,6 +85,11 @@ type relation struct {
 	once     sync.Once
 	resolved RelationInfo
 	err      error
+
+	// localJoin and foreignJoin are the join table's two keys, set by
+	// Through for a many to many.
+	localJoin   ColumnMeta
+	foreignJoin ColumnMeta
 }
 
 // namedKey returns the key the owning model's Relations method names for
@@ -100,6 +116,20 @@ func (r *relation) namedKey() (ColumnMeta, error) {
 	return nil, nil
 }
 
+// readJoinKeys copies the join table keys named by Through onto the
+// relation, for the same reason namedKey reads its key late.
+func (r *relation) readJoinKeys() {
+	if r.owner.relater == nil {
+		return
+	}
+	for _, def := range r.owner.relater.Relations() {
+		if def.to == r && def.joinLocal != nil && def.joinForeign != nil {
+			r.localJoin, r.foreignJoin = def.joinLocal, def.joinForeign
+			return
+		}
+	}
+}
+
 // info resolves the relationship once and gives every later caller the
 // same answer, including the same failure.
 func (r *relation) info() (RelationInfo, error) {
@@ -107,15 +137,16 @@ func (r *relation) info() (RelationInfo, error) {
 		return RelationInfo{}, fmt.Errorf("orm: relationship is not attached to a table; " +
 			"declare the model with DefineTable rather than NewTable")
 	}
-	r.once.Do(func() { r.resolved, r.err = r.resolve() })
+	r.once.Do(func() {
+		r.readJoinKeys()
+		r.resolved, r.err = r.resolve()
+	})
 	return r.resolved, r.err
 }
 
 func (r *relation) resolve() (RelationInfo, error) {
 	if r.kind == KindManyToMany {
-		return RelationInfo{}, fmt.Errorf("orm: %s.ManyToMany -> %s: not supported yet; "+
-			"a join table and both of its keys have to be named, and nothing in the "+
-			"declaration says which table that is", r.owner.name, r.entity)
+		return r.resolveThrough()
 	}
 
 	related, ok := lookupTable(r.entity)
@@ -163,6 +194,55 @@ func (r *relation) resolve() (RelationInfo, error) {
 		ForeignColumn: foreign,
 		LocalTable:    r.owner.name,
 		ForeignTable:  related.name,
+	}, nil
+}
+
+// resolveThrough resolves a many to many from the two join table keys the
+// model named with Through.
+//
+// Nothing in a ManyToMany[E] declaration says which table joins the two,
+// so unlike the other shapes there is nothing to infer from. Naming the
+// two keys settles the join table as well, since a column knows the table
+// it belongs to.
+func (r *relation) resolveThrough() (RelationInfo, error) {
+	related, ok := lookupTable(r.entity)
+	if !ok {
+		return RelationInfo{}, fmt.Errorf("orm: %s.ManyToMany: no table is declared for %s; "+
+			"declare it with DefineTable before the relationship is used",
+			r.owner.name, r.entity)
+	}
+	if r.localJoin == nil || r.foreignJoin == nil {
+		return RelationInfo{}, fmt.Errorf("orm: %s.ManyToMany -> %s: no join table named; "+
+			"nothing in the declaration says which table joins the two, so name the "+
+			"join table's two keys with Through in a Relations method",
+			r.owner.name, related.name)
+	}
+
+	joinTable := r.localJoin.OwnerTable()
+	if joinTable == "" || joinTable != r.foreignJoin.OwnerTable() {
+		return RelationInfo{}, fmt.Errorf("orm: %s.ManyToMany -> %s: the two keys given to "+
+			"Through belong to different tables (%q and %q); both must be columns of "+
+			"the one join table",
+			r.owner.name, related.name, joinTable, r.foreignJoin.OwnerTable())
+	}
+
+	local := columnNamed(r.owner, referencedColumnOf(r.localJoin))
+	foreign := columnNamed(related, referencedColumnOf(r.foreignJoin))
+	if local == nil || foreign == nil {
+		return RelationInfo{}, fmt.Errorf("orm: %s.ManyToMany -> %s: the keys on %s must "+
+			"reference %s and %s respectively; declare them with References",
+			r.owner.name, related.name, joinTable, r.owner.name, related.name)
+	}
+
+	return RelationInfo{
+		Kind:              KindManyToMany,
+		LocalColumn:       local,
+		ForeignColumn:     foreign,
+		LocalTable:        r.owner.name,
+		ForeignTable:      related.name,
+		JoinTable:         joinTable,
+		LocalJoinColumn:   r.localJoin,
+		ForeignJoinColumn: r.foreignJoin,
 	}, nil
 }
 
@@ -259,10 +339,11 @@ func (r *BelongsTo[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 
 // ManyToMany is either side of a many to many, through a join table.
 //
-// It binds like the others but does not resolve. A many to many needs the
-// join table and both of its keys, and nothing in the declaration says
-// which table that is. Reporting that plainly beats inferring the wrong
-// join, and the marker still documents the relationship's existence.
+// Unlike the other shapes there is nothing to infer: a ManyToMany[E] names
+// the far side but not the table joining the two, and no two tables in a
+// schema imply a particular join table. Name the join table's two keys
+// with Through in a Relations method, which settles the join table as
+// well, since a column knows the table it belongs to.
 type ManyToMany[E any] struct{ rel *relation }
 
 func (r *ManyToMany[E]) bindRelation(owner *tableState) {
@@ -273,10 +354,14 @@ func (r *ManyToMany[E]) relationOf() *relation { return r.rel }
 // Relation reports that many to many resolution is not built yet.
 func (r *ManyToMany[E]) Relation() (RelationInfo, error) { return r.rel.info() }
 
-// RelationDef names the foreign key a relationship uses.
+// RelationDef names the keys a relationship uses.
 type RelationDef struct {
 	to  *relation
 	key ColumnMeta
+
+	// joinLocal and joinForeign are set by Through, for a many to many.
+	joinLocal   ColumnMeta
+	joinForeign ColumnMeta
 }
 
 // Relater is the optional interface a model implements to name the key
@@ -299,4 +384,17 @@ type Relater interface {
 // Via names key as the foreign key behind the relationship r.
 func Via(r relationBinder, key ColumnMeta) RelationDef {
 	return RelationDef{to: r.relationOf(), key: key}
+}
+
+// Through names the join table's two keys behind a many to many: local
+// references the declaring table, foreign the related one. Both must be
+// columns of the same join table.
+//
+//	func (m *UserModel) Relations() []orm.RelationDef {
+//	    return []orm.RelationDef{
+//	        orm.Through(&m.Roles, UserRoles.UserID, UserRoles.RoleID),
+//	    }
+//	}
+func Through(r relationBinder, local, foreign ColumnMeta) RelationDef {
+	return RelationDef{to: r.relationOf(), joinLocal: local, joinForeign: foreign}
 }

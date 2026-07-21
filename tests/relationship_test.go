@@ -199,8 +199,8 @@ func TestRelations_NamesTheKeyExplicitly(t *testing.T) {
 	}
 }
 
-// A many to many needs a join table that nothing in the declaration names,
-// so it reports that rather than inferring the wrong join.
+// Nothing in a ManyToMany declaration says which table joins the two, so
+// one left unnamed reports that rather than guessing.
 type crewEntity struct{ ID int }
 type crewModel struct {
 	orm.Table[crewEntity]
@@ -212,13 +212,116 @@ var crewTable = orm.DefineTable[crewEntity]("crew", func(t *orm.TableBuilder[cre
 	return &crewModel{Table: t.Table(), ID: t.Int("id")}
 })
 
-func TestManyToMany_ReportsUnsupported(t *testing.T) {
+func TestManyToMany_UnnamedJoinTable(t *testing.T) {
 	_, err := crewTable.Shifts.Relation()
 	if err == nil {
-		t.Fatal("Relation() error = nil, want an unsupported error")
+		t.Fatal("Relation() error = nil, want a missing join table error")
 	}
-	if !strings.Contains(err.Error(), "not supported yet") {
-		t.Errorf("error %q does not say many to many is unbuilt", err)
+	for _, want := range []string{"no join table named", "Through"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// Naming the join table's two keys settles the join, and the join table
+// with it, since a column knows the table it belongs to.
+type studentEntity struct{ ID int }
+type studentModel struct {
+	orm.Table[studentEntity]
+	ID      *orm.IntColumn
+	Courses orm.ManyToMany[courseEntity]
+}
+
+func (m *studentModel) Relations() []orm.RelationDef {
+	return []orm.RelationDef{
+		orm.Through(&m.Courses, enrolments.StudentID, enrolments.CourseID),
+	}
+}
+
+type courseEntity struct{ ID int }
+type courseModel struct {
+	orm.Table[courseEntity]
+	ID *orm.IntColumn
+}
+
+type enrolmentEntity struct {
+	StudentID int
+	CourseID  int
+}
+type enrolmentModel struct {
+	orm.Table[enrolmentEntity]
+	StudentID *orm.IntColumn
+	CourseID  *orm.IntColumn
+}
+
+var (
+	students = orm.DefineTable[studentEntity]("students", func(t *orm.TableBuilder[studentEntity]) *studentModel {
+		return &studentModel{Table: t.Table(), ID: t.Int("id").PrimaryKey()}
+	})
+	courses = orm.DefineTable[courseEntity]("courses", func(t *orm.TableBuilder[courseEntity]) *courseModel {
+		return &courseModel{Table: t.Table(), ID: t.Int("id").PrimaryKey()}
+	})
+	enrolments = orm.DefineTable[enrolmentEntity]("enrolments", func(t *orm.TableBuilder[enrolmentEntity]) *enrolmentModel {
+		return &enrolmentModel{
+			Table:     t.Table(),
+			StudentID: t.Int("student_id").References(students.ID),
+			CourseID:  t.Int("course_id").References(courses.ID),
+		}
+	})
+)
+
+func TestManyToMany_ThroughNamesTheJoin(t *testing.T) {
+	got, err := students.Courses.Relation()
+	if err != nil {
+		t.Fatalf("Relation() error = %v", err)
+	}
+	if got.Kind != orm.KindManyToMany {
+		t.Errorf("Kind = %v, want ManyToMany", got.Kind)
+	}
+	if got.JoinTable != "enrolments" {
+		t.Errorf("JoinTable = %q, want enrolments", got.JoinTable)
+	}
+	// The join is two hops: students.id = enrolments.student_id, and
+	// enrolments.course_id = courses.id.
+	if got.LocalTable != "students" || got.LocalColumn.Name() != "id" {
+		t.Errorf("local side = %s.%s, want students.id", got.LocalTable, got.LocalColumn.Name())
+	}
+	if got.LocalJoinColumn.Name() != "student_id" {
+		t.Errorf("LocalJoinColumn = %q, want student_id", got.LocalJoinColumn.Name())
+	}
+	if got.ForeignJoinColumn.Name() != "course_id" {
+		t.Errorf("ForeignJoinColumn = %q, want course_id", got.ForeignJoinColumn.Name())
+	}
+	if got.ForeignTable != "courses" || got.ForeignColumn.Name() != "id" {
+		t.Errorf("far side = %s.%s, want courses.id", got.ForeignTable, got.ForeignColumn.Name())
+	}
+}
+
+// Both keys have to come from the one join table, or the two hops do not
+// meet in the middle.
+type splitEntity struct{ ID int }
+type splitModel struct {
+	orm.Table[splitEntity]
+	ID      *orm.IntColumn
+	Courses orm.ManyToMany[courseEntity]
+}
+
+func (m *splitModel) Relations() []orm.RelationDef {
+	return []orm.RelationDef{orm.Through(&m.Courses, enrolments.StudentID, students.ID)}
+}
+
+var splitTable = orm.DefineTable[splitEntity]("split", func(t *orm.TableBuilder[splitEntity]) *splitModel {
+	return &splitModel{Table: t.Table(), ID: t.Int("id")}
+})
+
+func TestManyToMany_KeysFromDifferentTables(t *testing.T) {
+	_, err := splitTable.Courses.Relation()
+	if err == nil {
+		t.Fatal("Relation() error = nil, want a mismatched join table error")
+	}
+	if !strings.Contains(err.Error(), "different tables") {
+		t.Errorf("error %q does not report the mismatch", err)
 	}
 }
 
@@ -636,5 +739,71 @@ func TestDefineTable_SkipsUnexportedFields(t *testing.T) {
 	// than resolving against a table it was never attached to.
 	if _, err := m.hidden.Relation(); err == nil {
 		t.Error("Relation() on an unexported marker resolved, want an unattached error")
+	}
+}
+
+// A join table key that references nothing gives the join no column to
+// land on at either end.
+type looseJoinEntity struct{ ID int }
+type looseJoinModel struct {
+	orm.Table[looseJoinEntity]
+	ID      *orm.IntColumn
+	Courses orm.ManyToMany[courseEntity]
+}
+
+func (m *looseJoinModel) Relations() []orm.RelationDef {
+	return []orm.RelationDef{orm.Through(&m.Courses, looseJoins.A, looseJoins.B)}
+}
+
+type looseJoinRow struct {
+	A int
+	B int
+}
+type looseJoinTableModel struct {
+	orm.Table[looseJoinRow]
+	A *orm.IntColumn
+	B *orm.IntColumn
+}
+
+var (
+	looseJoins = orm.DefineTable[looseJoinRow]("loose_joins", func(t *orm.TableBuilder[looseJoinRow]) *looseJoinTableModel {
+		// Neither key references anything.
+		return &looseJoinTableModel{Table: t.Table(), A: t.Int("a"), B: t.Int("b")}
+	})
+	looseTable = orm.DefineTable[looseJoinEntity]("loose", func(t *orm.TableBuilder[looseJoinEntity]) *looseJoinModel {
+		return &looseJoinModel{Table: t.Table(), ID: t.Int("id")}
+	})
+)
+
+func TestManyToMany_JoinKeysReferenceNothing(t *testing.T) {
+	_, err := looseTable.Courses.Relation()
+	if err == nil {
+		t.Fatal("Relation() error = nil, want an unresolvable join error")
+	}
+	if !strings.Contains(err.Error(), "References") {
+		t.Errorf("error %q does not point at References", err)
+	}
+}
+
+// The related row type still has to have a table, same as every other
+// shape.
+type noFarSideEntity struct{ ID int }
+type noFarSideModel struct {
+	orm.Table[noFarSideEntity]
+	ID    *orm.IntColumn
+	Other orm.ManyToMany[unregisteredEntity]
+}
+
+var noFarSide = orm.DefineTable[noFarSideEntity]("no_far_side", func(t *orm.TableBuilder[noFarSideEntity]) *noFarSideModel {
+	return &noFarSideModel{Table: t.Table(), ID: t.Int("id")}
+})
+
+func TestManyToMany_RelatedTypeHasNoTable(t *testing.T) {
+	_, err := noFarSide.Other.Relation()
+	if err == nil {
+		t.Fatal("Relation() error = nil, want an unregistered row type error")
+	}
+	if !strings.Contains(err.Error(), "no table is declared") {
+		t.Errorf("error %q does not report the missing table", err)
 	}
 }

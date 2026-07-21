@@ -188,6 +188,39 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 		}
 	})
 
+	// Holding a query and narrowing it differently per branch is the shape
+	// this is for. When the branches shared state each carried the other's
+	// condition and both matched nothing, which is the kind of wrong that
+	// returns an answer rather than an error.
+	t.Run("branching a held query", func(t *testing.T) {
+		adults := qUsers.With(db).Where(qUsers.Age.Gte(25))
+
+		alice, err := adults.Where(qUsers.Username.Eq("alice")).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		carol, err := adults.Where(qUsers.Username.Eq("carol")).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(alice) != 1 || alice[0].Username != "alice" {
+			t.Errorf("the alice branch matched %d rows, want just alice", len(alice))
+		}
+		if len(carol) != 1 || carol[0].Username != "carol" {
+			t.Errorf("the carol branch matched %d rows, want just carol", len(carol))
+		}
+
+		// And the query they came from still means what it did.
+		all, err := adults.All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		// alice 30, bob 41, carol 25: all three are 25 or older.
+		if len(all) != 3 {
+			t.Errorf("the base query matched %d rows, want 3: it was narrowed by a branch", len(all))
+		}
+	})
+
 	// An empty IN compiles to a condition rather than to IN (), which
 	// Postgres rejects outright.
 	t.Run("empty in list", func(t *testing.T) {

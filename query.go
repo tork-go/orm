@@ -32,6 +32,16 @@ type Query[E any] struct {
 //
 // It reads rows and performs set operations. The entity operations are on
 // Query instead; see there for why.
+//
+// Every builder method returns a new Filtered rather than narrowing the
+// one it was called on, so a query is safe to hold and to branch from:
+//
+//	adults := Users.With(db).Where(Users.Age.Gte(18))
+//	alice := adults.Where(Users.Name.Eq("alice"))
+//	bob := adults.Where(Users.Name.Eq("bob"))
+//
+// Were they to share state, each branch would silently carry the other's
+// conditions and both would match nothing.
 type Filtered[E any] struct {
 	st  *tableState
 	db  *DB
@@ -66,39 +76,57 @@ func (q *Query[E]) Limit(n int) *Filtered[E] { return q.filtered().Limit(n) }
 // Offset skips rows before returning any.
 func (q *Query[E]) Offset(n int) *Filtered[E] { return q.filtered().Offset(n) }
 
+// clone copies the query so a builder method can narrow the copy and leave
+// the original alone.
+//
+// The slices are copied rather than shared, since appending to a shared
+// backing array would let one branch overwrite another's conditions
+// whenever the append happened to have spare capacity: a bug that appears
+// only at certain lengths.
+func (f *Filtered[E]) clone() *Filtered[E] {
+	out := *f
+	out.preds = append([]Predicate(nil), f.preds...)
+	out.ords = append([]Ordering(nil), f.ords...)
+	return &out
+}
+
 // Where narrows the query further. Conditions accumulate across calls and
 // are joined with AND.
 func (f *Filtered[E]) Where(preds ...Predicate) *Filtered[E] {
-	f.preds = append(f.preds, preds...)
-	return f
+	out := f.clone()
+	out.preds = append(out.preds, preds...)
+	return out
 }
 
 // OrderBy sorts the results. Terms accumulate across calls, in the order
 // given.
 func (f *Filtered[E]) OrderBy(ords ...Ordering) *Filtered[E] {
-	f.ords = append(f.ords, ords...)
-	return f
+	out := f.clone()
+	out.ords = append(out.ords, ords...)
+	return out
 }
 
 // Limit caps the number of rows returned. A negative limit is an error,
 // reported from whichever terminal runs.
 func (f *Filtered[E]) Limit(n int) *Filtered[E] {
+	out := f.clone()
 	if n < 0 {
-		f.fail(fmt.Errorf("orm: table %q: Limit(%d) is negative", f.st.name, n))
-		return f
+		out.fail(fmt.Errorf("orm: table %q: Limit(%d) is negative", f.st.name, n))
+		return out
 	}
-	f.limit = &n
-	return f
+	out.limit = &n
+	return out
 }
 
 // Offset skips rows before returning any. A negative offset is an error.
 func (f *Filtered[E]) Offset(n int) *Filtered[E] {
+	out := f.clone()
 	if n < 0 {
-		f.fail(fmt.Errorf("orm: table %q: Offset(%d) is negative", f.st.name, n))
-		return f
+		out.fail(fmt.Errorf("orm: table %q: Offset(%d) is negative", f.st.name, n))
+		return out
 	}
-	f.offset = &n
-	return f
+	out.offset = &n
+	return out
 }
 
 // fail records the first error a builder call hit.
@@ -222,13 +250,10 @@ func (f *Filtered[E]) collect(ctx context.Context, sql string, args []any) ([]*E
 // rows" only through its driver's own sentinel, and this package imports
 // no driver and so cannot recognise one.
 func (f *Filtered[E]) First(ctx context.Context) (*E, error) {
-	// A limit already set by the caller is respected only insofar as it
-	// cannot widen the result: one row is all this reads either way.
-	one := 1
-	lifted := *f
-	lifted.limit = &one
-
-	rows, err := lifted.All(ctx)
+	// A limit the caller set is narrowed rather than respected: one row is
+	// all this reads either way. The copy is what keeps that from being
+	// visible in the query it was called on.
+	rows, err := f.Limit(1).All(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -406,3 +406,71 @@ func TestBeforeHooks_AbortUpdateAndDelete(t *testing.T) {
 		t.Error("a refused Before hook still ran a statement")
 	}
 }
+
+// mutating is a row type whose AfterLoad changes the row, so a test can
+// see that each row's hook ran against its own row rather than a shared or
+// reused one.
+type mutating struct {
+	ID   int
+	Name string
+}
+
+type mutatingModel struct {
+	orm.Table[mutating]
+	ID   *orm.IntColumn
+	Name *orm.StringColumn
+}
+
+var Mutating = orm.DefineTable[mutating]("mutating", func(t *orm.TableBuilder[mutating]) *mutatingModel {
+	return &mutatingModel{
+		Table: t.Table(),
+		ID:    t.Int("id").PrimaryKey(),
+		Name:  t.String("name").NotNull(),
+	}
+})
+
+func (m *mutating) AfterLoad(context.Context) error {
+	m.Name = "seen:" + m.Name
+	return nil
+}
+
+// Each row's hook runs against that row. Rows are allocated individually
+// for exactly this reason, so a mutation in one cannot appear in another.
+func TestAfterLoad_MutatesEachRowIndependently(t *testing.T) {
+	c := fakedriver.NewConn()
+	c.QueueRows([]any{1, "a"}, []any{2, "b"}, []any{3, "c"})
+	db := orm.NewDB(c, postgres.Dialect{})
+
+	rows, err := Mutating.With(db).All(context.Background())
+	if err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	want := []string{"seen:a", "seen:b", "seen:c"}
+	if len(rows) != len(want) {
+		t.Fatalf("All() returned %d rows, want %d", len(rows), len(want))
+	}
+	for i, r := range rows {
+		if r.Name != want[i] {
+			t.Errorf("row %d name = %q, want %q", i, r.Name, want[i])
+		}
+		if r.ID != i+1 {
+			t.Errorf("row %d id = %d, want %d", i, r.ID, i+1)
+		}
+	}
+}
+
+// A hook that refuses partway through a result set stops the read, rather
+// than handing back the rows that happened to load before it.
+func TestAfterLoad_RefusalDiscardsThePartialResult(t *testing.T) {
+	c := fakedriver.NewConn()
+	c.QueueRows([]any{1, "a"}, []any{2, "b"})
+	db := orm.NewDB(c, postgres.Dialect{})
+
+	rows, err := Refusing.With(db).All(context.Background())
+	if err == nil {
+		t.Fatal("All() error = nil, want the hook's refusal")
+	}
+	if rows != nil {
+		t.Errorf("All() returned %d rows alongside the error, want none", len(rows))
+	}
+}

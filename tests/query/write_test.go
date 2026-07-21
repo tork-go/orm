@@ -3,6 +3,7 @@ package query_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -282,5 +283,87 @@ func TestSave_NeedsAGeneratedKey(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// A generated key cannot be written to, so a value already in the field is
+// not sent and is replaced by the one the database assigned. That is
+// surprising enough to pin down: the alternative would be an insert that
+// names a GENERATED ALWAYS column, which Postgres rejects outright.
+func TestInsert_IgnoresAKeyAlreadySet(t *testing.T) {
+	c := fakedriver.NewConn()
+	c.QueueRows([]any{7})
+	db := orm.NewDB(c, postgres.Dialect{})
+
+	u := &User{ID: 42, Username: "alice"}
+	if err := Users.With(db).Insert(context.Background(), u); err != nil {
+		t.Fatalf("Insert() error = %v", err)
+	}
+	if strings.Contains(c.QueryCalls()[0], `"id"`) && !strings.Contains(c.QueryCalls()[0], `RETURNING "id"`) {
+		t.Errorf("Insert named the generated key: %s", c.QueryCalls()[0])
+	}
+	if u.ID != 7 {
+		t.Errorf("ID = %d, want 7: the database's key replaces whatever was there", u.ID)
+	}
+}
+
+// A nil slice and a nil pointer reach the driver as themselves, so the
+// database stores NULL rather than an empty value.
+func TestWrite_NilValuesAreBoundAsNil(t *testing.T) {
+	c := fakedriver.NewConn()
+	c.QueueRows([]any{1})
+	db := orm.NewDB(c, postgres.Dialect{})
+
+	if err := Users.With(db).Insert(context.Background(), &User{Username: "x"}); err != nil {
+		t.Fatalf("Insert() error = %v", err)
+	}
+	args := c.QueryArgs(0)
+	// username, email, age, prefs, created_at
+	if args[1] != (*string)(nil) {
+		t.Errorf("a nil pointer bound as %#v, want the nil itself", args[1])
+	}
+}
+
+// Building a statement must not alias a slice the caller still holds, or a
+// later change to it would rewrite a query already built.
+func TestQuery_DoesNotAliasTheCallersSlice(t *testing.T) {
+	ids := []int{1, 2, 3}
+	q := Users.With(pg()).Where(Users.ID.In(ids...))
+
+	ids[0] = 99
+	_, args, err := q.SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	if args[0] != 1 {
+		t.Errorf("bound %v, want the values as they were when the predicate was built", args)
+	}
+}
+
+// Running the same write twice is the caller's business, but it must not
+// leave state behind that changes the second statement.
+func TestWrite_RepeatedUpdateIsIdentical(t *testing.T) {
+	c := fakedriver.NewConn()
+	c.RowsAffected = 1
+	db := orm.NewDB(c, postgres.Dialect{})
+
+	u := &User{ID: 1, Username: "alice", Age: 30}
+	for i := range 2 {
+		if err := Users.With(db).Update(context.Background(), u); err != nil {
+			t.Fatalf("Update() %d error = %v", i, err)
+		}
+	}
+	calls := c.ExecCalls()
+	if len(calls) != 2 {
+		t.Fatalf("ran %d statements, want 2", len(calls))
+	}
+	if calls[0] != calls[1] {
+		t.Errorf("the second update differed:\n  %s\n  %s", calls[0], calls[1])
+	}
+	// DeepEqual rather than ==: a document column binds a []byte, which is
+	// not comparable.
+	if !reflect.DeepEqual(c.ExecArgs(0), c.ExecArgs(1)) {
+		t.Errorf("the second update bound different values:\n  %v\n  %v",
+			c.ExecArgs(0), c.ExecArgs(1))
 	}
 }

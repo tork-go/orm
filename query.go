@@ -51,6 +51,14 @@ type Filtered[E any] struct {
 	ords   []Ordering
 	limit  *int
 	offset *int
+
+	// whereCalled records that Where was called at all, however many
+	// conditions it went on to contribute. Reading rows does not care, but
+	// UpdateAll and DeleteAll do: a Where that narrowed nothing is a
+	// filter the caller meant to have and did not get, and running the
+	// statement anyway would write every row in the table. Not calling
+	// Where is a different thing entirely, and stays allowed.
+	whereCalled bool
 }
 
 // filtered starts a Filtered from an unfiltered query. Only Filtered can
@@ -94,6 +102,7 @@ func (f *Filtered[E]) clone() *Filtered[E] {
 // are joined with AND.
 func (f *Filtered[E]) Where(preds ...Predicate) *Filtered[E] {
 	out := f.clone()
+	out.whereCalled = true
 	out.preds = append(out.preds, preds...)
 	return out
 }

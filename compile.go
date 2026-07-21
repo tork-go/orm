@@ -224,6 +224,64 @@ func (c *compiler) value(col ColumnMeta, v any) (any, error) {
 	return b, nil
 }
 
+// set renders an UPDATE's SET clause from a list of assignments.
+//
+// Column names are written unqualified, deliberately and not merely because
+// nothing qualifies them yet: SQL is not consistent about where a
+// qualification is allowed, and Postgres rejects a table-qualified column on
+// the left of a SET outright. So the ownership check goes through c.column,
+// whose error names the mistake, while the rendering does not use what it
+// returns. When c.column learns to qualify for a statement over more than
+// one table, this clause must not follow it.
+//
+// Values go through c.value, so an assignment to a document column is
+// encoded exactly as one in a predicate is, and as the row itself is on the
+// way back out.
+func (c *compiler) set(sets []Assignment) (string, error) {
+	parts := make([]string, len(sets))
+	for i, a := range sets {
+		if a.Col == nil {
+			return "", fmt.Errorf("orm: table %q: assignment %d names no column",
+				c.table, i)
+		}
+		if _, err := c.column(a.Col); err != nil {
+			return "", err
+		}
+		v, err := c.value(a.Col, a.Value)
+		if err != nil {
+			return "", err
+		}
+		parts[i] = c.d.QuoteIdent(a.Col.Name()) + " = " + c.args.bind(v)
+	}
+	return strings.Join(parts, ", "), nil
+}
+
+// rowsPerStatement returns how many of total rows one statement may carry
+// when each row binds perRow parameters.
+//
+// A statement that binds a value per column per row is the only place a
+// caller's own input decides how many parameters are sent, so it is the only
+// place the dialect's ceiling can be reached. Splitting to stay under it is
+// what turns a driver error naming a number nobody chose into several
+// statements nobody has to think about.
+//
+// A single row that already exceeds the ceiling cannot be split any further,
+// so one row per statement is attempted and the database is left to report
+// what it makes of a row that wide.
+func rowsPerStatement(maxParams, perRow, total int) int {
+	if maxParams <= 0 || perRow <= 0 {
+		return total
+	}
+	switch n := maxParams / perRow; {
+	case n < 1:
+		return 1
+	case n > total:
+		return total
+	default:
+		return n
+	}
+}
+
 // where renders a WHERE clause, or "" when there is nothing to filter on.
 //
 // Predicates are joined with AND, which is what passing several to Where

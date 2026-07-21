@@ -49,8 +49,12 @@ func (q *Query[E]) Update(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
 		return err
 	}
-	if err := w.update(ctx); err != nil {
+	n, err := w.update(ctx)
+	if err != nil {
 		return err
+	}
+	if n == 0 {
+		return ErrNoRows
 	}
 	return runHook(ctx, w.st.name, "AfterUpdate", any(e), AfterUpdater.AfterUpdate)
 }
@@ -64,8 +68,12 @@ func (q *Query[E]) Delete(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeDelete", any(e), BeforeDeleter.BeforeDelete); err != nil {
 		return err
 	}
-	if err := w.delete(ctx); err != nil {
+	n, err := w.delete(ctx)
+	if err != nil {
 		return err
+	}
+	if n == 0 {
+		return ErrNoRows
 	}
 	return runHook(ctx, w.st.name, "AfterDelete", any(e), AfterDeleter.AfterDelete)
 }
@@ -101,20 +109,52 @@ type writer[E any] struct {
 	val reflect.Value
 }
 
-func (q *Query[E]) writer(e *E) (*writer[E], error) {
+// readyToWrite reports whether the query can write at all: the checks that
+// are about the query rather than about any one row.
+//
+// It is separate from writer because a batch makes them once and then builds
+// a writer per row, where repeating them would report the same problem as
+// many times as the caller passed rows.
+func (q *Query[E]) readyToWrite() error {
 	if q.st == nil {
-		return nil, errNoEntityMapping("")
+		return errNoEntityMapping("")
 	}
 	if q.st.fieldIdx == nil {
-		return nil, errNoEntityMapping(q.st.name)
+		return errNoEntityMapping(q.st.name)
 	}
 	if q.db == nil {
-		return nil, fmt.Errorf("orm: table %q: no database handle; pass one to With", q.st.name)
+		return fmt.Errorf("orm: table %q: no database handle; pass one to With", q.st.name)
+	}
+	return nil
+}
+
+func (q *Query[E]) writer(e *E) (*writer[E], error) {
+	if err := q.readyToWrite(); err != nil {
+		return nil, err
 	}
 	if e == nil {
 		return nil, fmt.Errorf("orm: table %q: nil row", q.st.name)
 	}
-	return &writer[E]{st: q.st, db: q.db, e: e, val: reflect.ValueOf(e).Elem()}, nil
+	return q.newWriter(e), nil
+}
+
+// newWriter builds a writer for a row already established to be non-nil on
+// a query already established to be able to write. It exists so a batch can
+// report a bad row by its position without rebuilding the writer literal.
+func (q *Query[E]) newWriter(e *E) *writer[E] {
+	return &writer[E]{st: q.st, db: q.db, e: e, val: reflect.ValueOf(e).Elem()}
+}
+
+// withDB returns a copy of the writer bound to db.
+//
+// A batch resolves its rows before it opens a transaction, since working out
+// what to write is what decides how many statements it takes and therefore
+// whether a transaction is needed at all. The writers it built are bound to
+// the outer handle, so each is rebound to the transaction before it runs.
+func (w *writer[E]) withDB(db *DB) *writer[E] {
+	out := *w
+	out.db = db
+	return &out
 }
 
 // field returns the entity field a column maps to.
@@ -270,57 +310,60 @@ func (w *writer[E]) keyFilter(c *compiler) (string, error) {
 	return c.where(preds)
 }
 
-func (w *writer[E]) update(ctx context.Context) error {
+// update writes the row and reports how many rows it changed.
+//
+// It returns the count rather than ErrNoRows for a row that was not there,
+// because a batch needs to add the counts up and report once. Update itself
+// maps a zero back to ErrNoRows, which is what a caller writing one row
+// wants.
+func (w *writer[E]) update(ctx context.Context) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
 
-	var sets []string
+	sets := make([]Assignment, 0, len(w.st.cols))
 	for _, col := range w.st.cols {
 		if col.IsPrimaryKey() || col == w.st.identity {
 			continue
 		}
-		v, err := w.bindable(c, col)
-		if err != nil {
-			return err
-		}
-		// Unqualified on purpose: Postgres rejects a table-qualified
-		// column on the left of a SET.
-		sets = append(sets, c.d.QuoteIdent(col.Name())+" = "+c.args.bind(v))
+		sets = append(sets, Assignment{Col: col, Value: w.field(col).Interface()})
 	}
 	if len(sets) == 0 {
-		return fmt.Errorf("orm: table %q: Update has nothing to write; every column is "+
+		return 0, fmt.Errorf("orm: table %q: Update has nothing to write; every column is "+
 			"part of the primary key", w.st.name)
 	}
 
+	// The same renderer UpdateAll uses, so a row written by key and a set of
+	// rows written by filter cannot drift apart in how they spell a SET or
+	// encode a value.
+	assignments, err := c.set(sets)
+	if err != nil {
+		return 0, err
+	}
 	where, err := w.keyFilter(c)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	sql := "UPDATE " + c.d.QuoteIdent(w.st.name) + " SET " + strings.Join(sets, ", ") + where
+	sql := "UPDATE " + c.d.QuoteIdent(w.st.name) + " SET " + assignments + where
 
 	res, err := w.db.ex.Exec(ctx, sql, c.args.args...)
 	if err != nil {
-		return fmt.Errorf("orm: table %q: updating: %w", w.st.name, err)
+		return 0, fmt.Errorf("orm: table %q: updating: %w", w.st.name, err)
 	}
-	if res.RowsAffected == 0 {
-		return ErrNoRows
-	}
-	return nil
+	return res.RowsAffected, nil
 }
 
-func (w *writer[E]) delete(ctx context.Context) error {
+// delete removes the row and reports how many rows it removed, for the same
+// reason update does.
+func (w *writer[E]) delete(ctx context.Context) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
 	where, err := w.keyFilter(c)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	sql := "DELETE FROM " + c.d.QuoteIdent(w.st.name) + where
 
 	res, err := w.db.ex.Exec(ctx, sql, c.args.args...)
 	if err != nil {
-		return fmt.Errorf("orm: table %q: deleting: %w", w.st.name, err)
+		return 0, fmt.Errorf("orm: table %q: deleting: %w", w.st.name, err)
 	}
-	if res.RowsAffected == 0 {
-		return ErrNoRows
-	}
-	return nil
+	return res.RowsAffected, nil
 }

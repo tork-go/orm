@@ -128,10 +128,11 @@ var lBookTags = orm.DefineTable[lBookTag]("l_book_tags", func(t *orm.TableBuilde
 	}
 })
 
-// Loading is checked against a fake driver elsewhere. This runs it against the
-// database it was written for, where the keys are ones Postgres generated and
-// the rows have to find their way back to the right parent on their own.
-func TestLoad_AgainstPostgres(t *testing.T) {
+// Relationships are checked against a fake driver elsewhere. This runs them
+// against the database they were written for, where the keys are ones Postgres
+// generated, the rows have to find their way back to the right parent on their
+// own, and a correlated EXISTS has to mean what it looks like it means.
+func TestRelationships_AgainstPostgres(t *testing.T) {
 	ctx := context.Background()
 	dialect := postgres.Dialect{}
 
@@ -331,6 +332,114 @@ func TestLoad_AgainstPostgres(t *testing.T) {
 		}
 		if total != len(books) {
 			t.Errorf("loaded %d books in total, want %d", total, len(books))
+		}
+	})
+
+	// ── Has and HasNone ─────────────────────────────────────────────────
+	//
+	// A correlated EXISTS is the first statement Tork writes that names two
+	// tables, so what matters here is that Postgres resolves the outer
+	// table's column from inside the subquery at all.
+
+	t.Run("has a desk, and has none", func(t *testing.T) {
+		with, err := lAuthors.With(db).Where(orm.Has(lAuthors.Desk)).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(with) != len(desks) {
+			t.Errorf("%d authors have a desk, want %d", len(with), len(desks))
+		}
+
+		without, err := lAuthors.With(db).Where(orm.HasNone(lAuthors.Desk)).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(without) != authors-len(desks) {
+			t.Errorf("%d authors have no desk, want %d", len(without), authors-len(desks))
+		}
+		// Between them they account for everyone, exactly once.
+		if len(with)+len(without) != authors {
+			t.Errorf("has and has-none cover %d authors, want %d", len(with)+len(without), authors)
+		}
+	})
+
+	t.Run("has, narrowed by a condition on the related rows", func(t *testing.T) {
+		got, err := lAuthors.With(db).
+			Where(orm.Has(lAuthors.Books, lBooks.Title.EndsWith("-2"))).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		// Only authors given three books have a "-2", which is one in three.
+		want := 0
+		for i := range authors {
+			if i%3 == 2 {
+				want++
+			}
+		}
+		if len(got) != want {
+			t.Errorf("%d authors have a third book, want %d", len(got), want)
+		}
+	})
+
+	t.Run("has, through a join table", func(t *testing.T) {
+		tagged, err := lBooks.With(db).Where(orm.Has(lBooks.Tags)).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(tagged) != 2 {
+			t.Errorf("%d books are tagged, want 2", len(tagged))
+		}
+
+		byName, err := lBooks.With(db).
+			Where(orm.Has(lBooks.Tags, lTags.Name.Eq("sql"))).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(byName) != 1 || byName[0].ID != books[0].ID {
+			t.Errorf("books tagged sql = %+v, want just the first", byName)
+		}
+
+		untagged, err := lBooks.With(db).Where(orm.HasNone(lBooks.Tags)).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(untagged) != len(books)-2 {
+			t.Errorf("%d books are untagged, want %d", len(untagged), len(books)-2)
+		}
+	})
+
+	t.Run("has, nested one relationship inside another", func(t *testing.T) {
+		got, err := lAuthors.With(db).
+			Where(orm.Has(lAuthors.Books, orm.Has(lBooks.Tags))).
+			OrderBy(lAuthors.ID.Asc()).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		// The two tagged books belong to the first two authors.
+		if len(got) != 2 || got[0].ID != as[0].ID || got[1].ID != as[1].ID {
+			t.Errorf("authors with a tagged book = %+v, want the first two", got)
+		}
+	})
+
+	t.Run("has, beside other conditions and a load", func(t *testing.T) {
+		got, err := lAuthors.With(db).
+			Where(
+				lAuthors.Name.StartsWith("author-0"),
+				orm.Has(lAuthors.Books, lBooks.Title.EndsWith("-0")),
+			).
+			Load(lAuthors.Books).
+			OrderBy(lAuthors.ID.Asc()).
+			All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(got) == 0 {
+			t.Fatal("no authors matched, want the first ten")
+		}
+		for _, a := range got {
+			if len(a.Books) == 0 {
+				t.Errorf("%s matched but loaded no books", a.Name)
+			}
 		}
 	})
 }

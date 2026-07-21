@@ -119,6 +119,78 @@ type Negation struct {
 	Pred Predicate
 }
 
+// Existence is `EXISTS (...)` over a relationship, or NOT EXISTS when Not is
+// set. Build one with Has or HasNone.
+type Existence struct {
+	Rel   *relation
+	Preds []Predicate
+	Not   bool
+}
+
+// Relationship is a relationship marker: HasMany, HasOne, BelongsTo or
+// ManyToMany.
+//
+// It is what Has and HasNone accept, and nothing outside this package can
+// satisfy it. A narrowed relationship is deliberately not one: Has takes its
+// conditions directly, so a Limit or an OrderBy would have nothing to mean.
+type Relationship interface {
+	relationOf() *relation
+}
+
+// Has matches rows that have at least one related row, optionally narrowed by
+// conditions on it.
+//
+//	Users.With(db).Where(orm.Has(Users.Posts)).All(ctx)
+//	Users.With(db).Where(orm.Has(Users.Posts, Posts.Published.Eq(true))).All(ctx)
+//
+// It compiles to an EXISTS over the related table, correlated on the columns
+// the relationship joins:
+//
+//	WHERE EXISTS (
+//	    SELECT 1 FROM "posts"
+//	    WHERE "posts"."author_id" = "users"."id" AND "posts"."published" = $1
+//	)
+//
+// Being an ordinary predicate, it goes anywhere one goes: beside other
+// conditions, inside Or and Not, and in front of a write. It nests, too, so
+// the conditions may themselves ask about a relationship of the related rows.
+//
+// It answers a different question from Load, and the two do not imply each
+// other: filtering by a published post and loading the published ones are
+// separate requests, and a caller wanting one without the other should not
+// have to unpick the pair.
+func Has(rel Relationship, preds ...Predicate) Predicate {
+	return existence(rel, preds, false)
+}
+
+// HasNone matches rows that have no related row, or none matching the
+// conditions given.
+//
+//	Users.With(db).Where(orm.HasNone(Users.Posts)).All(ctx)
+//	Users.With(db).Where(orm.HasNone(Users.Posts, Posts.Published.Eq(true))).All(ctx)
+//
+// The second says the user has no published post, which is not the same as
+// having no posts: a user with only drafts matches it.
+//
+// Coming from Prisma, Has is some and this is none. There is no every, which
+// would be this with the condition negated: HasNone(Users.Posts,
+// orm.Not(Posts.Published.Eq(true))) matches users all of whose posts are
+// published, and, like Prisma's every, also those with no posts at all.
+func HasNone(rel Relationship, preds ...Predicate) Predicate {
+	return existence(rel, preds, true)
+}
+
+// existence builds the predicate both spellings share. A nil relationship is
+// carried rather than rejected, so it is reported when the statement compiles
+// like every other mistake in a predicate, rather than by panicking here.
+func existence(rel Relationship, preds []Predicate, not bool) Predicate {
+	e := Existence{Preds: append([]Predicate(nil), preds...), Not: not}
+	if rel != nil {
+		e.Rel = rel.relationOf()
+	}
+	return e
+}
+
 func (Comparison) predicate() {}
 func (InList) predicate()     {}
 func (Range) predicate()      {}
@@ -126,6 +198,7 @@ func (Pattern) predicate()    {}
 func (Nullness) predicate()   {}
 func (Group) predicate()      {}
 func (Negation) predicate()   {}
+func (Existence) predicate()  {}
 
 // And joins preds with AND.
 //

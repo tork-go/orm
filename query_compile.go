@@ -39,6 +39,13 @@ type compiler struct {
 	d     QueryDialect
 	args  *argBuilder
 	table string // the statement's table, for validating column references
+
+	// qualify prefixes a column with its table. A statement over one table
+	// needs no prefix and reads better without one, so this is set only
+	// inside a subquery, where the outer statement's table is also in scope
+	// and an unqualified name would be resolved by how the two happen to be
+	// nested rather than by what the caller wrote.
+	qualify bool
 }
 
 // column renders a column reference, checking it belongs to the statement.
@@ -54,7 +61,28 @@ func (c *compiler) column(col ColumnMeta) (string, error) {
 			"which this statement does not select from",
 			c.table, col.Name(), owner)
 	}
+	if c.qualify {
+		return c.qualified(c.table, col), nil
+	}
 	return c.d.QuoteIdent(col.Name()), nil
+}
+
+// qualified names a column of a table other than this statement's, which is
+// how a subquery refers back to the one containing it.
+//
+// It skips the ownership check on purpose: the whole point of a correlated
+// subquery is to name a column the inner statement does not select from.
+func (c *compiler) qualified(table string, col ColumnMeta) string {
+	return c.d.QuoteIdent(table) + "." + c.d.QuoteIdent(col.Name())
+}
+
+// sub starts a compiler for a subquery over table.
+//
+// It shares this one's arguments, so placeholders keep counting across the
+// boundary rather than restarting and colliding, and it qualifies, since two
+// tables are now in scope.
+func (c *compiler) sub(table string) *compiler {
+	return &compiler{d: c.d, args: c.args, table: table, qualify: true}
 }
 
 // The two constants below stand in for an always true and an always false
@@ -133,6 +161,9 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 			return "", err
 		}
 		return "NOT (" + inner + ")", nil
+
+	case Existence:
+		return c.existence(p)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown predicate %T", c.table, p)
 }
@@ -222,6 +253,107 @@ func (c *compiler) value(col ColumnMeta, v any) (any, error) {
 		return nil, fmt.Errorf("orm: table %q: %w", c.table, err)
 	}
 	return b, nil
+}
+
+// existence renders Has and HasNone as a correlated EXISTS.
+//
+// EXISTS rather than a join because the question is whether a related row is
+// there, not what is in it: a join would multiply the rows a user appears in
+// by the number of posts they have, and the caller would then have to collapse
+// them back down. It also composes, being a predicate like any other, where a
+// join is a property of the whole statement.
+func (c *compiler) existence(e Existence) (string, error) {
+	if e.Rel == nil {
+		return "", fmt.Errorf("orm: table %q: Has was given no relationship, or one "+
+			"attached to no table; declare the model with DefineTable rather than "+
+			"NewTable", c.table)
+	}
+	info, err := e.Rel.info()
+	if err != nil {
+		return "", err
+	}
+	if info.LocalTable != c.table {
+		return "", fmt.Errorf("orm: table %q: this relationship belongs to table %q, "+
+			"which this statement does not select from", c.table, info.LocalTable)
+	}
+
+	var inner string
+	if info.Kind == KindManyToMany {
+		inner, err = c.existsThrough(e, info)
+	} else {
+		inner, err = c.existsDirect(e, info)
+	}
+	if err != nil {
+		return "", err
+	}
+	if e.Not {
+		return "NOT " + inner, nil
+	}
+	return inner, nil
+}
+
+// existsDirect renders the three shapes that join on a single key.
+func (c *compiler) existsDirect(e Existence, info RelationInfo) (string, error) {
+	sub := c.sub(info.ForeignTable)
+	correlate := sub.qualified(info.ForeignTable, info.ForeignColumn) + " = " +
+		sub.qualified(info.LocalTable, info.LocalColumn)
+
+	where, err := sub.conditions(correlate, e.Preds)
+	if err != nil {
+		return "", err
+	}
+	return "EXISTS (SELECT 1 FROM " + c.d.QuoteIdent(info.ForeignTable) + " WHERE " +
+		where + ")", nil
+}
+
+// existsThrough renders a many to many, whose two hops become two EXISTS
+// rather than a join.
+//
+// The inner one is written only when there is something to ask about the far
+// rows. Without it, a row in the join table is already the answer: a foreign
+// key means the row it names is there.
+func (c *compiler) existsThrough(e Existence, info RelationInfo) (string, error) {
+	join := c.sub(info.JoinTable)
+	correlate := join.qualified(info.JoinTable, info.LocalJoinColumn) + " = " +
+		join.qualified(info.LocalTable, info.LocalColumn)
+
+	var nested []string
+	if len(e.Preds) > 0 {
+		far := join.sub(info.ForeignTable)
+		farCorrelate := far.qualified(info.ForeignTable, info.ForeignColumn) + " = " +
+			far.qualified(info.JoinTable, info.ForeignJoinColumn)
+		farWhere, err := far.conditions(farCorrelate, e.Preds)
+		if err != nil {
+			return "", err
+		}
+		nested = append(nested, "EXISTS (SELECT 1 FROM "+
+			c.d.QuoteIdent(info.ForeignTable)+" WHERE "+farWhere+")")
+	}
+
+	where, err := join.conditionsWith(correlate, nil, nested)
+	if err != nil {
+		return "", err
+	}
+	return "EXISTS (SELECT 1 FROM " + c.d.QuoteIdent(info.JoinTable) + " WHERE " +
+		where + ")", nil
+}
+
+// conditions joins a subquery's correlation to the caller's own conditions.
+func (c *compiler) conditions(correlate string, preds []Predicate) (string, error) {
+	return c.conditionsWith(correlate, preds, nil)
+}
+
+// conditionsWith is conditions, plus clauses already rendered.
+func (c *compiler) conditionsWith(correlate string, preds []Predicate, rendered []string) (string, error) {
+	parts := append([]string{correlate}, rendered...)
+	for _, p := range preds {
+		s, err := c.predicate(p)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, " AND "), nil
 }
 
 // set renders an UPDATE's SET clause from a list of assignments.

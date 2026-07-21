@@ -104,28 +104,35 @@ WHERE con.contype = 'f' AND n.nspname = 'public' AND c.relname = ANY($1)
 ORDER BY c.relname, con.conname, u.ord`
 
 // indexColumnsQuery finds every plain (non-unique, non-primary-key) index
-// and its columns in order. information_schema has no view for this, so
-// it needs pg_index directly. As documented in package doc.go, expression
-// indexes and partial indexes are excluded, not misrepresented:
-// indexprs IS NULL/indpred IS NULL filter both out. Without the indexprs
-// filter, a mixed index like (col_a, lower(col_b)) would silently
-// truncate to a wrong single-column index, since an expression key
-// position has attnum = 0, matching no real column in the join below;
-// excluding it outright is correct, guessing at it would not be. A
-// partial index's WHERE predicate has no representation in schema.Index
-// at all, so introspecting one without it would let Diff treat it as
-// equivalent to a full index.
+// and its keys in order. information_schema has no view for this, so it
+// needs pg_index directly.
+//
+// A key is either a column, where indkey holds its attnum, or an
+// expression, where indkey holds 0 and the definition comes from
+// pg_get_indexdef for that key position. Asking for one key at a time is
+// what makes expression keys readable at all: pg_get_expr over indexprs
+// returns every expression as one comma separated string, which cannot be
+// split reliably when an expression itself contains a comma.
+//
+// The partial predicate comes back on every row of an index, since it
+// belongs to the index rather than to a key.
 const indexColumnsQuery = `
-SELECT t.relname AS table_name, i.relname AS index_name, a.attname AS column_name, k.ord AS ordinal_position
+SELECT t.relname AS table_name,
+       i.relname AS index_name,
+       k.ord::int AS ordinal_position,
+       COALESCE(a.attname, '') AS column_name,
+       CASE WHEN k.attnum = 0
+            THEN pg_get_indexdef(i.oid, k.ord::int, true)
+            ELSE '' END AS expression,
+       COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') AS predicate
 FROM pg_index ix
 JOIN pg_class t ON t.oid = ix.indrelid
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
 JOIN LATERAL unnest(ix.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) ON true
-JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND NOT a.attisdropped
+LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND NOT a.attisdropped
 WHERE n.nspname = 'public' AND t.relname = ANY($1)
   AND NOT ix.indisunique AND NOT ix.indisprimary
-  AND ix.indexprs IS NULL AND ix.indpred IS NULL
 ORDER BY t.relname, i.relname, k.ord`
 
 // checksQuery finds every CHECK constraint and its expression text.
@@ -415,26 +422,59 @@ func introspectIndexes(ctx context.Context, conn driver.Conn, tables []string, t
 	}
 	defer rows.Close()
 
-	// Indices, not pointers, into each table's Indexes slice: see the same
-	// note on introspectUniques above.
-	indices := map[string]int{}
+	// Gathered per index first, because an index that turns out to mix
+	// column and expression keys is dropped whole: schema.Index records
+	// which keys an index has but not where each one sat, so a mixed index
+	// would come back with its keys reordered and read as a different
+	// index than the one in the database. Leaving it out is correct;
+	// guessing at the order would not be.
+	type gathered struct {
+		table       string
+		name        string
+		columns     []string
+		expressions []string
+		predicate   string
+	}
+	var order []string
+	byKey := map[string]*gathered{}
+
 	for rows.Next() {
-		var tableName, indexName, columnName string
+		var tableName, indexName, columnName, expression, predicate string
 		var ordinal int
-		if err := rows.Scan(&tableName, &indexName, &columnName, &ordinal); err != nil {
+		if err := rows.Scan(&tableName, &indexName, &ordinal, &columnName, &expression, &predicate); err != nil {
 			return fmt.Errorf("postgres: scanning index: %w", err)
 		}
-		t := table(tableName)
 		key := tableName + "." + indexName
-		idx, ok := indices[key]
+		g, ok := byKey[key]
 		if !ok {
-			t.Indexes = append(t.Indexes, schema.Index{Name: indexName})
-			idx = len(t.Indexes) - 1
-			indices[key] = idx
+			g = &gathered{table: tableName, name: indexName, predicate: predicate}
+			byKey[key] = g
+			order = append(order, key)
 		}
-		t.Indexes[idx].Columns = append(t.Indexes[idx].Columns, columnName)
+		if expression != "" {
+			g.expressions = append(g.expressions, expression)
+		} else {
+			g.columns = append(g.columns, columnName)
+		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, key := range order {
+		g := byKey[key]
+		if len(g.columns) > 0 && len(g.expressions) > 0 {
+			continue
+		}
+		t := table(g.table)
+		t.Indexes = append(t.Indexes, schema.Index{
+			Name:        g.name,
+			Columns:     g.columns,
+			Expressions: g.expressions,
+			Where:       g.predicate,
+		})
+	}
+	return nil
 }
 
 func introspectChecks(ctx context.Context, conn driver.Conn, tables []string, table func(string) *schema.Table) error {

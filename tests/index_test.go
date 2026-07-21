@@ -1,9 +1,11 @@
 package orm_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tork-go/orm"
+	"github.com/tork-go/orm/schema"
 )
 
 func TestNewIndexDef_Defaults(t *testing.T) {
@@ -109,4 +111,108 @@ func BenchmarkIndexDefChain(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = orm.NewIndexDef(a, c).Unique().Named("uq_t_a_c")
 	}
+}
+
+// A partial index covers only rows matching its predicate, and an
+// expression index has keys that are not columns at all.
+func TestIndexDef_WhereAndExpressions(t *testing.T) {
+	a := orm.NewIntColumn("tenant")
+
+	partial := orm.NewIndexDef(a).Where("deleted_at IS NULL")
+	if got := partial.WherePredicate(); got != "deleted_at IS NULL" {
+		t.Errorf("WherePredicate() = %q, want the predicate", got)
+	}
+	if len(partial.Columns()) != 1 {
+		t.Errorf("Columns() = %v, want one", partial.Columns())
+	}
+
+	expr := orm.NewIndexDef().On("lower(email)").Named("ix_lower_email")
+	if got := expr.Expressions(); len(got) != 1 || got[0] != "lower(email)" {
+		t.Errorf("Expressions() = %v, want [lower(email)]", got)
+	}
+	if len(expr.Columns()) != 0 {
+		t.Errorf("Columns() = %v, want none on an expression index", expr.Columns())
+	}
+}
+
+func TestIndexDef_ChainOrderIndependence_WhereAndOn(t *testing.T) {
+	a := orm.NewIntColumn("tenant")
+	x := orm.NewIndexDef(a).Where("active").Named("ix_a")
+	y := orm.NewIndexDef(a).Named("ix_a").Where("active")
+	if x.WherePredicate() != y.WherePredicate() || x.Name() != y.Name() {
+		t.Error("the builder is order dependent")
+	}
+}
+
+// An index is over columns or over expressions, since nothing records
+// where each key sat.
+func TestExtractSchema_MixedIndexKeys(t *testing.T) {
+	m := &mixedIndexModel{
+		Table: orm.NewTable[orm.NoEntity]("mixed_idx"),
+		A:     orm.NewIntColumn("a"),
+	}
+	_, err := schema.ExtractSchema(m)
+	if err == nil {
+		t.Fatal("ExtractSchema() error = nil, want a mixed keys error")
+	}
+	if !strings.Contains(err.Error(), "mixes column and expression keys") {
+		t.Errorf("error %q does not report the mix", err)
+	}
+}
+
+type mixedIndexModel struct {
+	orm.Table[orm.NoEntity]
+	A *orm.IntColumn
+}
+
+func (m *mixedIndexModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef(m.A).On("lower(b)")}
+}
+
+// An expression index has no column list to derive a name from.
+func TestExtractSchema_UnnamedExpressionIndex(t *testing.T) {
+	m := &unnamedExprModel{
+		Table: orm.NewTable[orm.NoEntity]("unnamed_expr"),
+		A:     orm.NewIntColumn("a"),
+	}
+	_, err := schema.ExtractSchema(m)
+	if err == nil {
+		t.Fatal("ExtractSchema() error = nil, want a missing name error")
+	}
+	if !strings.Contains(err.Error(), "Named") {
+		t.Errorf("error %q does not point at Named", err)
+	}
+}
+
+type unnamedExprModel struct {
+	orm.Table[orm.NoEntity]
+	A *orm.IntColumn
+}
+
+func (m *unnamedExprModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef().On("lower(a)")}
+}
+
+// A unique constraint has neither expression keys nor a predicate.
+func TestExtractSchema_UniqueWithPredicate(t *testing.T) {
+	m := &uniquePartialModel{
+		Table: orm.NewTable[orm.NoEntity]("unique_partial"),
+		A:     orm.NewIntColumn("a"),
+	}
+	_, err := schema.ExtractSchema(m)
+	if err == nil {
+		t.Fatal("ExtractSchema() error = nil, want a unique-with-predicate error")
+	}
+	if !strings.Contains(err.Error(), "plain index") {
+		t.Errorf("error %q does not suggest a plain index", err)
+	}
+}
+
+type uniquePartialModel struct {
+	orm.Table[orm.NoEntity]
+	A *orm.IntColumn
+}
+
+func (m *uniquePartialModel) Indexes() []orm.IndexDef {
+	return []orm.IndexDef{orm.NewIndexDef(m.A).Unique().Where("active")}
 }

@@ -6,9 +6,11 @@ package orm
 // Columns are referenced via ColumnMeta, the same vocabulary the rest of
 // this package's reflection already uses. See Indexer.
 type IndexDef struct {
-	name    string
-	unique  bool
-	columns []ColumnMeta
+	name        string
+	unique      bool
+	columns     []ColumnMeta
+	expressions []string
+	where       string
 }
 
 // NewIndexDef declares a plain (non-unique) index over columns, in the
@@ -60,3 +62,32 @@ func (d IndexDef) Columns() []ColumnMeta { return d.columns }
 type Indexer interface {
 	Indexes() []IndexDef
 }
+
+// On adds expression keys, such as lower(email), to the index.
+//
+// An index is over columns or over expressions, not a mix. Postgres allows
+// interleaving them, but nothing in schema.Index records where each key
+// sat, so an interleaved index could not be read back and compared. Use
+// one or the other.
+//
+// The expressions are raw SQL and are rendered as written.
+func (d IndexDef) On(expressions ...string) IndexDef {
+	d.expressions = append(append([]string(nil), d.expressions...), expressions...)
+	return d
+}
+
+// Where makes this a partial index, covering only rows matching predicate.
+//
+// The predicate is raw SQL and is rendered as written, the same way a
+// CheckDef's expression is.
+func (d IndexDef) Where(predicate string) IndexDef {
+	d.where = predicate
+	return d
+}
+
+// Expressions returns the expression keys added by On.
+func (d IndexDef) Expressions() []string { return d.expressions }
+
+// WherePredicate returns the predicate set by Where, empty for a full
+// index.
+func (d IndexDef) WherePredicate() string { return d.where }

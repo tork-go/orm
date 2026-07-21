@@ -21,10 +21,17 @@
 // column reports no default, its sequence being an artefact of how
 // identity is implemented rather than anything declared.
 //
-// Expression indexes and partial indexes are excluded from introspection,
-// not misrepresented: schema.Index has no way to express either an
-// expression key or a WHERE predicate, so they are left alone rather than
-// introspected incorrectly.
+// Expression indexes and partial indexes are read back like any other,
+// since schema.Index carries both expression keys and a predicate. Keys
+// are read one at a time through pg_get_indexdef, which is what makes an
+// expression key readable at all: pg_get_expr over indexprs returns every
+// expression as one comma separated string, which cannot be split
+// reliably when an expression itself contains a comma.
+//
+// An index mixing column and expression keys is still left alone.
+// schema.Index records which keys an index has but not where each one sat,
+// so a mixed index would come back with its keys reordered and read as a
+// different index than the one in the database.
 //
 // The model declaration types (Table, Column, the typed column types, and
 // the relationship markers) live in the module-root orm package, which

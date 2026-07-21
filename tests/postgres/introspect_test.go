@@ -134,7 +134,12 @@ CREATE INDEX ix_test_introspect_child_active_score ON test_introspect_child (act
 // gap (see driver/postgres/doc.go): schema.Index has no way to represent
 // an expression key or a WHERE predicate, so both kinds are excluded from
 // introspection entirely rather than misrepresented as a plain index.
-func TestIntrospect_PartialAndExpressionIndexes_Excluded(t *testing.T) {
+// Partial and expression indexes are read back like any other now that
+// schema.Index carries a predicate and expression keys. An index mixing
+// column and expression keys is still left out: schema.Index records which
+// keys an index has but not where each one sat, so a mixed one would come
+// back reordered and read as a different index than the one that exists.
+func TestIntrospect_PartialExpressionAndMixedIndexes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -156,7 +161,8 @@ CREATE TABLE test_introspect_special (
     active BOOLEAN
 );
 CREATE INDEX ix_special_partial ON test_introspect_special (id) WHERE active;
-CREATE INDEX ix_special_expr ON test_introspect_special (lower(name));`
+CREATE INDEX ix_special_expr ON test_introspect_special (lower(name));
+CREATE INDEX ix_special_mixed ON test_introspect_special (id, lower(name));`
 	if _, err := conn.Exec(ctx, setup); err != nil {
 		t.Fatalf("test setup failed: %v", err)
 	}
@@ -166,8 +172,39 @@ CREATE INDEX ix_special_expr ON test_introspect_special (lower(name));`
 		t.Fatalf("Introspect failed: %v", err)
 	}
 	table := tableNamed(t, got, "test_introspect_special")
-	if len(table.Indexes) != 0 {
-		t.Errorf("Indexes = %+v, want none (partial and expression indexes must be excluded)", table.Indexes)
+
+	byName := map[string]schema.Index{}
+	for _, ix := range table.Indexes {
+		byName[ix.Name] = ix
+	}
+
+	if _, ok := byName["ix_special_mixed"]; ok {
+		t.Error("the mixed index was introspected, want it left out")
+	}
+	if len(table.Indexes) != 2 {
+		t.Fatalf("Indexes = %+v, want the partial and the expression one", table.Indexes)
+	}
+
+	partial, ok := byName["ix_special_partial"]
+	if !ok {
+		t.Fatal("the partial index is missing")
+	}
+	if partial.Where == "" {
+		t.Error("the partial index came back without its predicate, which would compare equal to a full index")
+	}
+	if len(partial.Columns) != 1 || partial.Columns[0] != "id" {
+		t.Errorf("partial index columns = %v, want [id]", partial.Columns)
+	}
+
+	expr, ok := byName["ix_special_expr"]
+	if !ok {
+		t.Fatal("the expression index is missing")
+	}
+	if len(expr.Expressions) != 1 {
+		t.Fatalf("expression index keys = %v, want one", expr.Expressions)
+	}
+	if len(expr.Columns) != 0 {
+		t.Errorf("expression index also reported columns %v", expr.Columns)
 	}
 }
 

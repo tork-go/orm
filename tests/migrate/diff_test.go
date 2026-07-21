@@ -898,3 +898,29 @@ func TestDiff_ServerDefaultCastInsideLiteral(t *testing.T) {
 		t.Errorf("two different literals produced %d operations, want 1: the :: inside them is not a cast", len(ops))
 	}
 }
+
+// A trailing :: with no type after it is not a cast, and neither is one
+// inside an unbalanced expression.
+func TestDiff_ServerDefaultMalformedCast(t *testing.T) {
+	col := func(def string) schema.Table {
+		return schema.Table{
+			Name:    "t",
+			Columns: []schema.Column{{Name: "c", Type: schema.ColumnType{Kind: schema.KindText}, ServerDefault: def}},
+		}
+	}
+	for _, tt := range []struct{ a, b string }{
+		{"x::", "y::"},       // nothing after the colons
+		{"f(a::text", "g(b"}, // an unclosed paren before them
+	} {
+		ops, err := migrate.Diff(
+			schema.Schema{Tables: []schema.Table{col(tt.a)}},
+			schema.Schema{Tables: []schema.Table{col(tt.b)}},
+		)
+		if err != nil {
+			t.Fatalf("Diff(%q, %q) error = %v", tt.a, tt.b, err)
+		}
+		if len(ops) != 1 {
+			t.Errorf("Diff(%q, %q) produced %d operations, want 1", tt.a, tt.b, len(ops))
+		}
+	}
+}

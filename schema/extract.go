@@ -176,8 +176,18 @@ func mergeIndexDefs(table *Table, tableName string, defs []orm.IndexDef) error {
 		for i, c := range d.Columns() {
 			cols[i] = c.Name()
 		}
-		if len(cols) == 0 {
+		if len(cols) == 0 && len(d.Expressions()) == 0 {
 			return fmt.Errorf("table %q: index definition has no columns", tableName)
+		}
+		if len(cols) > 0 && len(d.Expressions()) > 0 {
+			return fmt.Errorf("table %q: index on %v mixes column and expression keys; "+
+				"an index is over one or the other, since nothing records where each "+
+				"key sat", tableName, cols)
+		}
+		if d.IsUnique() && (len(d.Expressions()) > 0 || d.WherePredicate() != "") {
+			return fmt.Errorf("table %q: index on %v is unique and also uses expression "+
+				"keys or a predicate; a unique constraint has neither, so declare it as "+
+				"a plain index instead", tableName, cols)
 		}
 
 		if d.IsUnique() {
@@ -191,9 +201,21 @@ func mergeIndexDefs(table *Table, tableName string, defs []orm.IndexDef) error {
 
 		iName := d.Name()
 		if iName == "" {
+			// An expression index has no column list to derive a name
+			// from, so one has to be given.
+			if len(cols) == 0 {
+				return fmt.Errorf("table %q: index on expressions %v has no name; "+
+					"an expression has no column list to derive one from, so name it "+
+					"with Named", tableName, d.Expressions())
+			}
 			iName = IndexName(tableName, cols)
 		}
-		table.Indexes = append(table.Indexes, Index{Name: iName, Columns: cols})
+		table.Indexes = append(table.Indexes, Index{
+			Name:        iName,
+			Columns:     cols,
+			Expressions: d.Expressions(),
+			Where:       d.WherePredicate(),
+		})
 	}
 	return nil
 }

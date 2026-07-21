@@ -178,8 +178,22 @@ func (Dialect) RenderDropUnique(table, name string) []string {
 // plain index cannot be declared inline in CREATE TABLE in Postgres, so it
 // is always its own statement.
 func (Dialect) RenderAddIndex(table string, idx schema.Index) []string {
-	sql := fmt.Sprintf("CREATE INDEX %s ON %s (%s)",
-		quoteIdent(idx.Name), quoteIdent(table), quoteIdentList(idx.Columns))
+	keys := quoteIdentList(idx.Columns)
+	if len(idx.Expressions) > 0 {
+		// An expression key is raw SQL, so it is written as given rather
+		// than quoted as an identifier. Postgres needs each wrapped in
+		// parentheses unless it is already a single function call, and
+		// wrapping unconditionally is always valid.
+		wrapped := make([]string, len(idx.Expressions))
+		for i, e := range idx.Expressions {
+			wrapped[i] = "(" + e + ")"
+		}
+		keys = strings.Join(wrapped, ", ")
+	}
+	sql := fmt.Sprintf("CREATE INDEX %s ON %s (%s)", quoteIdent(idx.Name), quoteIdent(table), keys)
+	if idx.Where != "" {
+		sql += " WHERE " + idx.Where
+	}
 	return []string{sql}
 }
 

@@ -276,15 +276,25 @@ func diffTable(name string, cur, des schema.Table) tableDiff {
 		}
 	}
 
-	curIndexes := byColumnKey(cur.Indexes, func(ix schema.Index) []string { return ix.Columns })
-	desIndexes := byColumnKey(des.Indexes, func(ix schema.Index) []string { return ix.Columns })
+	// Indexes are matched by everything that decides what they cover, not
+	// by column set alone. Two indexes over the same columns under
+	// different predicates are different indexes, and two expression
+	// indexes have no columns at all to tell apart.
+	curIndexes := map[string]bool{}
 	for _, ix := range cur.Indexes {
-		if _, ok := desIndexes[columnKey(ix.Columns)]; !ok {
+		curIndexes[indexKey(ix)] = true
+	}
+	desIndexes := map[string]bool{}
+	for _, ix := range des.Indexes {
+		desIndexes[indexKey(ix)] = true
+	}
+	for _, ix := range cur.Indexes {
+		if !desIndexes[indexKey(ix)] {
 			td.dropIndexes = append(td.dropIndexes, DropIndex{Table: name, Name: ix.Name})
 		}
 	}
 	for _, ix := range des.Indexes {
-		if _, ok := curIndexes[columnKey(ix.Columns)]; !ok {
+		if !curIndexes[indexKey(ix)] {
 			td.addIndexes = append(td.addIndexes, AddIndex{Table: name, Index: ix})
 		}
 	}
@@ -487,6 +497,15 @@ func sortOps(ops []Operation) {
 // Anything more involved is compared as written. A database's printed form
 // is stable across runs, so such a default still compares equal to itself,
 // even where it does not compare equal to the way it was first spelled.
+// indexKey identifies an index by what it covers: its column keys, its
+// expression keys, and its predicate. Name is deliberately absent, so an
+// index the database happens to call something else is left alone rather
+// than dropped and recreated.
+func indexKey(ix schema.Index) string {
+	return columnKey(ix.Columns) + "\x00expr\x00" + columnKey(ix.Expressions) +
+		"\x00where\x00" + normalizeExpr(ix.Where)
+}
+
 func defaultsEquivalent(a, b string) bool {
 	return normalizeDefault(a) == normalizeDefault(b)
 }

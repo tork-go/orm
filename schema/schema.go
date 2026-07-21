@@ -112,6 +112,16 @@ type ForeignKey struct {
 type Index struct {
 	Name    string
 	Columns []string
+
+	// Expressions are expression keys, such as lower(email). An index has
+	// either column keys or expression keys, never a mix: Postgres allows
+	// interleaving them, but nothing here records where each key sat, so
+	// such an index is left alone by introspection rather than
+	// misrepresented.
+	Expressions []string
+
+	// Where is a partial index's predicate, empty for a full index.
+	Where string
 }
 
 // Check is a table-level CHECK constraint. Expression is a raw SQL

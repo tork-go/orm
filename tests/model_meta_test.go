@@ -51,14 +51,15 @@ func TestForeignKeys_UserModel_None(t *testing.T) {
 	}
 }
 
-// relatedModel is declared in relationship_test.go and reused here.
+// strandedEntity is declared in relationship_test.go and reused here as a
+// stand-in row type; what matters is that markers are not columns.
 
 func TestColumns_ExcludesTableAndRelationshipFields(t *testing.T) {
 	type Model struct {
 		orm.Table[orm.NoEntity]
 		ID       *orm.Column[int]
-		Children orm.HasMany[relatedModel]
-		Parent   orm.BelongsTo[relatedModel]
+		Children orm.HasMany[strandedEntity]
+		Parent   orm.BelongsTo[strandedEntity]
 	}
 	m := &Model{Table: orm.NewTable[orm.NoEntity]("models"), ID: orm.NewColumn[int]("id")}
 

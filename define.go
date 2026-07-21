@@ -223,7 +223,63 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 	}
 	st.fieldIdx = idx
 
+	registerTable(st.entity, st)
+
+	if err := bindRelations(name, m, st); err != nil {
+		panic(err.Error())
+	}
+
 	return m
+}
+
+// bindRelations attaches every relationship marker on m to its table, then
+// applies whatever the model's Relations method names.
+//
+// Markers are found by taking each field's address, since a marker is a
+// struct value on the model and binding has to write to the one the model
+// holds rather than to a copy. That means the model has to be addressable,
+// which it is whenever the declaring function returns a pointer. Returning
+// a value model is otherwise fine, so this reports the problem rather than
+// silently leaving the relationships unusable.
+func bindRelations(table string, m Model, st *tableState) error {
+	v := reflect.ValueOf(m)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+
+	t := v.Type()
+	for i := range t.NumField() {
+		if !t.Field(i).IsExported() {
+			continue
+		}
+		fv := v.Field(i)
+		if !fv.CanAddr() {
+			// Only reachable for a value model, and only worth reporting
+			// if it actually carries a relationship.
+			if _, ok := reflect.New(fv.Type()).Interface().(relationBinder); ok {
+				return fmt.Errorf("orm: table %q: field %s is a relationship, which needs "+
+					"an addressable model; return a pointer from the function passed to "+
+					"DefineTable", table, t.Field(i).Name)
+			}
+			continue
+		}
+		if b, ok := fv.Addr().Interface().(relationBinder); ok {
+			b.bindRelation(st)
+		}
+	}
+
+	// Relations is not called here. It routinely mentions another table,
+	// which the ordering of package level variables may not have
+	// initialised yet, so consulting it now would reintroduce the very
+	// dependency problem relationships resolve late to avoid. It is read
+	// when a relationship is first used instead.
+	if r, ok := m.(Relater); ok {
+		st.relater = r
+	}
+	return nil
 }
 
 // entityField is a resolved field of the entity: where it sits and what

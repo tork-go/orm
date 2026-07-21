@@ -28,6 +28,12 @@ type tableState struct {
 	entity   reflect.Type
 	fieldIdx map[string][]int
 
+	// relater is the model itself when it names its own relationship keys.
+	// It is kept rather than called during declaration because a
+	// Relations method routinely mentions another table, which may not
+	// have been initialised yet at that point. See relation.resolve.
+	relater Relater
+
 	// cols is the model's columns in struct field order, which is the
 	// order a generated SELECT lists them in. Scanning is positional and
 	// driver.Rows exposes no column names, so this ordering is what ties

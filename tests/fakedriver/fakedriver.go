@@ -27,6 +27,11 @@ type Conn struct {
 
 	// RowsAffected is what Exec reports back. Zero unless a test sets it.
 	RowsAffected int64
+
+	// RowsErr is what a result set reports from Err, so a test can
+	// simulate a connection dropping partway through one. Real drivers
+	// report a mid-iteration failure that way rather than from Next.
+	RowsErr error
 }
 
 // NewConn returns a ready-to-use fake connection.
@@ -86,11 +91,11 @@ func (c *Conn) Query(_ context.Context, sql string, args ...any) (driver.Rows, e
 		return nil, errors.New("fakedriver: simulated Query failure")
 	}
 	if len(c.queued) == 0 {
-		return &Rows{}, nil
+		return &Rows{err: c.RowsErr}, nil
 	}
 	next := c.queued[0]
 	c.queued = c.queued[1:]
-	return &Rows{rows: next}, nil
+	return &Rows{rows: next, err: c.RowsErr}, nil
 }
 
 func (c *Conn) QueryRow(_ context.Context, sql string, args ...any) driver.Row {
@@ -149,6 +154,7 @@ type Rows struct {
 	rows   [][]any
 	cursor int
 	closed bool
+	err    error
 }
 
 func (r *Rows) Next() bool {
@@ -168,7 +174,7 @@ func (r *Rows) Scan(dest ...any) error {
 	return assign(r.rows[r.cursor-1], dest)
 }
 
-func (r *Rows) Err() error { return nil }
+func (r *Rows) Err() error { return r.err }
 func (r *Rows) Close()     { r.closed = true }
 
 // Closed reports whether Close was called, so a test can check a query

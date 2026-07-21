@@ -33,14 +33,46 @@ func (t Table[E]) Columns() []ColumnMeta {
 // custom Serialize pair apply on the way in as well as on the way out.
 func (t Table[E]) ScanRow(rs Rows) (E, error) {
 	var e E
-	if t.st == nil || t.st.fieldIdx == nil {
-		return e, fmt.Errorf("orm: table %q: no entity mapping, so rows cannot be "+
-			"scanned; declare the model with DefineTable rather than NewTable",
-			t.TableName())
+	if t.st == nil {
+		return e, errNoEntityMapping("")
+	}
+	if err := scanRowInto(t.st, rs, reflect.ValueOf(&e).Elem()); err != nil {
+		return e, err
+	}
+	return e, nil
+}
+
+// scanRowInto reads the current row of rs into dst, an addressable struct
+// value of st's entity type.
+//
+// It exists separately from ScanRow because query building reaches a table
+// as a *tableState rather than as a Table[E]: eager loading knows the
+// related table only through the registry, which is keyed by reflect.Type
+// and so cannot hand back anything parameterised by the related row type.
+func scanRowInto(st *tableState, rs Rows, dst reflect.Value) error {
+	dests, finish, err := rowDests(st, dst)
+	if err != nil {
+		return err
+	}
+	if err := rs.Scan(dests...); err != nil {
+		return fmt.Errorf("orm: table %q: scanning row: %w", st.name, err)
+	}
+	return finish()
+}
+
+// rowDests builds the destinations for one row of st, pointed at dst, and
+// returns a function that finishes decoding once Scan has run.
+//
+// It hands back destinations rather than doing the scan because a caller
+// sometimes has a column of its own to read alongside these. Eager loading
+// a many to many selects the join table's key in front of the related
+// row's columns, and prepends its own destination to this slice.
+func rowDests(st *tableState, dst reflect.Value) ([]any, func() error, error) {
+	if st.fieldIdx == nil {
+		return nil, nil, errNoEntityMapping(st.name)
 	}
 
-	v := reflect.ValueOf(&e).Elem()
-	dests := make([]any, len(t.st.cols))
+	dests := make([]any, len(st.cols))
 
 	// staged records which positions hold encoded bytes rather than a
 	// final value, so they can be decoded once the scan has filled them.
@@ -51,8 +83,8 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 	}
 	var staged []stagedField
 
-	for i, c := range t.st.cols {
-		field := fieldByIndexAlloc(v, t.st.fieldIdx[c.Name()])
+	for i, c := range st.cols {
+		field := fieldByIndexAlloc(dst, st.fieldIdx[c.Name()])
 		if isDocumentColumn(c) {
 			buf := new([]byte)
 			dests[i] = buf
@@ -62,37 +94,43 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 		dests[i] = field.Addr().Interface()
 	}
 
-	if err := rs.Scan(dests...); err != nil {
-		return e, fmt.Errorf("orm: table %q: scanning row: %w", t.TableName(), err)
+	finish := func() error {
+		for _, s := range staged {
+			// A NULL document leaves the field at its zero value, which
+			// for a nullable column is the nil pointer that NULL means.
+			if *s.buf == nil {
+				continue
+			}
+			codec, ok := s.col.(ValueCodec)
+			if !ok {
+				return fmt.Errorf("orm: table %q: column %q cannot decode its value",
+					st.name, s.col.Name())
+			}
+			decoded, err := codec.UnmarshalAny(*s.buf)
+			if err != nil {
+				return fmt.Errorf("orm: table %q: %w", st.name, err)
+			}
+			// A Column[T]'s codec always hands back a T, so the check
+			// below only bites for a ColumnMeta implemented outside this
+			// package, where nothing constrains what the codec returns.
+			dv := reflect.ValueOf(decoded)
+			if !dv.IsValid() || !dv.Type().AssignableTo(s.field.Type()) {
+				return fmt.Errorf("orm: table %q: column %q decoded to %s, want %s",
+					st.name, s.col.Name(), dv.Type(), s.field.Type())
+			}
+			s.field.Set(dv)
+		}
+		return nil
 	}
 
-	for _, s := range staged {
-		// A NULL document leaves the field at its zero value, which for a
-		// nullable column is the nil pointer that NULL means.
-		if *s.buf == nil {
-			continue
-		}
-		codec, ok := s.col.(ValueCodec)
-		if !ok {
-			return e, fmt.Errorf("orm: table %q: column %q cannot decode its value",
-				t.TableName(), s.col.Name())
-		}
-		decoded, err := codec.UnmarshalAny(*s.buf)
-		if err != nil {
-			return e, fmt.Errorf("orm: table %q: %w", t.TableName(), err)
-		}
-		// A Column[T]'s codec always hands back a T, so the check below
-		// only bites for a ColumnMeta implemented outside this package,
-		// where nothing constrains what the codec returns.
-		dv := reflect.ValueOf(decoded)
-		if !dv.IsValid() || !dv.Type().AssignableTo(s.field.Type()) {
-			return e, fmt.Errorf("orm: table %q: column %q decoded to %s, want %s",
-				t.TableName(), s.col.Name(), dv.Type(), s.field.Type())
-		}
-		s.field.Set(dv)
-	}
+	return dests, finish, nil
+}
 
-	return e, nil
+// errNoEntityMapping is the one failure both scan entry points share, so
+// the wording stays identical whichever of them a caller reached.
+func errNoEntityMapping(table string) error {
+	return fmt.Errorf("orm: table %q: no entity mapping, so rows cannot be "+
+		"scanned; declare the model with DefineTable rather than NewTable", table)
 }
 
 // isDocumentColumn reports whether a column's value travels as encoded

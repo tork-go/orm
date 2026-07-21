@@ -25,13 +25,20 @@ import "context"
 // this, rather than to a lowest common denominator it would have to fight.
 
 // Result is what a statement did.
-//
-// Only RowsAffected for now. A driver whose database reports a last
-// inserted id can gain a field here later without breaking any caller,
-// since this is a struct rather than an interface. Postgres has no need of
-// one: it returns generated values through RETURNING.
 type Result struct {
+	// RowsAffected is how many rows the statement inserted, updated, or
+	// deleted.
 	RowsAffected int64
+
+	// LastInsertID is the key the database generated for an inserted row,
+	// on databases that report one that way. MySQL and SQLite do; Postgres
+	// does not, and leaves this zero because it returns generated values
+	// through RETURNING instead, which carries every generated column
+	// rather than just one integer.
+	//
+	// Check SupportsReturning on the dialect rather than testing this for
+	// zero: zero is also a perfectly ordinary generated key.
+	LastInsertID int64
 }
 
 // Row scans a single query result row.

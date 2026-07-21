@@ -8,9 +8,10 @@ import "reflect"
 // model's fields without knowing each field's concrete T.
 type ColumnMeta interface {
 	Name() string
+	OwnerTable() string
 	IsPrimaryKey() bool
 	IsUnique() bool
-	IsNotNull() bool
+	HasNotNull() bool
 	MaxLength() (int, bool)
 	GoType() reflect.Type
 	IsNullable() bool
@@ -45,9 +46,22 @@ func Columns(m Model) []ColumnMeta {
 	return walkFields[ColumnMeta](m)
 }
 
-// ForeignKeys returns every field of m that is a foreign key column.
+// ForeignKeys returns every field of m that references a column in
+// another table, in struct field order.
+//
+// Every column satisfies ForeignKeyMeta, because any column may carry a
+// reference, so satisfying the interface is not what makes a field a
+// foreign key. Having a referenced table is. Columns that reference
+// nothing report "" there and are filtered out here.
 func ForeignKeys(m Model) []ForeignKeyMeta {
-	return walkFields[ForeignKeyMeta](m)
+	all := walkFields[ForeignKeyMeta](m)
+	out := make([]ForeignKeyMeta, 0, len(all))
+	for _, fk := range all {
+		if fk.ReferencedTable() != "" {
+			out = append(out, fk)
+		}
+	}
+	return out
 }
 
 // walkFields reflects over m's exported struct fields and collects the

@@ -59,7 +59,7 @@ func extractTable(m orm.Model) (Table, []EnumType, error) {
 		table.Columns = append(table.Columns, Column{
 			Name:          c.Name(),
 			Type:          ct,
-			NotNull:       c.IsNotNull() || !c.IsNullable(),
+			NotNull:       c.HasNotNull() || !c.IsNullable(),
 			ServerDefault: serverDefault,
 		})
 		if c.IsPrimaryKey() {

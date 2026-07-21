@@ -10,6 +10,7 @@ import "reflect"
 //	Username := NewColumn[string]("username").Unique().NotNull().MaxLen(30)
 type Column[T any] struct {
 	name             string
+	ownerTable       string
 	primaryKey       bool
 	unique           bool
 	notNull          bool
@@ -29,6 +30,18 @@ type Column[T any] struct {
 	enumTypeName     string
 	enumValues       []string
 	enumSet          bool
+
+	// A column that references another carries the reference here. ref is
+	// the referenced column when it was given as a value; refTableName and
+	// refColumnName hold an explicitly-spelled reference instead. Keeping
+	// ref rather than resolving it on the spot is what lets a column
+	// reference one declared beside it in the same table, whose owner is
+	// not stamped until DefineTable returns.
+	ref           ColumnMeta
+	refTableName  string
+	refColumnName string
+	onDelete      ForeignKeyAction
+	onUpdate      ForeignKeyAction
 }
 
 // newColumn builds the shared Column[T] value used by both NewColumn and
@@ -174,8 +187,19 @@ func (c *Column[T]) IsUnique() bool {
 	return c.unique
 }
 
-// IsNotNull reports whether NotNull was called.
-func (c *Column[T]) IsNotNull() bool {
+// HasNotNull reports whether NotNull was called, i.e. whether the column
+// carries a NOT NULL constraint.
+//
+// It breaks the Is- prefix its neighbours use (IsUnique, IsPrimaryKey,
+// IsIndexed) for two reasons. IsNotNull belongs to the nullable column
+// types, where it builds an `IS NOT NULL` predicate, and a method cannot
+// mean both things at once. An accessor and a predicate builder sharing a
+// name become an ambiguous promotion, which Go resolves by dropping the
+// method, silently costing the column type its ColumnMeta conformance.
+// Has- is also the more accurate word here: this reports a constraint the
+// column carries, not a property of any value. Compare IsNullable, which
+// asks the different question of whether T is a pointer.
+func (c *Column[T]) HasNotNull() bool {
 	return c.notNull
 }
 
@@ -263,4 +287,112 @@ func (c *Column[T]) Serializer() (marshal func(T) ([]byte, error), unmarshal fun
 // called.
 func (c *Column[T]) EnumSpec() (typeName string, values []string, ok bool) {
 	return c.enumTypeName, c.enumValues, c.enumSet
+}
+
+// OwnerTable returns the name of the table this column belongs to, or ""
+// if the column has not been bound to one.
+//
+// DefineTable binds every column it walks; a column built by hand and
+// assigned into a model literal is never bound, which is why callers must
+// treat "" as ordinary rather than exceptional. It exists so error
+// messages and generated SQL can qualify a column with its table, which
+// matters as soon as a query names more than one.
+func (c *Column[T]) OwnerTable() string {
+	return c.ownerTable
+}
+
+// setOwner binds the column to the table named name.
+//
+// It is unexported because binding is DefineTable's job: a column that
+// could be rebound to a second table after the first had already recorded
+// it would make OwnerTable a lie. Reaching it through the ownerSetter
+// interface is what lets DefineTable bind a column it only holds as a
+// ColumnMeta.
+func (c *Column[T]) setOwner(name string) {
+	c.ownerTable = name
+}
+
+// Base returns the column itself.
+//
+// It exists so a *Column[T] satisfies Ref[T] alongside the typed column
+// types, whose Base unwraps the column they wrap. That is what lets either
+// be passed to References.
+func (c *Column[T]) Base() *Column[T] {
+	return c
+}
+
+// References marks this column as a foreign key onto ref.
+//
+// The referenced table and column are read back from ref when they are
+// asked for, not when References is called. That matters for a
+// self-referencing key: the column being referenced belongs to the table
+// currently being declared, and nothing has bound it to that table yet.
+//
+// Column[T] takes a ColumnMeta here because it cannot say anything about
+// the referenced column's type. The typed column types narrow this to a
+// Ref[R] of the matching type, so a mismatched key is a compile error
+// there; see refBuilder.
+func (c *Column[T]) References(ref ColumnMeta) *Column[T] {
+	c.ref = ref
+	return c
+}
+
+// ReferencesTable marks this column as a foreign key onto the named table
+// and column, for the cases References cannot express: a table declared
+// outside this program, or a model built without DefineTable, whose
+// columns are never bound to a table and so cannot report one.
+func (c *Column[T]) ReferencesTable(table, column string) *Column[T] {
+	c.refTableName = table
+	c.refColumnName = column
+	c.ref = nil
+	return c
+}
+
+// OnDelete sets the referential action the database runs when the
+// referenced row is deleted. It has no effect on a column that references
+// nothing.
+func (c *Column[T]) OnDelete(action ForeignKeyAction) *Column[T] {
+	c.onDelete = action
+	return c
+}
+
+// OnUpdate sets the referential action the database runs when the
+// referenced row is updated. It has no effect on a column that references
+// nothing.
+func (c *Column[T]) OnUpdate(action ForeignKeyAction) *Column[T] {
+	c.onUpdate = action
+	return c
+}
+
+// ReferencedTable returns the table this column references, or "" if it
+// references nothing. A "" here is also what ForeignKeys filters on, so a
+// reference whose target was never bound to a table is indistinguishable
+// from no reference at all, which is why References is documented as
+// needing a column that DefineTable has seen.
+func (c *Column[T]) ReferencedTable() string {
+	if c.ref != nil {
+		return c.ref.OwnerTable()
+	}
+	return c.refTableName
+}
+
+// ReferencedColumn returns the column this column references, or "" if it
+// references nothing.
+func (c *Column[T]) ReferencedColumn() string {
+	if c.ref != nil {
+		return c.ref.Name()
+	}
+	return c.refColumnName
+}
+
+// OnDeleteAction returns the action set by OnDelete, ActionNoAction if
+// never called.
+func (c *Column[T]) OnDeleteAction() ForeignKeyAction {
+	return c.onDelete
+}
+
+// OnUpdateAction returns the action set by OnUpdate, ActionNoAction if
+// never called.
+func (c *Column[T]) OnUpdateAction() ForeignKeyAction {
+	return c.onUpdate
 }

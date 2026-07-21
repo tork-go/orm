@@ -52,12 +52,58 @@ func (q *Query[E]) Update(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
 		return err
 	}
-	n, err := w.update(ctx)
+	n, err := w.update(ctx, nil)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return ErrNoRows
+	}
+	return runHook(ctx, w.st.name, "AfterUpdate", any(e), AfterUpdater.AfterUpdate)
+}
+
+// UpdateIf is Update, but only if the row still matches the conditions.
+//
+//	err := Users.With(db).UpdateIf(ctx, user, Users.Version.Eq(seen))
+//
+//	UPDATE "users" SET ... WHERE "id" = $9 AND "version" = $10
+//
+// This is optimistic locking: rather than holding a lock between reading a
+// row and writing it, the write says what the row looked like when it was
+// read and fails if that is no longer true. It costs nothing while nothing
+// contends, which is the case it is for; ForUpdate is the pessimistic answer,
+// and the better one when contention is the norm rather than the exception.
+//
+// The usual shape keeps the value that was read, since the row in hand has
+// already been changed by the time it is written:
+//
+//	seen := user.Version
+//	user.Version++
+//	user.Name = newName
+//	err := Users.With(db).UpdateIf(ctx, user, Users.Version.Eq(seen))
+//
+// It returns ErrNoRows when nothing was written, which means either that the
+// row is gone or that the conditions no longer hold. Those are not
+// distinguished: telling them apart would take a second statement, whose
+// answer would be about a moment later than the one being asked about.
+func (q *Query[E]) UpdateIf(ctx context.Context, e *E, conds ...Predicate) error {
+	w, err := q.writer(e)
+	if err != nil {
+		return err
+	}
+	if len(conds) == 0 {
+		return fmt.Errorf("orm: table %q: UpdateIf has no condition to check; "+
+			"call Update, which writes the row its key identifies", w.st.name)
+	}
+	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
+		return err
+	}
+	n, err := w.update(ctx, conds)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return conditionFailed(w.st.name, "UpdateIf", "written")
 	}
 	return runHook(ctx, w.st.name, "AfterUpdate", any(e), AfterUpdater.AfterUpdate)
 }
@@ -71,7 +117,7 @@ func (q *Query[E]) Delete(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeDelete", any(e), BeforeDeleter.BeforeDelete); err != nil {
 		return err
 	}
-	n, err := w.delete(ctx)
+	n, err := w.delete(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -79,6 +125,45 @@ func (q *Query[E]) Delete(ctx context.Context, e *E) error {
 		return ErrNoRows
 	}
 	return runHook(ctx, w.st.name, "AfterDelete", any(e), AfterDeleter.AfterDelete)
+}
+
+// DeleteIf is Delete, but only if the row still matches the conditions.
+//
+//	err := Posts.With(db).DeleteIf(ctx, post, Posts.Draft.Eq(true))
+//
+// It is UpdateIf's other half, and for the same situation: removing a row on
+// the strength of something read a moment ago, without holding a lock in
+// between. It returns ErrNoRows for the same two reasons.
+func (q *Query[E]) DeleteIf(ctx context.Context, e *E, conds ...Predicate) error {
+	w, err := q.writer(e)
+	if err != nil {
+		return err
+	}
+	if len(conds) == 0 {
+		return fmt.Errorf("orm: table %q: DeleteIf has no condition to check; "+
+			"call Delete, which removes the row its key identifies", w.st.name)
+	}
+	if err := runHook(ctx, w.st.name, "BeforeDelete", any(e), BeforeDeleter.BeforeDelete); err != nil {
+		return err
+	}
+	n, err := w.delete(ctx, conds)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return conditionFailed(w.st.name, "DeleteIf", "removed")
+	}
+	return runHook(ctx, w.st.name, "AfterDelete", any(e), AfterDeleter.AfterDelete)
+}
+
+// conditionFailed reports a conditional write that touched no row.
+//
+// It says both things it could mean rather than picking one, and wraps
+// ErrNoRows so errors.Is answers the same for it as for the unconditional
+// Update and Delete.
+func conditionFailed(table, op, verb string) error {
+	return fmt.Errorf("orm: table %q: %s %s no row: either it is gone, or the "+
+		"conditions no longer hold: %w", table, op, verb, ErrNoRows)
 }
 
 // Save inserts e when it has no key yet, and updates it otherwise.
@@ -343,17 +428,21 @@ func (w *writer[E]) scanInto(rows Rows, cols []ColumnMeta) error {
 	return finish()
 }
 
-// keyFilter builds the WHERE that identifies this entity's row.
-func (w *writer[E]) keyFilter(c *compiler) (string, error) {
+// keyFilter builds the WHERE that identifies this entity's row, plus any
+// conditions a conditional write asked for.
+//
+// The two are joined with AND rather than kept apart, because they say one
+// thing together: this row, and only while it still looks like this.
+func (w *writer[E]) keyFilter(c *compiler, conds []Predicate) (string, error) {
 	if len(w.st.pk) == 0 {
 		return "", fmt.Errorf("orm: table %q: this operation needs a primary key to say "+
 			"which row it means, and the table declares none", w.st.name)
 	}
-	preds := make([]Predicate, len(w.st.pk))
-	for i, col := range w.st.pk {
-		preds[i] = Comparison{Col: col, Op: OpEq, Value: w.field(col).Interface()}
+	preds := make([]Predicate, 0, len(w.st.pk)+len(conds))
+	for _, col := range w.st.pk {
+		preds = append(preds, Comparison{Col: col, Op: OpEq, Value: w.field(col).Interface()})
 	}
-	return c.where(preds)
+	return c.where(append(preds, conds...))
 }
 
 // update writes the row and reports how many rows it changed.
@@ -362,7 +451,7 @@ func (w *writer[E]) keyFilter(c *compiler) (string, error) {
 // because a batch needs to add the counts up and report once. Update itself
 // maps a zero back to ErrNoRows, which is what a caller writing one row
 // wants.
-func (w *writer[E]) update(ctx context.Context) (int64, error) {
+func (w *writer[E]) update(ctx context.Context, conds []Predicate) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
 
 	sets := make([]Assignment, 0, len(w.st.cols))
@@ -384,7 +473,7 @@ func (w *writer[E]) update(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	where, err := w.keyFilter(c)
+	where, err := w.keyFilter(c, conds)
 	if err != nil {
 		return 0, err
 	}
@@ -399,9 +488,9 @@ func (w *writer[E]) update(ctx context.Context) (int64, error) {
 
 // delete removes the row and reports how many rows it removed, for the same
 // reason update does.
-func (w *writer[E]) delete(ctx context.Context) (int64, error) {
+func (w *writer[E]) delete(ctx context.Context, conds []Predicate) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
-	where, err := w.keyFilter(c)
+	where, err := w.keyFilter(c, conds)
 	if err != nil {
 		return 0, err
 	}

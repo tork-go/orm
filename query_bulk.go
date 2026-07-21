@@ -124,7 +124,7 @@ func (q *Query[E]) UpdateMany(ctx context.Context, es ...*E) (int64, error) {
 	var affected int64
 	if err := q.db.atomically(ctx, len(ws) > 1, func(db *DB) error {
 		for i, w := range ws {
-			n, err := w.withDB(db).update(ctx)
+			n, err := w.withDB(db).update(ctx, nil)
 			if err != nil {
 				// The error already names the table, so only the row's
 				// position is added, and as a suffix rather than a prefix

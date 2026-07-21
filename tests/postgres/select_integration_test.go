@@ -4,6 +4,7 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/tork-go/orm"
@@ -208,6 +209,106 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 		}
 		if len(prefs) != 4 || prefs[0].Theme != "dark" || prefs[2].Theme != "light" {
 			t.Errorf("All() = %+v, want the documents decoded", prefs)
+		}
+	})
+
+	// Postgres widens as it aggregates: SUM over an integer column comes back
+	// as a bigint, and AVG as a numeric. Whether those land in the Go type the
+	// column declares is only answerable here.
+	t.Run("aggregates", func(t *testing.T) {
+		total, err := orm.Sum(ctx, sUsers.With(db), sUsers.Age)
+		if err != nil {
+			t.Fatalf("Sum() error = %v", err)
+		}
+		if total != 30+41+25+25 {
+			t.Errorf("Sum() = %d, want 121", total)
+		}
+
+		mean, err := orm.Avg(ctx, sUsers.With(db), sUsers.Age)
+		if err != nil {
+			t.Fatalf("Avg() error = %v", err)
+		}
+		if mean < 30.2 || mean > 30.3 {
+			t.Errorf("Avg() = %v, want about 30.25", mean)
+		}
+
+		youngest, err := orm.Min(ctx, sUsers.With(db), sUsers.Age)
+		if err != nil {
+			t.Fatalf("Min() error = %v", err)
+		}
+		if youngest != 25 {
+			t.Errorf("Min() = %d, want 25", youngest)
+		}
+
+		last, err := orm.Max(ctx, sUsers.With(db), sUsers.Name)
+		if err != nil {
+			t.Fatalf("Max() error = %v", err)
+		}
+		if last != "dave" {
+			t.Errorf("Max() = %q, want dave", last)
+		}
+	})
+
+	t.Run("aggregates carry the filter and honour distinct", func(t *testing.T) {
+		total, err := orm.Sum(ctx, sUsers.With(db).Where(sUsers.Country.Eq("DE")), sUsers.Age)
+		if err != nil {
+			t.Fatalf("Sum() error = %v", err)
+		}
+		if total != 50 {
+			t.Errorf("Sum() = %d, want 50", total)
+		}
+
+		// Both German users are 25, so summing each distinct age once halves it.
+		distinct, err := orm.Sum(ctx,
+			sUsers.With(db).Where(sUsers.Country.Eq("DE")).Distinct(), sUsers.Age)
+		if err != nil {
+			t.Fatalf("Sum() error = %v", err)
+		}
+		if distinct != 25 {
+			t.Errorf("Sum() over distinct ages = %d, want 25", distinct)
+		}
+	})
+
+	t.Run("aggregates over no rows", func(t *testing.T) {
+		none := sUsers.With(db).Where(sUsers.Name.Eq("nobody"))
+
+		total, err := orm.Sum(ctx, none, sUsers.Age)
+		if err != nil {
+			t.Fatalf("Sum() error = %v", err)
+		}
+		if total != 0 {
+			t.Errorf("Sum() = %d, want 0 for an empty set", total)
+		}
+
+		if _, err := orm.Min(ctx, none, sUsers.Age); !errors.Is(err, orm.ErrNoRows) {
+			t.Errorf("Min() error = %v, want ErrNoRows", err)
+		}
+		if _, err := orm.Max(ctx, none, sUsers.Age); !errors.Is(err, orm.ErrNoRows) {
+			t.Errorf("Max() error = %v, want ErrNoRows", err)
+		}
+		if _, err := orm.Avg(ctx, none, sUsers.Age); !errors.Is(err, orm.ErrNoRows) {
+			t.Errorf("Avg() error = %v, want ErrNoRows", err)
+		}
+	})
+
+	// A nullable column is a Column[*T], so its aggregate is a *T, and the
+	// NULLs three of the four rows hold are skipped rather than counted.
+	t.Run("aggregates over a nullable column", func(t *testing.T) {
+		largest, err := orm.Max(ctx, sUsers.With(db), sUsers.Email)
+		if err != nil {
+			t.Fatalf("Max() error = %v", err)
+		}
+		if largest == nil || *largest != email {
+			t.Errorf("Max() = %v, want the one address", largest)
+		}
+
+		nothing, err := orm.Max(ctx,
+			sUsers.With(db).Where(sUsers.Name.Eq("bob")), sUsers.Email)
+		if err != nil {
+			t.Fatalf("Max() error = %v", err)
+		}
+		if nothing != nil {
+			t.Errorf("Max() = %v, want nil where every value is NULL", nothing)
 		}
 	})
 

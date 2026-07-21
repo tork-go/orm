@@ -574,8 +574,9 @@ func TestScalars_KeepsTheFirstError(t *testing.T) {
 // A model with no row type: it describes a table but can never hand back a
 // *E, which is what makes it worth reading one column from.
 var (
-	Legacy     = orm.NewTable[orm.NoEntity]("legacy")
-	LegacyName = orm.NewStringColumn("name")
+	Legacy      = orm.NewTable[orm.NoEntity]("legacy")
+	LegacyName  = orm.NewStringColumn("name")
+	LegacyCount = orm.NewIntColumn("count")
 )
 
 // Reading one column scans into a T rather than into a row, so a model with no

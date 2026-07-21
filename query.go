@@ -325,8 +325,25 @@ func (q queryState) compileRead(c *compiler, list string) (string, error) {
 		where + order + limitOffset(q.limit, q.offset), nil
 }
 
-// ready reports whether the query can run at all.
+// ready reports whether the query can run and scan rows into E.
 func (q queryState) ready() error {
+	if err := q.readyToRead(); err != nil {
+		return err
+	}
+	if q.st.fieldIdx == nil {
+		return errNoEntityMapping(q.st.name)
+	}
+	return nil
+}
+
+// readyToRead reports whether the query can run a statement at all, without
+// asking for an entity mapping.
+//
+// Counting, reading one column and aggregating all scan into something other
+// than a row, so none of them needs the mapping a row would. A model declared
+// with NewTable can therefore still be counted, which it could not be read
+// from.
+func (q queryState) readyToRead() error {
 	if q.err != nil {
 		return q.err
 	}
@@ -335,9 +352,6 @@ func (q queryState) ready() error {
 	}
 	if q.db == nil {
 		return fmt.Errorf("orm: table %q: no database handle; pass one to With", q.st.name)
-	}
-	if q.st.fieldIdx == nil {
-		return errNoEntityMapping(q.st.name)
 	}
 	return nil
 }

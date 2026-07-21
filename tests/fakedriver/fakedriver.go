@@ -280,11 +280,24 @@ func assign(values, dest []any) error {
 			continue
 		}
 		rv := reflect.ValueOf(v)
-		if !rv.Type().AssignableTo(target.Type()) {
+		switch {
+		case rv.Type().AssignableTo(target.Type()):
+			target.Set(rv)
+
+		case target.Kind() == reflect.Pointer && rv.Type().AssignableTo(target.Type().Elem()):
+			// A destination one pointer deeper than the value is how a caller
+			// asks to tell NULL from a zero, and how every real driver is
+			// handed a nullable column. It fills one in by allocating, so the
+			// fake does too rather than being stricter than the thing it
+			// stands in for.
+			held := reflect.New(target.Type().Elem())
+			held.Elem().Set(rv)
+			target.Set(held)
+
+		default:
 			return fmt.Errorf("fakedriver: cannot scan %T into %s at position %d",
 				v, target.Type(), i)
 		}
-		target.Set(rv)
 	}
 	return nil
 }

@@ -86,19 +86,7 @@ func (s *Scalars[T]) compile() (string, []any, *compiler, error) {
 //
 // A missing column needs no check here: Select records that as the query's
 // error the moment it happens, so it arrives through q.err like any other.
-func (s *Scalars[T]) ready() error {
-	if s.q.err != nil {
-		return s.q.err
-	}
-	if s.q.st == nil {
-		return errNoEntityMapping("")
-	}
-	if s.q.db == nil {
-		return fmt.Errorf("orm: table %q: no database handle; pass one to With",
-			s.q.st.name)
-	}
-	return nil
-}
+func (s *Scalars[T]) ready() error { return s.q.readyToRead() }
 
 // All returns every value the query matches.
 func (s *Scalars[T]) All(ctx context.Context) ([]T, error) {

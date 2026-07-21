@@ -217,6 +217,32 @@ func assign(values, dest []any) error {
 	return nil
 }
 
+// The four below are the fake's answers to orm.QueryDialect. They are
+// deliberately unlike Postgres's: square brackets instead of double
+// quotes, and a repeated question mark instead of a numbered parameter.
+// A compiler test written against this fake therefore cannot accidentally
+// pass by hard-coding Postgres's spelling, and the difference between the
+// two dialects is visible in the expected SQL rather than implied.
+
+// QuoteIdent wraps an identifier in square brackets.
+func (*Dialect) QuoteIdent(name string) string { return "[" + name + "]" }
+
+// Placeholder returns a positional question mark, ignoring n.
+func (*Dialect) Placeholder(int) string { return "?" }
+
+// RenderLike renders a LIKE comparison, spelling the case insensitive
+// form with an explicit lower() rather than a dedicated operator.
+func (*Dialect) RenderLike(quotedColumn, placeholder string, caseInsensitive bool) string {
+	if caseInsensitive {
+		return "lower(" + quotedColumn + ") LIKE lower(" + placeholder + ")"
+	}
+	return quotedColumn + " LIKE " + placeholder
+}
+
+// SupportsReturning reports false, so the no-RETURNING path is reachable
+// from a test without a second driver.
+func (*Dialect) SupportsReturning() bool { return false }
+
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
 // functional, backed by an in-memory map, for testing migrate's runner.

@@ -45,7 +45,13 @@ type (
 // Dialect knows how to connect to, introspect, and generate SQL for one
 // specific database. Each driver package (driver/postgres, and future
 // siblings) provides one implementation.
+//
+// It embeds orm.QueryDialect, the handful of things a query compiler
+// cannot write for itself, so a driver implements one interface and
+// callers have one to pass around.
 type Dialect interface {
+	orm.QueryDialect
+
 	// Name identifies the dialect, e.g. "postgres".
 	Name() string
 

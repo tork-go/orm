@@ -312,6 +312,121 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 		}
 	})
 
+	// Grouping is where a database is fussiest: what may appear beside an
+	// aggregate, where HAVING sits relative to ORDER BY, and whether NULLs
+	// collect into a group of their own.
+	t.Run("grouping", func(t *testing.T) {
+		byCountry, err := orm.CountBy(sUsers.With(db), sUsers.Country).
+			OrderBy(sUsers.Country.Asc()).All(ctx)
+		if err != nil {
+			t.Fatalf("CountBy() error = %v", err)
+		}
+		if len(byCountry) != 2 {
+			t.Fatalf("got %d buckets, want 2: %+v", len(byCountry), byCountry)
+		}
+		if byCountry[0].Key != "DE" || byCountry[0].Value != 2 {
+			t.Errorf("first = %+v, want {DE 2}", byCountry[0])
+		}
+		if byCountry[1].Key != "TR" || byCountry[1].Value != 2 {
+			t.Errorf("second = %+v, want {TR 2}", byCountry[1])
+		}
+
+		sums, err := orm.SumBy(sUsers.With(db), sUsers.Country, sUsers.Age).
+			OrderByValueDesc().All(ctx)
+		if err != nil {
+			t.Fatalf("SumBy() error = %v", err)
+		}
+		// TR is 30+41, DE is 25+25, so the larger comes first.
+		if sums[0].Key != "TR" || sums[0].Value != 71 {
+			t.Errorf("first = %+v, want {TR 71}", sums[0])
+		}
+		if sums[1].Key != "DE" || sums[1].Value != 50 {
+			t.Errorf("second = %+v, want {DE 50}", sums[1])
+		}
+
+		means, err := orm.AvgBy(sUsers.With(db), sUsers.Country, sUsers.Age).
+			OrderBy(sUsers.Country.Asc()).All(ctx)
+		if err != nil {
+			t.Fatalf("AvgBy() error = %v", err)
+		}
+		if means[0].Value != 25 {
+			t.Errorf("DE mean = %v, want 25", means[0].Value)
+		}
+	})
+
+	t.Run("having, which the database applies after grouping", func(t *testing.T) {
+		// Both countries have two users, so a threshold of three excludes
+		// everything and one of two keeps both.
+		none, err := orm.CountBy(sUsers.With(db), sUsers.Country).Having(orm.OpGte, 3).All(ctx)
+		if err != nil {
+			t.Fatalf("CountBy() error = %v", err)
+		}
+		if len(none) != 0 {
+			t.Errorf("got %+v, want no country with three users", none)
+		}
+
+		both, err := orm.CountBy(sUsers.With(db), sUsers.Country).Having(orm.OpGte, 2).All(ctx)
+		if err != nil {
+			t.Fatalf("CountBy() error = %v", err)
+		}
+		if len(both) != 2 {
+			t.Errorf("got %d buckets, want 2", len(both))
+		}
+
+		// Two conditions bracket the count from both sides.
+		between, err := orm.CountBy(sUsers.With(db), sUsers.Country).
+			Having(orm.OpGte, 2).Having(orm.OpLt, 3).All(ctx)
+		if err != nil {
+			t.Fatalf("CountBy() error = %v", err)
+		}
+		if len(between) != 2 {
+			t.Errorf("got %d buckets, want 2", len(between))
+		}
+	})
+
+	t.Run("having with a filter, ordering and a cap together", func(t *testing.T) {
+		got, err := orm.SumBy(sUsers.With(db).Where(sUsers.Age.Gte(25)), sUsers.Country, sUsers.Age).
+			Having(orm.OpGt, 10).
+			OrderByValueDesc().
+			Limit(1).
+			All(ctx)
+		if err != nil {
+			t.Fatalf("SumBy() error = %v", err)
+		}
+		if len(got) != 1 || got[0].Key != "TR" {
+			t.Errorf("got %+v, want just TR", got)
+		}
+	})
+
+	// A nullable key collects its NULLs into a group of their own, which K
+	// holds because it is a pointer.
+	t.Run("grouping by a nullable column", func(t *testing.T) {
+		got, err := orm.CountBy(sUsers.With(db), sUsers.Email).OrderByValueDesc().All(ctx)
+		if err != nil {
+			t.Fatalf("CountBy() error = %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("got %d buckets, want 2: %+v", len(got), got)
+		}
+		if got[0].Key != nil || got[0].Value != 3 {
+			t.Errorf("largest = %+v, want the three NULLs grouped together", got[0])
+		}
+		if got[1].Key == nil || *got[1].Key != email {
+			t.Errorf("second = %+v, want the one address", got[1])
+		}
+	})
+
+	t.Run("keys alone", func(t *testing.T) {
+		keys, err := orm.CountBy(sUsers.With(db), sUsers.Country).
+			Having(orm.OpGte, 2).OrderBy(sUsers.Country.Asc()).Keys(ctx)
+		if err != nil {
+			t.Fatalf("Keys() error = %v", err)
+		}
+		if len(keys) != 2 || keys[0] != "DE" || keys[1] != "TR" {
+			t.Errorf("Keys() = %v, want [DE TR]", keys)
+		}
+	})
+
 	t.Run("distinct values of one column", func(t *testing.T) {
 		countries, err := orm.Select(sUsers.With(db).OrderBy(sUsers.Country.Asc()), sUsers.Country).
 			Distinct().All(ctx)

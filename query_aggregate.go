@@ -145,7 +145,7 @@ func scalarAggregate[R any](ctx context.Context, src QuerySource, col ColumnMeta
 // not here.
 func scanNullable[R any](rows Rows) (R, bool, error) {
 	var zero R
-	if reflect.TypeFor[R]().Kind() == reflect.Pointer {
+	if isPointerType[R]() {
 		var v R
 		if err := rows.Scan(&v); err != nil {
 			return zero, false, err
@@ -161,4 +161,10 @@ func scanNullable[R any](rows Rows) (R, bool, error) {
 		return zero, false, nil
 	}
 	return *v, true, nil
+}
+
+// isPointerType reports whether T is a pointer, which is what decides whether
+// a value of it can hold a NULL on its own.
+func isPointerType[T any]() bool {
+	return reflect.TypeFor[T]().Kind() == reflect.Pointer
 }

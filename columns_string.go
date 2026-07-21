@@ -20,7 +20,10 @@ type StringColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*StringColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*StringColumn)(nil)
 
 // NewStringColumn declares a non-nullable string column named name.
 // Without a MaxLen call it renders as TEXT.
@@ -57,7 +60,10 @@ type NullableStringColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableStringColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableStringColumn)(nil)
 
 // NewNullableStringColumn declares a nullable string column named name.
 func NewNullableStringColumn(name string) *NullableStringColumn {

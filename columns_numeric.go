@@ -44,7 +44,10 @@ type IntColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*IntColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*IntColumn)(nil)
 
 // NewIntColumn declares a non-nullable int column named name.
 func NewIntColumn(name string) *IntColumn {
@@ -70,7 +73,10 @@ type NullableIntColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableIntColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableIntColumn)(nil)
 
 // NewNullableIntColumn declares a nullable int column named name.
 func NewNullableIntColumn(name string) *NullableIntColumn {
@@ -96,7 +102,10 @@ type Int32Column struct {
 	sortable
 }
 
-var _ ColumnMeta = (*Int32Column)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*Int32Column)(nil)
 
 // NewInt32Column declares a non-nullable int32 column named name. It
 // renders identically to an int column; use it when the entity field is
@@ -124,7 +133,10 @@ type NullableInt32Column struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableInt32Column)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableInt32Column)(nil)
 
 // NewNullableInt32Column declares a nullable int32 column named name.
 func NewNullableInt32Column(name string) *NullableInt32Column {
@@ -150,7 +162,10 @@ type BigIntColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*BigIntColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*BigIntColumn)(nil)
 
 // NewBigIntColumn declares a non-nullable int64 column named name.
 func NewBigIntColumn(name string) *BigIntColumn {
@@ -176,7 +191,10 @@ type NullableBigIntColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableBigIntColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableBigIntColumn)(nil)
 
 // NewNullableBigIntColumn declares a nullable int64 column named name.
 func NewNullableBigIntColumn(name string) *NullableBigIntColumn {
@@ -201,7 +219,10 @@ type FloatColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*FloatColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*FloatColumn)(nil)
 
 // NewFloatColumn declares a non-nullable float32 column named name. For
 // float64, use NewDoubleColumn.
@@ -226,7 +247,10 @@ type NullableFloatColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableFloatColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableFloatColumn)(nil)
 
 // NewNullableFloatColumn declares a nullable float32 column named name.
 func NewNullableFloatColumn(name string) *NullableFloatColumn {
@@ -250,7 +274,10 @@ type DoubleColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*DoubleColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*DoubleColumn)(nil)
 
 // NewDoubleColumn declares a non-nullable float64 column named name.
 func NewDoubleColumn(name string) *DoubleColumn {
@@ -274,7 +301,10 @@ type NullableDoubleColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableDoubleColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableDoubleColumn)(nil)
 
 // NewNullableDoubleColumn declares a nullable float64 column named name.
 func NewNullableDoubleColumn(name string) *NullableDoubleColumn {
@@ -301,7 +331,10 @@ type DecimalColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*DecimalColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*DecimalColumn)(nil)
 
 // NewDecimalColumn declares a non-nullable decimal column named name.
 // Without a Numeric call it renders as bare NUMERIC (arbitrary precision).
@@ -328,7 +361,10 @@ type NullableDecimalColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableDecimalColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableDecimalColumn)(nil)
 
 // NewNullableDecimalColumn declares a nullable decimal column named name.
 func NewNullableDecimalColumn(name string) *NullableDecimalColumn {

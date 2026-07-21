@@ -182,3 +182,19 @@ func (b chain[T, Self]) Generator() (func() T, bool) { return b.c.Generator() }
 func (b chain[T, Self]) Serializer() (func(T) ([]byte, error), func([]byte) (T, error), bool) {
 	return b.c.Serializer()
 }
+
+// The three below republish ValueCodec, so a typed column satisfies it as
+// well as a *Column[T] does. Query building reaches columns as ColumnMeta
+// and asserts to ValueCodec when it needs to encode or decode a value, so
+// a column type that failed the assertion would be silently unusable for
+// generated values and document columns alike.
+
+// GenerateAny returns a value from the column's client side generator, or
+// false if it has none.
+func (b chain[T, Self]) GenerateAny() (any, bool) { return b.c.GenerateAny() }
+
+// MarshalAny encodes v for storage in a document column.
+func (b chain[T, Self]) MarshalAny(v any) ([]byte, error) { return b.c.MarshalAny(v) }
+
+// UnmarshalAny decodes b into the column's Go type.
+func (b chain[T, Self]) UnmarshalAny(bs []byte) (any, error) { return b.c.UnmarshalAny(bs) }

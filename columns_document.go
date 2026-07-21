@@ -20,7 +20,10 @@ type JSONColumn[T any] struct {
 	assignable[T]
 }
 
-var _ ColumnMeta = (*JSONColumn[struct{}])(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*JSONColumn[struct{}])(nil)
 
 // NewJSONColumn declares a non-nullable JSON document column named name,
 // stored as JSONB. Chain JSON() to store it as json, or Serialize to
@@ -43,7 +46,10 @@ type NullableJSONColumn[T any] struct {
 	nullness
 }
 
-var _ ColumnMeta = (*NullableJSONColumn[struct{}])(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableJSONColumn[struct{}])(nil)
 
 // NewNullableJSONColumn declares a nullable JSON document column named
 // name, stored as JSONB.
@@ -78,7 +84,10 @@ type EnumColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*EnumColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*EnumColumn)(nil)
 
 // NewEnumColumn declares a non-nullable enum column named name of the
 // database enum type typeName, with the given values in order.
@@ -104,7 +113,10 @@ type NullableEnumColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableEnumColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableEnumColumn)(nil)
 
 // NewNullableEnumColumn declares a nullable enum column named name of the
 // database enum type typeName, with the given values in order.
@@ -147,7 +159,10 @@ type ArrayColumn[T any] struct {
 	sortable
 }
 
-var _ ColumnMeta = (*ArrayColumn[string])(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*ArrayColumn[string])(nil)
 
 // NewArrayColumn declares a non-nullable array column named name with
 // elements of type T.
@@ -180,7 +195,10 @@ type NullableArrayColumn[T any] struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableArrayColumn[string])(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableArrayColumn[string])(nil)
 
 // NewNullableArrayColumn declares a nullable array column named name with
 // elements of type T.

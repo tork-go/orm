@@ -17,7 +17,10 @@ type BoolColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*BoolColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*BoolColumn)(nil)
 
 // NewBoolColumn declares a non-nullable bool column named name.
 func NewBoolColumn(name string) *BoolColumn {
@@ -39,7 +42,10 @@ type NullableBoolColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableBoolColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableBoolColumn)(nil)
 
 // NewNullableBoolColumn declares a nullable bool column named name.
 func NewNullableBoolColumn(name string) *NullableBoolColumn {
@@ -62,7 +68,10 @@ type TimeColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*TimeColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*TimeColumn)(nil)
 
 // NewTimeColumn declares a non-nullable timestamp column named name.
 func NewTimeColumn(name string) *TimeColumn {
@@ -86,7 +95,10 @@ type NullableTimeColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableTimeColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableTimeColumn)(nil)
 
 // NewNullableTimeColumn declares a nullable timestamp column named name.
 func NewNullableTimeColumn(name string) *NullableTimeColumn {
@@ -114,7 +126,10 @@ type UUIDColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*UUIDColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*UUIDColumn)(nil)
 
 // NewUUIDColumn declares a non-nullable UUID column named name. Pair it
 // with GeneratedByClient(uuid.New) or ServerDefault("gen_random_uuid()")
@@ -140,7 +155,10 @@ type NullableUUIDColumn struct {
 	sortable
 }
 
-var _ ColumnMeta = (*NullableUUIDColumn)(nil)
+var _ interface {
+	ColumnMeta
+	ValueCodec
+} = (*NullableUUIDColumn)(nil)
 
 // NewNullableUUIDColumn declares a nullable UUID column named name.
 func NewNullableUUIDColumn(name string) *NullableUUIDColumn {

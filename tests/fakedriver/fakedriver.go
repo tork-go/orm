@@ -24,7 +24,9 @@ type Conn struct {
 	queryArgs  [][]any
 	queued     [][][]any
 	failOn     map[string]bool
+	txs        []*Tx
 	FailBegin  bool // if true, Begin returns an error, simulating a dropped connection
+	FailCommit bool // if true, Commit returns an error, simulating a failure at the end
 
 	// RowsAffected is what Exec reports back. Zero unless a test sets it.
 	RowsAffected int64
@@ -143,9 +145,24 @@ func (c *Conn) Begin(context.Context) (driver.Tx, error) {
 	if c.FailBegin {
 		return nil, errors.New("fakedriver: simulated Begin failure")
 	}
-	return &Tx{conn: c}, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &Tx{conn: c}
+	c.txs = append(c.txs, t)
+	return t, nil
 }
 func (c *Conn) Close(context.Context) error { return nil }
+
+// Txs returns every transaction started on this connection, in order, so a
+// test can assert both how many a write opened and whether each was
+// committed or rolled back.
+func (c *Conn) Txs() []*Tx {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]*Tx, len(c.txs))
+	copy(out, c.txs)
+	return out
+}
 
 // Tx is an in-memory fake driver.Tx backed by its parent Conn.
 type Tx struct {
@@ -163,7 +180,13 @@ func (t *Tx) QueryRow(ctx context.Context, sql string, args ...any) driver.Row {
 func (t *Tx) Exec(ctx context.Context, sql string, args ...any) (driver.Result, error) {
 	return t.conn.Exec(ctx, sql, args...)
 }
-func (t *Tx) Commit(context.Context) error   { t.Committed = true; return nil }
+func (t *Tx) Commit(context.Context) error {
+	if t.conn.FailCommit {
+		return errors.New("fakedriver: simulated Commit failure")
+	}
+	t.Committed = true
+	return nil
+}
 func (t *Tx) Rollback(context.Context) error { t.RolledBack = true; return nil }
 
 // Rows is a fake driver.Rows over a queued result set, empty unless the
@@ -263,9 +286,18 @@ func (*Dialect) RenderLike(quotedColumn, placeholder string, caseInsensitive boo
 	return quotedColumn + " LIKE " + placeholder
 }
 
-// SupportsReturning reports false, so the no-RETURNING path is reachable
-// from a test without a second driver.
-func (*Dialect) SupportsReturning() bool { return false }
+// SupportsReturning reports CanReturn, which is false unless a test sets
+// it, so the no-RETURNING path stays reachable without a second driver.
+// Setting it is what lets a test combine RETURNING with a low BindLimit,
+// which no real dialect offers: Postgres supports RETURNING but has a
+// ceiling too high to cross with a readable fixture.
+func (d *Dialect) SupportsReturning() bool { return d.CanReturn }
+
+// MaxBindParams reports BindLimit, which is zero (no limit) unless a test
+// sets it. Being settable is what lets a chunking test run against a
+// handful of rows instead of the thousands Postgres's own ceiling of 65535
+// would take to cross.
+func (d *Dialect) MaxBindParams() int { return d.BindLimit }
 
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
@@ -283,6 +315,13 @@ type Dialect struct {
 	ConnectErr       error
 	IntrospectErr    error
 	IntrospectResult schema.Schema
+
+	// BindLimit is what MaxBindParams reports. Zero means no limit, so a
+	// test that does not care about chunking sees none.
+	BindLimit int
+
+	// CanReturn is what SupportsReturning reports, false by default.
+	CanReturn bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

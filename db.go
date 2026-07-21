@@ -9,18 +9,18 @@ package orm
 // QueryDialect answers.
 //
 // The statement surface is an Execer, which both a connection and an open
-// transaction satisfy, so a DB can stand for either. That is what will let
-// a transaction hand its callback a DB the rest of the API cannot tell
-// apart from the outer one.
+// transaction satisfy, so a DB can stand for either. That is what lets
+// Transaction hand its callback a DB the rest of the API cannot tell apart
+// from the outer one.
 type DB struct {
 	ex Execer
 	d  QueryDialect
 
 	// conn is the connection this handle was built from, and is nil when
-	// the handle is bound to a transaction. Transactions are not built
-	// yet; the field is here because Begin lives on Conn rather than on
-	// Execer, so a handle that has forgotten its connection could never
-	// start one.
+	// the handle is bound to a transaction. Begin lives on Conn rather than
+	// on Execer, so a handle that had forgotten its connection could never
+	// start one; a nil here is also what tells Transaction it is already
+	// inside one and should join rather than nest.
 	conn Conn
 }
 

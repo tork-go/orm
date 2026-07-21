@@ -28,7 +28,10 @@ func (q *Query[E]) Insert(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeCreate", any(e), BeforeCreater.BeforeCreate); err != nil {
 		return err
 	}
-	if err := w.insert(ctx); err != nil {
+	// The count is not returned: a plain insert writes the row or fails, so
+	// there is nothing for it to say. An upsert is where it means something,
+	// and Upsert.Insert is where it is reported.
+	if _, err := w.insert(ctx); err != nil {
 		return err
 	}
 	return runHook(ctx, w.st.name, "AfterCreate", any(e), AfterCreater.AfterCreate)
@@ -107,6 +110,9 @@ type writer[E any] struct {
 	db  *DB
 	e   *E
 	val reflect.Value
+
+	// conflict is the upsert clause the insert carries, nil for a plain one.
+	conflict *conflictClause
 }
 
 // readyToWrite reports whether the query can write at all: the checks that
@@ -142,7 +148,13 @@ func (q *Query[E]) writer(e *E) (*writer[E], error) {
 // a query already established to be able to write. It exists so a batch can
 // report a bad row by its position without rebuilding the writer literal.
 func (q *Query[E]) newWriter(e *E) *writer[E] {
-	return &writer[E]{st: q.st, db: q.db, e: e, val: reflect.ValueOf(e).Elem()}
+	return &writer[E]{
+		st:       q.st,
+		db:       q.db,
+		e:        e,
+		val:      reflect.ValueOf(e).Elem(),
+		conflict: q.conflict,
+	}
 }
 
 // withDB returns a copy of the writer bound to db.
@@ -215,7 +227,9 @@ func (w *writer[E]) returningColumns(written []ColumnMeta) []ColumnMeta {
 	return out
 }
 
-func (w *writer[E]) insert(ctx context.Context) error {
+// insert writes the row and reports how many rows it wrote, which is one
+// unless an upsert declined to write it.
+func (w *writer[E]) insert(ctx context.Context) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
 
 	cols := w.insertColumns()
@@ -224,7 +238,7 @@ func (w *writer[E]) insert(ctx context.Context) error {
 	for i, col := range cols {
 		v, err := w.bindable(c, col)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		names[i] = c.d.QuoteIdent(col.Name())
 		marks[i] = c.args.bind(v)
@@ -239,6 +253,13 @@ func (w *writer[E]) insert(ctx context.Context) error {
 	} else {
 		sql += " (" + strings.Join(names, ", ") + ") VALUES (" + strings.Join(marks, ", ") + ")"
 	}
+	clause, err := c.conflict(w.conflict, cols)
+	if err != nil {
+		return 0, err
+	}
+	if clause != "" {
+		sql += " " + clause
+	}
 
 	back := w.returningColumns(cols)
 	if w.db.d.SupportsReturning() && len(back) > 0 {
@@ -246,23 +267,36 @@ func (w *writer[E]) insert(ctx context.Context) error {
 	}
 	res, err := w.db.ex.Exec(ctx, sql, c.args.args...)
 	if err != nil {
-		return fmt.Errorf("orm: table %q: inserting: %w", w.st.name, err)
+		return 0, fmt.Errorf("orm: table %q: inserting: %w", w.st.name, err)
 	}
+	// Only a skipping upsert can write fewer rows than it was given without
+	// failing, so only there is the driver's count what decides. Everywhere
+	// else the statement wrote its row or returned an error, whatever it
+	// reports as a count, and not every driver reports a meaningful one.
+	wrote := int64(1)
+	if w.skips() {
+		wrote = res.RowsAffected
+	}
+
 	// Without RETURNING only the key comes back, and only as an integer.
 	// A server default on any other column stays whatever the database
 	// chose, unread; there is no second statement that could recover it
 	// without guessing which row was just written.
-	if w.st.identity != nil && res.LastInsertID != 0 {
+	//
+	// A row that was skipped left no key behind, and whatever the driver
+	// still reports as the last one belongs to an earlier statement, so
+	// nothing is read back into a row that was not written.
+	if w.st.identity != nil && wrote != 0 && res.LastInsertID != 0 {
 		// An identity column is an integer by the rule that chose it, so
 		// there is nothing to check before setting it.
 		w.field(w.st.identity).SetInt(res.LastInsertID)
 	}
-	return nil
+	return wrote, nil
 }
 
 // insertReturning runs an insert that reads its generated values back in
-// the same statement.
-func (w *writer[E]) insertReturning(ctx context.Context, sql string, args []any, back []ColumnMeta) error {
+// the same statement, and reports whether it wrote a row at all.
+func (w *writer[E]) insertReturning(ctx context.Context, sql string, args []any, back []ColumnMeta) (int64, error) {
 	names := make([]string, len(back))
 	for i, c := range back {
 		names[i] = w.db.d.QuoteIdent(c.Name())
@@ -271,19 +305,31 @@ func (w *writer[E]) insertReturning(ctx context.Context, sql string, args []any,
 
 	rows, err := w.db.ex.Query(ctx, sql, args...)
 	if err != nil {
-		return fmt.Errorf("orm: table %q: inserting: %w", w.st.name, err)
+		return 0, fmt.Errorf("orm: table %q: inserting: %w", w.st.name, err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return fmt.Errorf("orm: table %q: inserting: %w", w.st.name, err)
+			return 0, fmt.Errorf("orm: table %q: inserting: %w", w.st.name, err)
 		}
-		return fmt.Errorf("orm: table %q: insert returned no row", w.st.name)
+		// An upsert told to skip a row already there returns nothing for it,
+		// which is the statement working rather than failing. Anywhere else
+		// an insert that returned no row is one that did not happen.
+		if w.skips() {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("orm: table %q: insert returned no row", w.st.name)
 	}
 	if err := w.scanInto(rows, back); err != nil {
-		return err
+		return 0, err
 	}
-	return rows.Err()
+	return 1, rows.Err()
+}
+
+// skips reports whether this insert may write no row without that being a
+// failure, which is exactly the upsert that was told to do nothing.
+func (w *writer[E]) skips() bool {
+	return w.conflict != nil && w.conflict.action == conflictNothing
 }
 
 // scanInto reads a subset of columns back into the entity, sharing the

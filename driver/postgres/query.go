@@ -1,7 +1,9 @@
 package postgres
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 )
 
 // The methods here are Postgres's answers to orm.QueryDialect, the pieces
@@ -38,6 +40,38 @@ func (Dialect) RenderLike(quotedColumn, placeholder string, caseInsensitive bool
 // SupportsReturning reports that Postgres can return the row an INSERT
 // wrote, so generated values come back from the same statement.
 func (Dialect) SupportsReturning() bool { return true }
+
+// RenderUpsertDoNothing returns Postgres's ON CONFLICT DO NOTHING.
+//
+// With no target it covers every constraint on the table, which Postgres
+// allows here and only here: the row is skipped whichever uniqueness it
+// violated, and nothing has to be named because nothing is being written.
+func (Dialect) RenderUpsertDoNothing(target []string) (string, error) {
+	if len(target) == 0 {
+		return "ON CONFLICT DO NOTHING", nil
+	}
+	return "ON CONFLICT (" + strings.Join(target, ", ") + ") DO NOTHING", nil
+}
+
+// RenderUpsertDoUpdate returns Postgres's ON CONFLICT ... DO UPDATE, taking
+// each new value from EXCLUDED, the pseudo-table holding the row the insert
+// proposed.
+//
+// A target is required, and Postgres is the one saying so: DO UPDATE has to
+// know which existing row it is updating, and only a named constraint or
+// column list identifies one.
+func (Dialect) RenderUpsertDoUpdate(target, updates []string) (string, error) {
+	if len(target) == 0 {
+		return "", errors.New("postgres: ON CONFLICT ... DO UPDATE has to know which " +
+			"columns conflict; pass them to OnConflict, or use DoNothing, which does not")
+	}
+	sets := make([]string, len(updates))
+	for i, col := range updates {
+		sets[i] = col + " = EXCLUDED." + col
+	}
+	return "ON CONFLICT (" + strings.Join(target, ", ") + ") DO UPDATE SET " +
+		strings.Join(sets, ", "), nil
+}
 
 // MaxBindParams reports Postgres's limit of 65535 parameters per
 // statement.

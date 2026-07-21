@@ -40,9 +40,18 @@ func (q *Query[E]) InsertMany(ctx context.Context, es ...*E) error {
 	if len(es) == 0 {
 		return nil
 	}
+	// The count is not returned, for the reason Insert gives: only an upsert
+	// can write fewer rows than it was given without failing.
+	_, err := q.insertMany(ctx, es)
+	return err
+}
+
+// insertMany is the body both spellings share, reporting how many rows the
+// statements wrote.
+func (q *Query[E]) insertMany(ctx context.Context, es []*E) (int64, error) {
 	ws, err := q.bulkWriters(es)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Every BeforeCreate runs before any column list is worked out. A hook
@@ -51,20 +60,23 @@ func (q *Query[E]) InsertMany(ctx context.Context, es ...*E) error {
 	// would make a list computed earlier wrong.
 	for _, w := range ws {
 		if err := runHook(ctx, w.st.name, "BeforeCreate", any(w.e), BeforeCreater.BeforeCreate); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
+	var written int64
 	chunks := insertChunks(ws, q.db.d)
 	if err := q.db.atomically(ctx, len(chunks) > 1, func(db *DB) error {
 		for _, ch := range chunks {
-			if err := ch.run(ctx, db); err != nil {
+			n, err := ch.run(ctx, db)
+			if err != nil {
 				return err
 			}
+			written += n
 		}
 		return nil
 	}); err != nil {
-		return err
+		return 0, err
 	}
 
 	// AfterCreate runs once the rows are committed, matching Insert, where
@@ -74,10 +86,10 @@ func (q *Query[E]) InsertMany(ctx context.Context, es ...*E) error {
 	// only for batches.
 	for _, w := range ws {
 		if err := runHook(ctx, w.st.name, "AfterCreate", any(w.e), AfterCreater.AfterCreate); err != nil {
-			return err
+			return written, err
 		}
 	}
-	return nil
+	return written, nil
 }
 
 // UpdateMany writes every writable column of each row to the row its primary
@@ -258,6 +270,13 @@ func insertChunks[E any](ws []*writer[E], d QueryDialect) []insertChunk[E] {
 			// such a dialect gives is one last insert id. One row at a time
 			// is what makes that id belong to a known row.
 			per = 1
+		case len(g.ws[0].returningColumns(g.cols)) > 0 && g.ws[0].conflict != nil:
+			// An upsert breaks the correlation run relies on: a row the
+			// database skipped returns nothing, so the n-th row back is no
+			// longer the n-th row written and there is nothing in it to match
+			// them up by. One row per statement is what restores the answer,
+			// and is the price of reading values back from an upsert.
+			per = 1
 		}
 		for start := 0; start < len(g.ws); start += per {
 			chunks = append(chunks, insertChunk[E]{
@@ -280,13 +299,14 @@ func columnsKey(cols []ColumnMeta) string {
 	return b.String()
 }
 
-// run writes this chunk's rows and reads back whatever the database
-// supplied for each.
-func (ch insertChunk[E]) run(ctx context.Context, db *DB) error {
+// run writes this chunk's rows, reads back whatever the database supplied for
+// each, and reports how many rows it wrote.
+func (ch insertChunk[E]) run(ctx context.Context, db *DB) (int64, error) {
 	// A chunk of one is the statement Insert already writes, and it covers
-	// the two cases a multi row statement cannot: an insert naming no
-	// columns, and a dialect that reports generated values through the
-	// result rather than through RETURNING.
+	// the three cases a multi row statement cannot: an insert naming no
+	// columns, a dialect that reports generated values through the result
+	// rather than through RETURNING, and an upsert with something to read
+	// back.
 	if len(ch.ws) == 1 {
 		return ch.ws[0].withDB(db).insert(ctx)
 	}
@@ -304,7 +324,7 @@ func (ch insertChunk[E]) run(ctx context.Context, db *DB) error {
 		for j, col := range ch.cols {
 			v, err := c.value(col, w.field(col).Interface())
 			if err != nil {
-				return err
+				return 0, err
 			}
 			marks[j] = c.args.bind(v)
 		}
@@ -313,13 +333,27 @@ func (ch insertChunk[E]) run(ctx context.Context, db *DB) error {
 
 	sql := "INSERT INTO " + c.d.QuoteIdent(st.name) +
 		" (" + strings.Join(names, ", ") + ") VALUES " + strings.Join(tuples, ", ")
+	clause, err := c.conflict(ch.ws[0].conflict, ch.cols)
+	if err != nil {
+		return 0, err
+	}
+	if clause != "" {
+		sql += " " + clause
+	}
 
 	back := ch.ws[0].returningColumns(ch.cols)
 	if len(back) == 0 {
-		if _, err := db.ex.Exec(ctx, sql, c.args.args...); err != nil {
-			return fmt.Errorf("orm: table %q: inserting: %w", st.name, err)
+		res, err := db.ex.Exec(ctx, sql, c.args.args...)
+		if err != nil {
+			return 0, fmt.Errorf("orm: table %q: inserting: %w", st.name, err)
 		}
-		return nil
+		// The driver's count is consulted only where it can differ from the
+		// number of rows given, which is the skipping upsert alone; see
+		// writer.insert.
+		if ch.ws[0].skips() {
+			return res.RowsAffected, nil
+		}
+		return int64(len(ch.ws)), nil
 	}
 
 	backNames := make([]string, len(back))
@@ -330,7 +364,7 @@ func (ch insertChunk[E]) run(ctx context.Context, db *DB) error {
 
 	rows, err := db.ex.Query(ctx, sql, c.args.args...)
 	if err != nil {
-		return fmt.Errorf("orm: table %q: inserting: %w", st.name, err)
+		return 0, fmt.Errorf("orm: table %q: inserting: %w", st.name, err)
 	}
 	defer rows.Close()
 
@@ -342,21 +376,22 @@ func (ch insertChunk[E]) run(ctx context.Context, db *DB) error {
 	// nothing in a returned row to match it to an input row by. What the SQL
 	// standard guarantees is weaker than what implementations do, so the
 	// assumption is worth stating: it holds for the statement written above,
-	// and would stop holding for one whose rows the database were free to
-	// reorder, such as an insert carrying ON CONFLICT.
+	// and stops holding for one whose rows the database is free to skip or
+	// reorder, which is why an upsert with anything to read back is chunked
+	// down to one row per statement and never reaches here.
 	for i, w := range ch.ws {
 		if !rows.Next() {
 			if err := rows.Err(); err != nil {
-				return fmt.Errorf("orm: table %q: inserting: %w", st.name, err)
+				return 0, fmt.Errorf("orm: table %q: inserting: %w", st.name, err)
 			}
-			return fmt.Errorf("orm: table %q: insert wrote %d rows but returned %d",
+			return 0, fmt.Errorf("orm: table %q: insert wrote %d rows but returned %d",
 				st.name, len(ch.ws), i)
 		}
 		if err := w.scanInto(rows, back); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return rows.Err()
+	return int64(len(ch.ws)), rows.Err()
 }
 
 // deleteBatch removes one statement's worth of rows, identified by key.

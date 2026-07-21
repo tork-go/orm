@@ -35,6 +35,23 @@ type QueryDialect interface {
 	// statement; where it cannot, they have to be fetched separately.
 	SupportsReturning() bool
 
+	// RenderUpsertDoNothing returns the clause that makes an INSERT skip a
+	// row already present, given the already-quoted columns whose duplication
+	// is what "already present" means. No columns means any conflict at all,
+	// which some databases can express and others cannot.
+	//
+	// The whole clause is the dialect's to write, not a token or two of it:
+	// Postgres and SQLite spell it ON CONFLICT, MySQL has no target at all
+	// and says ON DUPLICATE KEY, and SQL Server has neither and needs a
+	// MERGE. A dialect that cannot express it returns an error naming the
+	// operation rather than emitting something close.
+	RenderUpsertDoNothing(target []string) (string, error)
+
+	// RenderUpsertDoUpdate returns the clause that makes an INSERT overwrite
+	// the given already-quoted columns of a row already present, with the
+	// values the insert was carrying for it.
+	RenderUpsertDoUpdate(target, updates []string) (string, error)
+
 	// MaxBindParams reports how many parameters one statement may bind, or
 	// 0 when the database sets no practical limit.
 	//

@@ -27,6 +27,12 @@ func (*stubDriver) RenderLike(col, mark string, ci bool) string {
 }
 func (*stubDriver) SupportsReturning() bool { return true }
 func (*stubDriver) MaxBindParams() int      { return 0 }
+func (*stubDriver) RenderUpsertDoNothing([]string) (string, error) {
+	return "ON CONFLICT DO NOTHING", nil
+}
+func (*stubDriver) RenderUpsertDoUpdate(_, _ []string) (string, error) {
+	return "ON CONFLICT DO UPDATE", nil
+}
 
 func (d *stubDriver) Open(_ context.Context, cfg orm.Config) (orm.Conn, error) {
 	d.opened = append(d.opened, cfg)

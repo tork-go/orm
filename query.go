@@ -26,6 +26,11 @@ func (t Table[E]) With(db *DB) *Query[E] {
 type Query[E any] struct {
 	st *tableState
 	db *DB
+
+	// conflict is what an insert does about a row already there, set only by
+	// the OnConflict chain and read only by the insert path. See
+	// query_upsert.go.
+	conflict *conflictClause
 }
 
 // Filtered is a query narrowed by conditions, ordering or a limit.

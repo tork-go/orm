@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -302,7 +303,7 @@ func assign(values, dest []any) error {
 	return nil
 }
 
-// The four below are the fake's answers to orm.QueryDialect. They are
+// The methods below are the fake's answers to orm.QueryDialect. They are
 // deliberately unlike Postgres's: square brackets instead of double
 // quotes, and a repeated question mark instead of a numbered parameter.
 // A compiler test written against this fake therefore cannot accidentally
@@ -337,6 +338,35 @@ func (d *Dialect) SupportsReturning() bool { return d.CanReturn }
 // would take to cross.
 func (d *Dialect) MaxBindParams() int { return d.BindLimit }
 
+// RenderUpsertDoNothing spells the clause nothing like Postgres does, for
+// the reason the group comment gives, and fails when NoUpsert is set so the
+// dialect that cannot express an upsert at all has somewhere to be tested.
+func (d *Dialect) RenderUpsertDoNothing(target []string) (string, error) {
+	if d.NoUpsert {
+		return "", errors.New("fake: this database cannot skip a conflicting row")
+	}
+	if len(target) == 0 {
+		return "UPSERT ANY IGNORE", nil
+	}
+	return "UPSERT " + strings.Join(target, "+") + " IGNORE", nil
+}
+
+// RenderUpsertDoUpdate is the fake's overwrite form, taking each value from
+// a pseudo-table it calls NEW rather than EXCLUDED.
+func (d *Dialect) RenderUpsertDoUpdate(target, updates []string) (string, error) {
+	if d.NoUpsert {
+		return "", errors.New("fake: this database cannot overwrite a conflicting row")
+	}
+	if len(target) == 0 {
+		return "", errors.New("fake: overwriting needs to know what conflicts")
+	}
+	sets := make([]string, len(updates))
+	for i, col := range updates {
+		sets[i] = col + " <- NEW." + col
+	}
+	return "UPSERT " + strings.Join(target, "+") + " REPLACE " + strings.Join(sets, " & "), nil
+}
+
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
 // functional, backed by an in-memory map, for testing migrate's runner.
@@ -360,6 +390,10 @@ type Dialect struct {
 
 	// CanReturn is what SupportsReturning reports, false by default.
 	CanReturn bool
+
+	// NoUpsert makes both upsert renderers fail, standing in for a database
+	// whose SQL has no way to express one.
+	NoUpsert bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

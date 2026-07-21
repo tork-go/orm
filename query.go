@@ -204,6 +204,9 @@ func (f *Filtered[E]) collect(ctx context.Context, sql string, args []any) ([]*E
 		if err := scanRowInto(f.st, rows, reflect.ValueOf(e).Elem()); err != nil {
 			return nil, err
 		}
+		if err := runHook(ctx, f.st.name, "AfterLoad", any(e), AfterLoader.AfterLoad); err != nil {
+			return nil, err
+		}
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {

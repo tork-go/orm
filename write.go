@@ -25,7 +25,13 @@ func (q *Query[E]) Insert(ctx context.Context, e *E) error {
 	if err != nil {
 		return err
 	}
-	return w.insert(ctx)
+	if err := runHook(ctx, w.st.name, "BeforeCreate", any(e), BeforeCreater.BeforeCreate); err != nil {
+		return err
+	}
+	if err := w.insert(ctx); err != nil {
+		return err
+	}
+	return runHook(ctx, w.st.name, "AfterCreate", any(e), AfterCreater.AfterCreate)
 }
 
 // Update writes every writable column of e to the row its primary key
@@ -40,7 +46,13 @@ func (q *Query[E]) Update(ctx context.Context, e *E) error {
 	if err != nil {
 		return err
 	}
-	return w.update(ctx)
+	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
+		return err
+	}
+	if err := w.update(ctx); err != nil {
+		return err
+	}
+	return runHook(ctx, w.st.name, "AfterUpdate", any(e), AfterUpdater.AfterUpdate)
 }
 
 // Delete removes the row e's primary key identifies.
@@ -49,7 +61,13 @@ func (q *Query[E]) Delete(ctx context.Context, e *E) error {
 	if err != nil {
 		return err
 	}
-	return w.delete(ctx)
+	if err := runHook(ctx, w.st.name, "BeforeDelete", any(e), BeforeDeleter.BeforeDelete); err != nil {
+		return err
+	}
+	if err := w.delete(ctx); err != nil {
+		return err
+	}
+	return runHook(ctx, w.st.name, "AfterDelete", any(e), AfterDeleter.AfterDelete)
 }
 
 // Save inserts e when it has no key yet, and updates it otherwise.

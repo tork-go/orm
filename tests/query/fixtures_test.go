@@ -43,25 +43,9 @@ var Users = orm.DefineTable[User]("users", func(t *orm.TableBuilder[User]) *User
 	}
 })
 
-// A second table, so a predicate can name a column this one does not own.
-type Post struct {
-	ID    int
-	Title string
-}
-
-type PostModel struct {
-	orm.Table[Post]
-	ID    *orm.IntColumn
-	Title *orm.StringColumn
-}
-
-var Posts = orm.DefineTable[Post]("posts", func(t *orm.TableBuilder[Post]) *PostModel {
-	return &PostModel{
-		Table: t.Table(),
-		ID:    t.Int("id").PrimaryKey(),
-		Title: t.String("title").NotNull(),
-	}
-})
+// Post is declared in hooks_test.go, where it carries the lifecycle hooks.
+// It doubles as the second table the compiler tests need, so a predicate
+// can name a column the users table does not own.
 
 // A composite primary key, so Find can report that it has no single key to
 // look up by.

@@ -331,6 +331,10 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 	}
 	st.fieldIdx = idx
 
+	if err := checkHookReceivers(name, st.entity); err != nil {
+		panic(err.Error())
+	}
+
 	registerTable(st.entity, st)
 
 	if err := bindRelations(name, m, st); err != nil {

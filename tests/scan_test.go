@@ -290,3 +290,56 @@ func TestScanRow_CodecReturnsWrongType(t *testing.T) {
 		}
 	}
 }
+
+// An embedded pointer is a normal enough shape in a row type, and reflect
+// panics on a nil one partway down an index path rather than allocating.
+// Scanning fills it in, so it behaves like an embedded value.
+type PtrAudit struct {
+	CreatedAt time.Time
+}
+
+type ptrRow struct {
+	*PtrAudit
+	ID   int
+	Name string
+}
+
+type ptrModel struct {
+	orm.Table[ptrRow]
+	ID        *orm.IntColumn
+	Name      *orm.StringColumn
+	CreatedAt *orm.TimeColumn
+}
+
+var ptrTable = orm.DefineTable[ptrRow]("ptr_rows", func(t *orm.TableBuilder[ptrRow]) *ptrModel {
+	return &ptrModel{
+		Table:     t.Table(),
+		ID:        t.Int("id"),
+		Name:      t.String("name"),
+		CreatedAt: t.Time("created_at"),
+	}
+})
+
+func TestScanRow_AllocatesEmbeddedPointers(t *testing.T) {
+	c := fakedriver.NewConn()
+	created := time.Date(2024, 5, 1, 9, 0, 0, 0, time.UTC)
+	c.QueueRows([]any{7, "alice", created})
+
+	rows, _ := c.Query(context.Background(), "SELECT ...")
+	defer rows.Close()
+	rows.Next()
+
+	got, err := ptrTable.ScanRow(rows)
+	if err != nil {
+		t.Fatalf("ScanRow() error = %v", err)
+	}
+	if got.PtrAudit == nil {
+		t.Fatal("the embedded pointer is still nil, so scanning did not allocate it")
+	}
+	if !got.CreatedAt.Equal(created) {
+		t.Errorf("CreatedAt = %v, want %v", got.CreatedAt, created)
+	}
+	if got.ID != 7 || got.Name != "alice" {
+		t.Errorf("direct fields = %d/%q, want 7/alice", got.ID, got.Name)
+	}
+}

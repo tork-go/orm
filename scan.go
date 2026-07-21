@@ -52,7 +52,7 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 	var staged []stagedField
 
 	for i, c := range t.st.cols {
-		field := v.FieldByIndex(t.st.fieldIdx[c.Name()])
+		field := fieldByIndexAlloc(v, t.st.fieldIdx[c.Name()])
 		if isDocumentColumn(c) {
 			buf := new([]byte)
 			dests[i] = buf
@@ -100,4 +100,25 @@ func (t Table[E]) ScanRow(rs Rows) (E, error) {
 // these two questions between them catch every encoded column.
 func isDocumentColumn(c ColumnMeta) bool {
 	return c.IsJSON() || c.IsJSONB()
+}
+
+// fieldByIndexAlloc walks an index path, allocating any nil pointer it
+// passes through.
+//
+// reflect.Value.FieldByIndex panics on a nil embedded pointer rather than
+// allocate, which would make a row type embedding *Timestamps fail on its
+// first row. Filling it in is what the caller would have had to do by hand
+// otherwise, and doing it here means an embedded pointer behaves like an
+// embedded value.
+func fieldByIndexAlloc(v reflect.Value, index []int) reflect.Value {
+	for i, x := range index {
+		if i > 0 && v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		v = v.Field(x)
+	}
+	return v
 }

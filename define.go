@@ -415,10 +415,14 @@ type entityField struct {
 // embedded field itself is only registered as a candidate when it is
 // exported, because an unexported name is not one a column could match.
 //
-// Embedded pointers are not walked. FieldByIndex panics rather than
-// allocate when it meets a nil pointer partway down a path, so scanning
-// into one would depend on the caller having filled it in first. Leaving
-// it out is better than a nil dereference on the first row.
+// Embedded pointers are walked when the embedded field is exported.
+// reflect's own FieldByIndex panics rather than allocate when it meets a
+// nil pointer partway down a path, so scanning walks the path itself and
+// fills in any nil it passes through (see fieldByIndexAlloc). Filling one
+// in means assigning to the pointer field, which reflect refuses for an
+// unexported one, so an unexported embedded pointer is left out. That is
+// the narrower rule than for embedded values, where only the leaf field
+// has to be exported because nothing along the way is assigned to.
 func collectEntityFields(entity reflect.Type) (byTag, byName map[string]entityField) {
 	byTag = make(map[string]entityField)
 	byName = make(map[string]entityField)
@@ -442,9 +446,17 @@ func collectEntityFields(entity reflect.Type) (byTag, byName map[string]entityFi
 				f := q.typ.Field(i)
 				index := append(append([]int{}, q.prefix...), i)
 
-				if f.Anonymous && f.Type.Kind() == reflect.Struct && !seen[f.Type] {
-					seen[f.Type] = true
-					next = append(next, queued{typ: f.Type, prefix: index})
+				if f.Anonymous {
+					et := f.Type
+					// An unexported embedded pointer cannot be allocated,
+					// so its fields are not reachable for scanning.
+					if et.Kind() == reflect.Pointer && f.IsExported() {
+						et = et.Elem()
+					}
+					if et.Kind() == reflect.Struct && !seen[et] {
+						seen[et] = true
+						next = append(next, queued{typ: et, prefix: index})
+					}
 				}
 				if !f.IsExported() {
 					continue
@@ -530,9 +542,8 @@ func resolveEntityFields(table string, entity reflect.Type, cols []ColumnMeta) (
 				table, c.Name(), entity, c.Name(), entity)
 		}
 		if field.typ != c.GoType() {
-			return nil, fmt.Errorf("orm: table %q: column %q is %s but %s.%s is %s",
-				table, c.Name(), c.GoType(), entity,
-				entity.FieldByIndex(field.index).Name, field.typ)
+			return nil, fmt.Errorf("orm: table %q: column %q is %s but the field it maps "+
+				"to on %s is %s", table, c.Name(), c.GoType(), entity, field.typ)
 		}
 		out[c.Name()] = field.index
 	}

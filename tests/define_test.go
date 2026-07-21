@@ -557,3 +557,52 @@ func TestDefineTable_RecursiveEmbeddingTerminates(t *testing.T) {
 		t.Errorf("Columns() returned %d columns, want 1", got)
 	}
 }
+
+// An unexported embedded pointer cannot be allocated, since filling it in
+// means assigning to an unexported field. Its fields are therefore not
+// reachable for scanning, and a column asking for one is reported rather
+// than panicking on the first row.
+type hiddenAudit struct{ CreatedAt time.Time }
+
+func TestDefineTable_UnexportedEmbeddedPointer_Panics(t *testing.T) {
+	type entity struct {
+		*hiddenAudit
+		ID int
+	}
+	type model struct {
+		orm.Table[entity]
+		ID        *orm.IntColumn
+		CreatedAt *orm.TimeColumn
+	}
+
+	got := mustPanic(t, func() {
+		orm.DefineTable[entity]("t", func(b *orm.TableBuilder[entity]) *model {
+			return &model{Table: b.Table(), ID: b.Int("id"), CreatedAt: b.Time("created_at")}
+		})
+	})
+	if !strings.Contains(got, `column "created_at"`) {
+		t.Errorf("panic message %q does not name the unreachable column", got)
+	}
+}
+
+// An exported embedded pointer is reachable, since it can be allocated.
+type ExportedAudit struct{ CreatedAt time.Time }
+
+func TestDefineTable_ExportedEmbeddedPointer(t *testing.T) {
+	type entity struct {
+		*ExportedAudit
+		ID int
+	}
+	type model struct {
+		orm.Table[entity]
+		ID        *orm.IntColumn
+		CreatedAt *orm.TimeColumn
+	}
+
+	m := orm.DefineTable[entity]("exported_ptr", func(b *orm.TableBuilder[entity]) *model {
+		return &model{Table: b.Table(), ID: b.Int("id"), CreatedAt: b.Time("created_at")}
+	})
+	if got := len(orm.Columns(m)); got != 2 {
+		t.Errorf("Columns() returned %d columns, want 2", got)
+	}
+}

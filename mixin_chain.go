@@ -13,8 +13,8 @@ import "reflect"
 // the embedding type. Written by hand that is one near-identical method
 // per builder per column type; the mixins write them once, generically.
 //
-// Self is the concrete column type, always a pointer (*ForeignKey[T],
-// *StringColumn, ...). Because Go cannot name "the type embedding me",
+// Self is the concrete column type, always a pointer (*StringColumn,
+// *IntColumn, ...). Because Go cannot name "the type embedding me",
 // each constructor passes its own address in via self, which is what the
 // builders return. That makes the two-phase constructor mandatory:
 // allocate the outer value first, then install the mixins pointing back

@@ -28,7 +28,8 @@ func (d IndexDef) Unique() IndexDef {
 }
 
 // Named overrides the auto-generated name. IndexDef is returned by value,
-// not a pointer: unlike Column[T]/ForeignKey[T], it's never a struct field
+// not a pointer: unlike Column[T] and the typed column types, it's never a
+// struct field
 // walked by reflection, it's returned from an ordinary method call, so
 // there's no shared-identity requirement forcing pointer semantics here.
 func (d IndexDef) Named(name string) IndexDef {

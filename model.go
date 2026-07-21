@@ -3,7 +3,8 @@ package orm
 import "reflect"
 
 // ColumnMeta is the read-only view of a column that Column[T] and
-// ForeignKey[T] satisfy for every T, since none of their methods mention T
+// the typed column types satisfy for every T, since none of their methods
+// mention T
 // in a parameter or return type. It lets code outside this package walk a
 // model's fields without knowing each field's concrete T.
 type ColumnMeta interface {
@@ -40,8 +41,9 @@ type Model interface {
 }
 
 // Columns returns every field of m that is a column, in struct field
-// order. Foreign key fields are columns too (ForeignKey[T] embeds
-// Column[T]) and appear here as well as in ForeignKeys.
+// order. Foreign keys appear here too, since a key is an ordinary column
+// carrying a reference rather than a kind of its own, so a referencing
+// column shows up in both this and ForeignKeys.
 func Columns(m Model) []ColumnMeta {
 	return walkFields[ColumnMeta](m)
 }

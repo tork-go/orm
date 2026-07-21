@@ -7,8 +7,10 @@
 //
 // Composite foreign key introspection is a known, documented gap:
 // information_schema does not reliably preserve column-to-referenced-column
-// ordinal alignment for multi-column foreign keys. Since the orm package's
-// model API only ever produces single-column foreign keys, this is correct
+// ordinal alignment for multi-column foreign keys. Rendering handles them,
+// since schema.ForeignKey carries both column lists, but the orm package's
+// References builder attaches a key to one column at a time and so only
+// ever produces single-column foreign keys. The gap is therefore correct
 // for every foreign key Tork ORM itself can create, and for the common
 // case of single-column foreign keys in a hand-written schema.
 //
@@ -24,9 +26,9 @@
 // expression key or a WHERE predicate, so they are left alone rather than
 // introspected incorrectly.
 //
-// The model declaration types (Table, Column, ForeignKey, HasMany,
-// BelongsTo) live in the module-root orm package, which never imports
-// this package or pgx.
+// The model declaration types (Table, Column, the typed column types, and
+// the relationship markers) live in the module-root orm package, which
+// never imports this package or pgx.
 //
 // Future drivers (SQLite, MySQL, SQL Server, and others) will follow the
 // same pattern: one sibling package per database under driver/,

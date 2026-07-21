@@ -1,5 +1,6 @@
 // Package orm provides Tork ORM's driver-agnostic model declaration
-// primitives: Table, Column, ForeignKey, HasMany, and BelongsTo.
+// primitives: Table, Column, the typed column types, and the
+// relationship markers.
 //
 // Columns come in two forms. Column[T] is the generic carrier every column
 // is built on, and accepts every builder for every T because Go cannot add

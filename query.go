@@ -74,6 +74,12 @@ type queryState struct {
 	// distinct drops duplicate rows.
 	distinct bool
 
+	// distinctOn keeps one row per distinct combination of these columns,
+	// rather than per distinct row. Nil for every query that never calls
+	// DistinctOn, which is every query outside the one dialect that has the
+	// clause. See Filtered.DistinctOn.
+	distinctOn []ColumnMeta
+
 	// unscoped disables the table's default scope for this query: its
 	// Scoper predicate and/or its soft-delete "not yet deleted" filter.
 	// See Unscoped.
@@ -178,6 +184,7 @@ func (f *Filtered[E]) clone() *Filtered[E] {
 	out.joins = append([]joinSpec(nil), f.joins...)
 	out.ctes = append([]cteSpec(nil), f.ctes...)
 	out.loads = append([]loadSpec(nil), f.loads...)
+	out.distinctOn = append([]ColumnMeta(nil), f.distinctOn...)
 	return &out
 }
 
@@ -275,6 +282,133 @@ func (f *Filtered[E]) Distinct() *Filtered[E] {
 	out := f.clone()
 	out.distinct = true
 	return out
+}
+
+// DistinctOn keeps one row per distinct combination of the given columns,
+// rather than one per distinct row.
+//
+//	Readings.With(db).
+//	    DistinctOn(Readings.SensorID).
+//	    OrderBy(Readings.SensorID.Asc(), Readings.TakenAt.Desc()).
+//	    All(ctx)
+//
+//	SELECT DISTINCT ON ("sensor_id") ... FROM "readings"
+//	ORDER BY "sensor_id" ASC, "taken_at" DESC
+//
+// That is the query it exists for: the latest row per group, in one
+// statement and without a subquery. Which row of each group is kept is
+// decided by the ordering, so the two are written together — the first row
+// of each group in the order given.
+//
+// The ordering has to start with the same columns, in the same order, which
+// is checked here rather than left to the database: an ordering that starts
+// elsewhere keeps an arbitrary row of each group, and the mistake is easier
+// to see named than to spot in the rows that come back. Ordering by nothing
+// at all is allowed, and keeps whichever row the database reaches first.
+//
+// Distinct and DistinctOn are different questions and cannot be combined:
+// one asks for distinct rows, the other for one row per distinct key.
+//
+// Only Postgres has the clause. Elsewhere the same result is a window
+// function filtered inside a derived table — ROW_NUMBER partitioned by the
+// key, ordered as here, kept where it is 1 — which is a different statement
+// rather than a different spelling, so a dialect without DISTINCT ON says
+// so rather than approximating it.
+func (f *Filtered[E]) DistinctOn(cols ...ColumnMeta) *Filtered[E] {
+	out := f.clone()
+	if len(cols) == 0 {
+		out.fail(fmt.Errorf("orm: table %q: DistinctOn was given no columns; leave it out "+
+			"to keep every row, or call Distinct to drop duplicate rows", f.tableName()))
+		return out
+	}
+	for i, c := range cols {
+		if c == nil {
+			out.fail(fmt.Errorf("orm: table %q: DistinctOn column %d is nil", f.tableName(), i))
+			return out
+		}
+	}
+	out.distinctOn = append(out.distinctOn, cols...)
+	return out
+}
+
+// DistinctOn is Filtered.DistinctOn, off an unfiltered query.
+func (q *Query[E]) DistinctOn(cols ...ColumnMeta) *Filtered[E] {
+	return q.filtered().DistinctOn(cols...)
+}
+
+// selectKeyword is the word a read starts with: SELECT, SELECT DISTINCT, or
+// the dialect's DISTINCT ON over the columns given.
+//
+// It also enforces what the two distinct forms mean together, which is
+// nothing: asking for distinct rows and for one row per key at once is two
+// answers to different questions.
+func (q queryState) selectKeyword(c *compiler) (string, error) {
+	if len(q.distinctOn) == 0 {
+		if q.distinct {
+			return "SELECT DISTINCT ", nil
+		}
+		return "SELECT ", nil
+	}
+	if q.distinct {
+		return "", fmt.Errorf("orm: table %q: Distinct and DistinctOn ask different "+
+			"questions — every distinct row, against one row per distinct key — and a "+
+			"statement can only answer one", q.tableName())
+	}
+	cols := make([]string, len(q.distinctOn))
+	for i, col := range q.distinctOn {
+		name, err := c.column(col)
+		if err != nil {
+			return "", err
+		}
+		cols[i] = name
+	}
+	if err := q.orderStartsWith(q.distinctOn); err != nil {
+		return "", err
+	}
+	keyword, err := c.d.RenderDistinctOn(cols)
+	if err != nil {
+		return "", fmt.Errorf("orm: table %q: %w", q.tableName(), err)
+	}
+	return "SELECT " + keyword + " ", nil
+}
+
+// noDistinctOn rejects an operation that cannot carry a DistinctOn,
+// mirroring noJoins and noCTEs.
+//
+// It is for the reads that build their own statement around a single value —
+// a count, a scalar aggregate, a grouped read — rather than through
+// compileRead. DISTINCT ON decides which whole row of each group survives,
+// and a statement returning one number per group has no row to keep.
+func (q queryState) noDistinctOn(op string) error {
+	if len(q.distinctOn) == 0 {
+		return nil
+	}
+	return fmt.Errorf("orm: table %q: %s cannot run over a query carrying a DistinctOn, "+
+		"which keeps one whole row per key and so has nothing to hand a statement that "+
+		"returns a single value", q.tableName(), op)
+}
+
+// orderStartsWith reports whether the query's ordering begins with these
+// columns, in this order, which is what decides which row of each group a
+// DISTINCT ON keeps.
+//
+// An unordered query is allowed through: there is no wrong first row when no
+// order was asked for. An ordering that starts elsewhere is not, since the
+// row kept would be whichever the database reached first while the ordering
+// says something else entirely.
+func (q queryState) orderStartsWith(cols []ColumnMeta) error {
+	if len(q.ords) == 0 {
+		return nil
+	}
+	for i, col := range cols {
+		if i >= len(q.ords) || q.ords[i].Col == nil || q.ords[i].Col.Name() != col.Name() {
+			return fmt.Errorf("orm: table %q: DistinctOn keeps the first row of each group "+
+				"in the statement's own order, so the ordering has to start with the same "+
+				"columns: %q is DistinctOn column %d, but the ordering does not name it "+
+				"there", q.tableName(), col.Name(), i)
+		}
+	}
+	return nil
 }
 
 // tableName is the table's name, or "" for a query with no table, so an error
@@ -416,9 +550,9 @@ func (q queryState) compileRead(c *compiler, list string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	keyword := "SELECT "
-	if q.distinct {
-		keyword = "SELECT DISTINCT "
+	keyword, err := q.selectKeyword(c)
+	if err != nil {
+		return "", err
 	}
 	return keyword + list + " FROM " + from + c.joinsClause() +
 		where + order + limitOffset(q.limit, q.offset) + lock, nil
@@ -601,11 +735,15 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	}
 	sql := with + "SELECT COUNT(*) FROM " + from + c.joinsClause() + where
 
-	if f.distinct {
-		// Counting a distinct query means counting the rows that query
-		// returns, which is a count over the read rather than over the table.
-		// The derived table is named because Postgres and MySQL both require
-		// it; leaving it out would work only where it is optional.
+	if f.distinct || len(f.distinctOn) > 0 {
+		// Counting a query that collapses rows means counting the rows that
+		// query returns, which is a count over the read rather than over the
+		// table. The derived table is named because Postgres and MySQL both
+		// require it; leaving it out would work only where it is optional.
+		//
+		// The inner read carries no ORDER BY. A DISTINCT ON keeps the first
+		// row of each group, and which row that is cannot change how many
+		// groups there are.
 		//
 		// selectList's error is unreachable here for the same reason it is in
 		// compileSelect: f.columns() is either f.sel, already checked by
@@ -614,7 +752,11 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-		sql = with + "SELECT COUNT(*) FROM (SELECT DISTINCT " + list + " FROM " +
+		keyword, err := f.selectKeyword(c)
+		if err != nil {
+			return 0, err
+		}
+		sql = with + "SELECT COUNT(*) FROM (" + keyword + list + " FROM " +
 			from + c.joinsClause() + where + ") AS " + c.d.QuoteIdent("t")
 	}
 

@@ -256,6 +256,7 @@ func (c *compiler) joinedTable(st *tableState, name string) string {
 	return c.d.QuoteIdent(name)
 }
 
+
 // joinsClause renders every join addJoin has added, in call order, or ""
 // when there are none — which is every statement outside this one shape,
 // so a query with no Join reads exactly as it did before Join existed.
@@ -1167,9 +1168,17 @@ func (c *compiler) orderTerm(o Ordering) (string, error) {
 		return "", err
 	}
 	if o.Desc {
-		return s + " DESC", nil
+		s += " DESC"
+	} else {
+		s += " ASC"
 	}
-	return s + " ASC", nil
+	// Where NULLs sort is the dialect's to write: the clause is spelled
+	// NULLS FIRST in some databases, emulated in others, and absent from a
+	// few, which is more than a token's difference.
+	if o.nulls != nullsDefault {
+		return c.d.RenderNullsOrder(s, o.nulls == nullsFirst)
+	}
+	return s, nil
 }
 
 // limitOffset renders LIMIT and OFFSET.
@@ -1293,3 +1302,4 @@ func (c *compiler) selectTerm(e SelectExpr) (string, error) {
 	}
 	return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
 }
+

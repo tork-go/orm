@@ -302,7 +302,14 @@ func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "SELECT " + list + " FROM " + from + c.joinsClause() +
+	// The keyword comes from the source query, so a projection over a
+	// Distinct or DistinctOn read is one too rather than quietly dropping
+	// what the caller asked for.
+	keyword, err := p.q.selectKeyword(c)
+	if err != nil {
+		return "", err
+	}
+	return keyword + list + " FROM " + from + c.joinsClause() +
 		where + groupBy + having + order + limitOffset(p.limit, nil), nil
 }
 

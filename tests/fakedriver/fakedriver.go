@@ -354,6 +354,32 @@ func (d *Dialect) SupportsReturning() bool { return d.CanReturn }
 // would take to cross.
 func (d *Dialect) MaxBindParams() int { return d.BindLimit }
 
+// RenderNullsOrder spells the placement as a suffix nothing like Postgres's,
+// and fails when NoNullsOrder is set so the database that cannot say where
+// NULLs sort has somewhere to be tested.
+func (d *Dialect) RenderNullsOrder(term string, first bool) (string, error) {
+	if d.NoNullsOrder {
+		return "", errors.New("fake: this database cannot say where NULLs sort")
+	}
+	if first {
+		return term + " NULLS HIGH", nil
+	}
+	return term + " NULLS LOW", nil
+}
+
+// RenderDistinctOn spells the clause nothing like Postgres does, and fails
+// when NoDistinctOn is set, which stands in for every database except
+// Postgres — none of the others has the clause at all.
+func (d *Dialect) RenderDistinctOn(columns []string) (string, error) {
+	if d.NoDistinctOn {
+		return "", errors.New("fake: this database has no DISTINCT ON")
+	}
+	if len(columns) == 0 {
+		return "", errors.New("fake: DISTINCT ON needs at least one column")
+	}
+	return "DISTINCT FIRST BY " + strings.Join(columns, "+"), nil
+}
+
 // RenderLock spells the clause nothing like Postgres does, and fails when
 // NoLocking is set so the dialect whose database locks something other than
 // rows has somewhere to be tested.
@@ -521,6 +547,14 @@ type Dialect struct {
 	// NoFullText makes RenderFullText fail, standing in for a database with no
 	// full-text search facility.
 	NoFullText bool
+
+	// NoNullsOrder makes RenderNullsOrder fail, standing in for a database
+	// that cannot say where NULLs sort.
+	NoNullsOrder bool
+
+	// NoDistinctOn makes RenderDistinctOn fail, standing in for every
+	// database but Postgres, none of which has the clause.
+	NoDistinctOn bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

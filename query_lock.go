@@ -133,14 +133,19 @@ func (q queryState) lockSuffix() (string, error) {
 	if q.lock == nil {
 		return "", nil
 	}
-	if q.distinct {
-		// A lock names rows of a table, and a distinct read returns values
-		// rather than rows: two rows that collapsed into one have no single
-		// row to lock. Postgres rejects the pair outright, and saying so here
-		// names what the caller wrote rather than what the statement became.
-		return "", fmt.Errorf("orm: table %q: a locking read cannot also be Distinct, "+
+	if q.distinct || len(q.distinctOn) > 0 {
+		// A lock names rows of a table, and a read that collapses rows
+		// returns values rather than rows: two rows that became one have no
+		// single row to lock. Postgres rejects the pair outright, and saying
+		// so here names what the caller wrote rather than what the statement
+		// became.
+		clause := "Distinct"
+		if len(q.distinctOn) > 0 {
+			clause = "DistinctOn"
+		}
+		return "", fmt.Errorf("orm: table %q: a locking read cannot also be %s, "+
 			"since collapsing duplicate rows leaves nothing in particular to lock",
-			q.tableName())
+			q.tableName(), clause)
 	}
 	clause, err := q.db.d.RenderLock(q.lock.mode, q.lock.wait)
 	if err != nil {

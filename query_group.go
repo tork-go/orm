@@ -187,6 +187,9 @@ func (g *Grouped[K, V]) compile() (string, []any, error) {
 	if err := g.q.noCTEs(g.fn + "By"); err != nil {
 		return "", nil, err
 	}
+	if err := g.q.noDistinctOn(g.fn + "By"); err != nil {
+		return "", nil, err
+	}
 	c := g.q.compiler()
 
 	key, err := c.column(g.key)

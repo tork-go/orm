@@ -329,6 +329,43 @@ type Ordering struct {
 	Col  ColumnMeta
 	Desc bool
 	expr expression
+
+	// nulls says where NULLs sort, set by NullsFirst and NullsLast and left
+	// at the database's own default otherwise. See NullsFirst.
+	nulls nullsOrder
+}
+
+// nullsOrder is where NULLs sort within an ordering.
+type nullsOrder int
+
+const (
+	nullsDefault nullsOrder = iota // whatever the database does unasked
+	nullsFirst
+	nullsLast
+)
+
+// NullsFirst sorts NULLs before every value, whichever direction the
+// ordering runs.
+//
+//	Users.With(db).OrderBy(Users.DeletedAt.Desc().NullsFirst())
+//
+// Without it, where NULLs land is the database's own choice, and the choice
+// differs: Postgres sorts them last ascending and first descending, MySQL
+// and SQLite the other way round. Saying which you mean is the only way an
+// ordering means the same thing on two databases — and the only way it
+// stays put when a column becomes nullable.
+//
+// A database that cannot place NULLs explicitly reports that rather than
+// sorting them somewhere else quietly.
+func (o Ordering) NullsFirst() Ordering {
+	o.nulls = nullsFirst
+	return o
+}
+
+// NullsLast sorts NULLs after every value. See NullsFirst.
+func (o Ordering) NullsLast() Ordering {
+	o.nulls = nullsLast
+	return o
 }
 
 // Assignment is one `col = value` term of an UPDATE's SET clause.

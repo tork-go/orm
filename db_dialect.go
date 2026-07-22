@@ -114,6 +114,30 @@ type QueryDialect interface {
 	// naming the operation.
 	RenderFullText(quotedColumn, placeholder string) (string, error)
 
+	// RenderNullsOrder returns an already-rendered ORDER BY term — the
+	// column or expression and its direction — with the placement of NULLs
+	// made explicit, first when asked and last otherwise.
+	//
+	// Where NULLs sort unasked is not agreed on: Postgres sorts them last
+	// ascending and first descending, MySQL and SQLite the reverse. Saying
+	// so explicitly is spelled NULLS FIRST by Postgres and SQLite, has to be
+	// emulated with a leading `col IS NULL` term in MySQL, and cannot be
+	// said at all in some others, so the whole term is the dialect's to
+	// rewrite rather than a suffix to append. A dialect that cannot express
+	// it returns an error naming the operation, rather than sorting NULLs
+	// somewhere the caller did not ask for.
+	RenderNullsOrder(term string, first bool) (string, error)
+
+	// RenderDistinctOn returns the SELECT keyword that keeps one row per
+	// distinct combination of the already-quoted columns given.
+	//
+	// It is Postgres's DISTINCT ON, which no other database Tork targets
+	// has: the same result elsewhere is a window function filtered in a
+	// derived table. A dialect without it returns an error naming the
+	// operation, since the alternative is a different statement rather than
+	// a different spelling of this one.
+	RenderDistinctOn(columns []string) (string, error)
+
 	// RenderTypedPlaceholder returns an already-rendered placeholder with
 	// its type made explicit, for the few positions where the database
 	// cannot infer it from anything nearby.

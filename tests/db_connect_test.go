@@ -58,6 +58,15 @@ func (*stubDriver) RenderArrayLength(col string, op orm.Operator, mark string) (
 func (*stubDriver) RenderFullText(col, mark string) (string, error) {
 	return "to_tsvector(" + col + ") @@ websearch_to_tsquery(" + mark + ")", nil
 }
+func (*stubDriver) RenderNullsOrder(term string, first bool) (string, error) {
+	if first {
+		return term + " NULLS FIRST", nil
+	}
+	return term + " NULLS LAST", nil
+}
+func (*stubDriver) RenderDistinctOn(cols []string) (string, error) {
+	return "DISTINCT ON (" + strings.Join(cols, ", ") + ")", nil
+}
 func (*stubDriver) RenderTypedPlaceholder(mark string, _ reflect.Type) string { return mark }
 
 func (d *stubDriver) Open(_ context.Context, cfg orm.Config) (orm.Conn, error) {

@@ -161,6 +161,33 @@ func (Dialect) RenderFullText(quotedColumn, placeholder string) (string, error) 
 	return "to_tsvector(" + quotedColumn + ") @@ websearch_to_tsquery(" + placeholder + ")", nil
 }
 
+// RenderNullsOrder appends Postgres's NULLS FIRST or NULLS LAST to an
+// ordering term.
+//
+// Unasked, Postgres sorts NULLs as larger than everything: last ascending,
+// first descending. That is a rule worth overriding rather than remembering,
+// since it is the opposite of what MySQL and SQLite do.
+func (Dialect) RenderNullsOrder(term string, first bool) (string, error) {
+	if first {
+		return term + " NULLS FIRST", nil
+	}
+	return term + " NULLS LAST", nil
+}
+
+// RenderDistinctOn returns Postgres's DISTINCT ON, which keeps the first row
+// of each group of rows sharing the given columns.
+//
+// Which row is first is decided by the statement's own ORDER BY, so the two
+// are written together: DISTINCT ON with no ordering keeps an arbitrary row
+// of each group, and Postgres requires the ordering to start with the same
+// columns.
+func (Dialect) RenderDistinctOn(columns []string) (string, error) {
+	if len(columns) == 0 {
+		return "", errors.New("postgres: DISTINCT ON needs at least one column")
+	}
+	return "DISTINCT ON (" + strings.Join(columns, ", ") + ")", nil
+}
+
 // RenderTypedPlaceholder casts a placeholder to the Postgres type matching
 // goType.
 //

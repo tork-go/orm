@@ -24,6 +24,12 @@ type NoEntity = struct{}
 type tableState struct {
 	name string
 
+	// derived marks a table whose rows come from a query rather than from
+	// storage, declared by DefineDerived. It is what tells the compiler to
+	// render the FROM clause as a subquery under this name instead of as
+	// the name alone. See model_derived.go.
+	derived bool
+
 	// entity is E's type, and fieldIdx maps each column's name to the
 	// index path of the entity field it scans into. Both are set by
 	// DefineTable and left zero for a model built by hand, which never

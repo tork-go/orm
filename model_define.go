@@ -43,6 +43,18 @@ func (b *TableBuilder[E]) Table() Table[E] {
 	return Table[E]{st: b.st}
 }
 
+// Derived returns the table identity to embed in a model being built by
+// DefineDerived, in place of Table.
+//
+// The two are deliberately different types. A stored table is queried with
+// With, which a derived one cannot be — it has no rows until it is given a
+// source — and a derived table is queried with From, which a stored one has
+// no use for. Handing out a different identity is what makes each of those
+// a compile error rather than something reported at run time.
+func (b *TableBuilder[E]) Derived() DerivedTable[E] {
+	return DerivedTable[E]{st: b.st}
+}
+
 // Bool declares a non-nullable bool column.
 func (b *TableBuilder[E]) Bool(name string) *BoolColumn { return NewBoolColumn(name) }
 
@@ -307,10 +319,28 @@ func (b *TableBuilder[E]) NullableUUIDArray(name string) *NullableUUIDArrayColum
 func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M {
 	st := &tableState{name: name, entity: reflect.TypeFor[E]()}
 	m := build(&TableBuilder[E]{st: st})
+	fillTableState(name, m, st, "Table: t.Table()")
 
+	registerTable(st.entity, st)
+
+	if err := bindRelations(name, m, st); err != nil {
+		panic(err.Error())
+	}
+
+	return m
+}
+
+// fillTableState does the work every model needs whatever it is declared
+// for: its columns in field order, the ones that are keys, the owner each
+// column reports, and the entity field each scans into.
+//
+// setter names the model field the table identity has to come from, which
+// differs between a stored table and a derived one, so the panic points at
+// the line that is actually wrong.
+func fillTableState(name string, m Model, st *tableState, setter string) {
 	if got := m.TableName(); got != name {
-		panic(fmt.Sprintf("orm: table %q: the model's Table field reports %q; "+
-			"it must be set from the builder, as Table: t.Table()", name, got))
+		panic(fmt.Sprintf("orm: table %q: the model's table field reports %q; "+
+			"it must be set from the builder, as %s", name, got, setter))
 	}
 
 	cols := Columns(m)
@@ -339,14 +369,6 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 	if err := checkHookReceivers(name, st.entity); err != nil {
 		panic(err.Error())
 	}
-
-	registerTable(st.entity, st)
-
-	if err := bindRelations(name, m, st); err != nil {
-		panic(err.Error())
-	}
-
-	return m
 }
 
 // bindRelations attaches every relationship marker on m to its table, then

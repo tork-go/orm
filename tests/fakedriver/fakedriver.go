@@ -435,6 +435,30 @@ func (d *Dialect) RenderJSONKey(quotedColumn, keyPlaceholder string, op orm.Oper
 	return "GET(" + quotedColumn + ", " + keyPlaceholder + ") " + op.String() + " " + valuePlaceholder, nil
 }
 
+// RenderArrayContains, RenderArrayOverlaps and RenderArrayLength spell the
+// array tests unlike Postgres, and fail when NoArray is set so the database
+// without a native array type has somewhere to be tested.
+func (d *Dialect) RenderArrayContains(quotedColumn string, placeholders []string) (string, error) {
+	if d.NoArray {
+		return "", errors.New("fake: this database has no array type to test")
+	}
+	return "SUPERSET(" + quotedColumn + ", [" + strings.Join(placeholders, " ") + "])", nil
+}
+
+func (d *Dialect) RenderArrayOverlaps(quotedColumn string, placeholders []string) (string, error) {
+	if d.NoArray {
+		return "", errors.New("fake: this database has no array type to test")
+	}
+	return "MEETS(" + quotedColumn + ", [" + strings.Join(placeholders, " ") + "])", nil
+}
+
+func (d *Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placeholder string) (string, error) {
+	if d.NoArray {
+		return "", errors.New("fake: this database has no array type to test")
+	}
+	return "SIZE(" + quotedColumn + ") " + op.String() + " " + placeholder, nil
+}
+
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
 // functional, backed by an in-memory map, for testing migrate's runner.
@@ -470,6 +494,10 @@ type Dialect struct {
 	// NoJSON makes the three JSON renderers fail, standing in for a database
 	// whose SQL cannot query inside a document.
 	NoJSON bool
+
+	// NoArray makes the three array renderers fail, standing in for a database
+	// with no native array type, as MySQL is.
+	NoArray bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

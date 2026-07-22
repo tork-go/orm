@@ -201,6 +201,19 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 		key := c.args.bind(p.Key)
 		return c.d.RenderJSONKey(col, key, p.Op, c.args.bind(p.Value))
 
+	case ArrayContains:
+		return c.arrayMembership(p.Col, p.Values, true)
+
+	case ArrayOverlaps:
+		return c.arrayMembership(p.Col, p.Values, false)
+
+	case ArrayLength:
+		col, err := c.column(p.Col)
+		if err != nil {
+			return "", err
+		}
+		return c.d.RenderArrayLength(col, p.Op, c.args.bind(p.Value))
+
 	case rawPredicate:
 		return c.raw(p)
 	}
@@ -240,6 +253,35 @@ func (c *compiler) inList(p InList) (string, error) {
 		op = " NOT IN ("
 	}
 	return col + op + strings.Join(marks, ", ") + ")", nil
+}
+
+// arrayMembership renders ArrayContains (Has, HasAll) and ArrayOverlaps
+// (HasAny).
+//
+// An empty list is defined rather than left to the database, the same way an
+// empty IN list is: containing all of nothing is true of every array, and
+// overlapping nothing is false for every one. Compiling to a constant also
+// steps around the typed empty array literal a dialect would otherwise need,
+// since ARRAY[] on its own has no element type to infer.
+func (c *compiler) arrayMembership(col ColumnMeta, values []any, all bool) (string, error) {
+	if len(values) == 0 {
+		if all {
+			return sqlTrue, nil
+		}
+		return sqlFalse, nil
+	}
+	quoted, err := c.column(col)
+	if err != nil {
+		return "", err
+	}
+	marks := make([]string, len(values))
+	for i, v := range values {
+		marks[i] = c.args.bind(v)
+	}
+	if all {
+		return c.d.RenderArrayContains(quoted, marks)
+	}
+	return c.d.RenderArrayOverlaps(quoted, marks)
 }
 
 // inSubquery renders IN and NOT IN over another query.

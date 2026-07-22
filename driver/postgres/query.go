@@ -124,6 +124,28 @@ func (Dialect) RenderJSONKey(quotedColumn, keyPlaceholder string, op orm.Operato
 	return "(" + quotedColumn + " ->> " + keyPlaceholder + ") " + op.String() + " " + valuePlaceholder, nil
 }
 
+// RenderArrayContains returns Postgres's array containment, building the right
+// operand with an ARRAY constructor whose element type Postgres infers from the
+// bound values and the column.
+func (Dialect) RenderArrayContains(quotedColumn string, placeholders []string) (string, error) {
+	return quotedColumn + " @> ARRAY[" + strings.Join(placeholders, ", ") + "]", nil
+}
+
+// RenderArrayOverlaps returns Postgres's array overlap operator.
+func (Dialect) RenderArrayOverlaps(quotedColumn string, placeholders []string) (string, error) {
+	return quotedColumn + " && ARRAY[" + strings.Join(placeholders, ", ") + "]", nil
+}
+
+// RenderArrayLength returns the comparison of an array's element count,
+// counted with cardinality rather than array_length.
+//
+// cardinality is 0 for an empty array where array_length(col, 1) is NULL, so
+// Len().Eq(0) means what it says and Len().Gt(0) is "non-empty" rather than a
+// three-valued unknown.
+func (Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placeholder string) (string, error) {
+	return "cardinality(" + quotedColumn + ") " + op.String() + " " + placeholder, nil
+}
+
 // MaxBindParams reports Postgres's limit of 65535 parameters per
 // statement.
 //

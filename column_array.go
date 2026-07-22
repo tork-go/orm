@@ -23,13 +23,16 @@ import (
 // same as t.String("name"), where a generic array would have needed the
 // package level constructor that JSON columns still use.
 //
-// Element equality compares whole arrays, which every dialect Tork targets
-// supports. Containment and overlap need AST nodes that do not exist yet.
+// Equality compares whole arrays, which every dialect Tork targets supports.
+// The membership and length tests arrayOps adds — Has, HasAll, HasAny, Len —
+// vary more between databases, so the dialect renders each and one without a
+// native array type returns an error naming the operation.
 
 // BoolArrayColumn is a non-nullable bool array column.
 type BoolArrayColumn struct {
 	chain[[]bool, *BoolArrayColumn]
 	equatable[[]bool]
+	arrayOps[bool]
 	assignable[[]bool]
 	sortable
 }
@@ -45,6 +48,7 @@ func NewBoolArrayColumn(name string) *BoolArrayColumn {
 	x.chain = newChain[[]bool](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]bool]{c: c}
+	x.arrayOps = arrayOps[bool]{c: c}
 	x.assignable = assignable[[]bool]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -54,6 +58,7 @@ func NewBoolArrayColumn(name string) *BoolArrayColumn {
 type NullableBoolArrayColumn struct {
 	chain[*[]bool, *NullableBoolArrayColumn]
 	nullEquatable[[]bool]
+	arrayOps[bool]
 	nullAssignable[[]bool]
 	nullness
 	sortable
@@ -70,6 +75,7 @@ func NewNullableBoolArrayColumn(name string) *NullableBoolArrayColumn {
 	x.chain = newChain[*[]bool](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]bool]{c: c}
+	x.arrayOps = arrayOps[bool]{c: c}
 	x.nullAssignable = nullAssignable[[]bool]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -80,6 +86,7 @@ func NewNullableBoolArrayColumn(name string) *NullableBoolArrayColumn {
 type IntArrayColumn struct {
 	chain[[]int, *IntArrayColumn]
 	equatable[[]int]
+	arrayOps[int]
 	assignable[[]int]
 	sortable
 }
@@ -95,6 +102,7 @@ func NewIntArrayColumn(name string) *IntArrayColumn {
 	x.chain = newChain[[]int](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]int]{c: c}
+	x.arrayOps = arrayOps[int]{c: c}
 	x.assignable = assignable[[]int]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -104,6 +112,7 @@ func NewIntArrayColumn(name string) *IntArrayColumn {
 type NullableIntArrayColumn struct {
 	chain[*[]int, *NullableIntArrayColumn]
 	nullEquatable[[]int]
+	arrayOps[int]
 	nullAssignable[[]int]
 	nullness
 	sortable
@@ -120,6 +129,7 @@ func NewNullableIntArrayColumn(name string) *NullableIntArrayColumn {
 	x.chain = newChain[*[]int](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]int]{c: c}
+	x.arrayOps = arrayOps[int]{c: c}
 	x.nullAssignable = nullAssignable[[]int]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -130,6 +140,7 @@ func NewNullableIntArrayColumn(name string) *NullableIntArrayColumn {
 type Int32ArrayColumn struct {
 	chain[[]int32, *Int32ArrayColumn]
 	equatable[[]int32]
+	arrayOps[int32]
 	assignable[[]int32]
 	sortable
 }
@@ -145,6 +156,7 @@ func NewInt32ArrayColumn(name string) *Int32ArrayColumn {
 	x.chain = newChain[[]int32](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]int32]{c: c}
+	x.arrayOps = arrayOps[int32]{c: c}
 	x.assignable = assignable[[]int32]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -154,6 +166,7 @@ func NewInt32ArrayColumn(name string) *Int32ArrayColumn {
 type NullableInt32ArrayColumn struct {
 	chain[*[]int32, *NullableInt32ArrayColumn]
 	nullEquatable[[]int32]
+	arrayOps[int32]
 	nullAssignable[[]int32]
 	nullness
 	sortable
@@ -170,6 +183,7 @@ func NewNullableInt32ArrayColumn(name string) *NullableInt32ArrayColumn {
 	x.chain = newChain[*[]int32](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]int32]{c: c}
+	x.arrayOps = arrayOps[int32]{c: c}
 	x.nullAssignable = nullAssignable[[]int32]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -180,6 +194,7 @@ func NewNullableInt32ArrayColumn(name string) *NullableInt32ArrayColumn {
 type BigIntArrayColumn struct {
 	chain[[]int64, *BigIntArrayColumn]
 	equatable[[]int64]
+	arrayOps[int64]
 	assignable[[]int64]
 	sortable
 }
@@ -195,6 +210,7 @@ func NewBigIntArrayColumn(name string) *BigIntArrayColumn {
 	x.chain = newChain[[]int64](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]int64]{c: c}
+	x.arrayOps = arrayOps[int64]{c: c}
 	x.assignable = assignable[[]int64]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -204,6 +220,7 @@ func NewBigIntArrayColumn(name string) *BigIntArrayColumn {
 type NullableBigIntArrayColumn struct {
 	chain[*[]int64, *NullableBigIntArrayColumn]
 	nullEquatable[[]int64]
+	arrayOps[int64]
 	nullAssignable[[]int64]
 	nullness
 	sortable
@@ -220,6 +237,7 @@ func NewNullableBigIntArrayColumn(name string) *NullableBigIntArrayColumn {
 	x.chain = newChain[*[]int64](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]int64]{c: c}
+	x.arrayOps = arrayOps[int64]{c: c}
 	x.nullAssignable = nullAssignable[[]int64]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -230,6 +248,7 @@ func NewNullableBigIntArrayColumn(name string) *NullableBigIntArrayColumn {
 type FloatArrayColumn struct {
 	chain[[]float32, *FloatArrayColumn]
 	equatable[[]float32]
+	arrayOps[float32]
 	assignable[[]float32]
 	sortable
 }
@@ -245,6 +264,7 @@ func NewFloatArrayColumn(name string) *FloatArrayColumn {
 	x.chain = newChain[[]float32](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]float32]{c: c}
+	x.arrayOps = arrayOps[float32]{c: c}
 	x.assignable = assignable[[]float32]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -254,6 +274,7 @@ func NewFloatArrayColumn(name string) *FloatArrayColumn {
 type NullableFloatArrayColumn struct {
 	chain[*[]float32, *NullableFloatArrayColumn]
 	nullEquatable[[]float32]
+	arrayOps[float32]
 	nullAssignable[[]float32]
 	nullness
 	sortable
@@ -270,6 +291,7 @@ func NewNullableFloatArrayColumn(name string) *NullableFloatArrayColumn {
 	x.chain = newChain[*[]float32](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]float32]{c: c}
+	x.arrayOps = arrayOps[float32]{c: c}
 	x.nullAssignable = nullAssignable[[]float32]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -280,6 +302,7 @@ func NewNullableFloatArrayColumn(name string) *NullableFloatArrayColumn {
 type DoubleArrayColumn struct {
 	chain[[]float64, *DoubleArrayColumn]
 	equatable[[]float64]
+	arrayOps[float64]
 	assignable[[]float64]
 	sortable
 }
@@ -295,6 +318,7 @@ func NewDoubleArrayColumn(name string) *DoubleArrayColumn {
 	x.chain = newChain[[]float64](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]float64]{c: c}
+	x.arrayOps = arrayOps[float64]{c: c}
 	x.assignable = assignable[[]float64]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -304,6 +328,7 @@ func NewDoubleArrayColumn(name string) *DoubleArrayColumn {
 type NullableDoubleArrayColumn struct {
 	chain[*[]float64, *NullableDoubleArrayColumn]
 	nullEquatable[[]float64]
+	arrayOps[float64]
 	nullAssignable[[]float64]
 	nullness
 	sortable
@@ -320,6 +345,7 @@ func NewNullableDoubleArrayColumn(name string) *NullableDoubleArrayColumn {
 	x.chain = newChain[*[]float64](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]float64]{c: c}
+	x.arrayOps = arrayOps[float64]{c: c}
 	x.nullAssignable = nullAssignable[[]float64]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -331,6 +357,7 @@ type DecimalArrayColumn struct {
 	chain[[]decimal.Decimal, *DecimalArrayColumn]
 	numericBuilder[[]decimal.Decimal, *DecimalArrayColumn]
 	equatable[[]decimal.Decimal]
+	arrayOps[decimal.Decimal]
 	assignable[[]decimal.Decimal]
 	sortable
 }
@@ -347,6 +374,7 @@ func NewDecimalArrayColumn(name string) *DecimalArrayColumn {
 	c := x.chain.c
 	x.numericBuilder = numericBuilder[[]decimal.Decimal, *DecimalArrayColumn]{c: c, self: x}
 	x.equatable = equatable[[]decimal.Decimal]{c: c}
+	x.arrayOps = arrayOps[decimal.Decimal]{c: c}
 	x.assignable = assignable[[]decimal.Decimal]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -357,6 +385,7 @@ type NullableDecimalArrayColumn struct {
 	chain[*[]decimal.Decimal, *NullableDecimalArrayColumn]
 	numericBuilder[*[]decimal.Decimal, *NullableDecimalArrayColumn]
 	nullEquatable[[]decimal.Decimal]
+	arrayOps[decimal.Decimal]
 	nullAssignable[[]decimal.Decimal]
 	nullness
 	sortable
@@ -374,6 +403,7 @@ func NewNullableDecimalArrayColumn(name string) *NullableDecimalArrayColumn {
 	c := x.chain.c
 	x.numericBuilder = numericBuilder[*[]decimal.Decimal, *NullableDecimalArrayColumn]{c: c, self: x}
 	x.nullEquatable = nullEquatable[[]decimal.Decimal]{c: c}
+	x.arrayOps = arrayOps[decimal.Decimal]{c: c}
 	x.nullAssignable = nullAssignable[[]decimal.Decimal]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -385,6 +415,7 @@ type StringArrayColumn struct {
 	chain[[]string, *StringArrayColumn]
 	lengthBuilder[[]string, *StringArrayColumn]
 	equatable[[]string]
+	arrayOps[string]
 	assignable[[]string]
 	sortable
 }
@@ -401,6 +432,7 @@ func NewStringArrayColumn(name string) *StringArrayColumn {
 	c := x.chain.c
 	x.lengthBuilder = lengthBuilder[[]string, *StringArrayColumn]{c: c, self: x}
 	x.equatable = equatable[[]string]{c: c}
+	x.arrayOps = arrayOps[string]{c: c}
 	x.assignable = assignable[[]string]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -411,6 +443,7 @@ type NullableStringArrayColumn struct {
 	chain[*[]string, *NullableStringArrayColumn]
 	lengthBuilder[*[]string, *NullableStringArrayColumn]
 	nullEquatable[[]string]
+	arrayOps[string]
 	nullAssignable[[]string]
 	nullness
 	sortable
@@ -428,6 +461,7 @@ func NewNullableStringArrayColumn(name string) *NullableStringArrayColumn {
 	c := x.chain.c
 	x.lengthBuilder = lengthBuilder[*[]string, *NullableStringArrayColumn]{c: c, self: x}
 	x.nullEquatable = nullEquatable[[]string]{c: c}
+	x.arrayOps = arrayOps[string]{c: c}
 	x.nullAssignable = nullAssignable[[]string]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -438,6 +472,7 @@ func NewNullableStringArrayColumn(name string) *NullableStringArrayColumn {
 type TimeArrayColumn struct {
 	chain[[]time.Time, *TimeArrayColumn]
 	equatable[[]time.Time]
+	arrayOps[time.Time]
 	assignable[[]time.Time]
 	sortable
 }
@@ -453,6 +488,7 @@ func NewTimeArrayColumn(name string) *TimeArrayColumn {
 	x.chain = newChain[[]time.Time](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]time.Time]{c: c}
+	x.arrayOps = arrayOps[time.Time]{c: c}
 	x.assignable = assignable[[]time.Time]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -462,6 +498,7 @@ func NewTimeArrayColumn(name string) *TimeArrayColumn {
 type NullableTimeArrayColumn struct {
 	chain[*[]time.Time, *NullableTimeArrayColumn]
 	nullEquatable[[]time.Time]
+	arrayOps[time.Time]
 	nullAssignable[[]time.Time]
 	nullness
 	sortable
@@ -478,6 +515,7 @@ func NewNullableTimeArrayColumn(name string) *NullableTimeArrayColumn {
 	x.chain = newChain[*[]time.Time](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]time.Time]{c: c}
+	x.arrayOps = arrayOps[time.Time]{c: c}
 	x.nullAssignable = nullAssignable[[]time.Time]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
@@ -488,6 +526,7 @@ func NewNullableTimeArrayColumn(name string) *NullableTimeArrayColumn {
 type UUIDArrayColumn struct {
 	chain[[]uuid.UUID, *UUIDArrayColumn]
 	equatable[[]uuid.UUID]
+	arrayOps[uuid.UUID]
 	assignable[[]uuid.UUID]
 	sortable
 }
@@ -503,6 +542,7 @@ func NewUUIDArrayColumn(name string) *UUIDArrayColumn {
 	x.chain = newChain[[]uuid.UUID](name, x)
 	c := x.chain.c
 	x.equatable = equatable[[]uuid.UUID]{c: c}
+	x.arrayOps = arrayOps[uuid.UUID]{c: c}
 	x.assignable = assignable[[]uuid.UUID]{c: c}
 	x.sortable = sortable{c: c}
 	return x
@@ -512,6 +552,7 @@ func NewUUIDArrayColumn(name string) *UUIDArrayColumn {
 type NullableUUIDArrayColumn struct {
 	chain[*[]uuid.UUID, *NullableUUIDArrayColumn]
 	nullEquatable[[]uuid.UUID]
+	arrayOps[uuid.UUID]
 	nullAssignable[[]uuid.UUID]
 	nullness
 	sortable
@@ -528,6 +569,7 @@ func NewNullableUUIDArrayColumn(name string) *NullableUUIDArrayColumn {
 	x.chain = newChain[*[]uuid.UUID](name, x)
 	c := x.chain.c
 	x.nullEquatable = nullEquatable[[]uuid.UUID]{c: c}
+	x.arrayOps = arrayOps[uuid.UUID]{c: c}
 	x.nullAssignable = nullAssignable[[]uuid.UUID]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}

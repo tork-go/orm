@@ -161,6 +161,29 @@ type JSONKey struct {
 	Value string
 }
 
+// ArrayContains is "the array holds all of these elements". Build one with an
+// array column's Has (one element) or HasAll (several). An empty list is
+// "holds all of nothing", which every array does.
+type ArrayContains struct {
+	Col    ColumnMeta
+	Values []any
+}
+
+// ArrayOverlaps is "the array holds any of these elements". Build one with an
+// array column's HasAny. An empty list overlaps nothing.
+type ArrayOverlaps struct {
+	Col    ColumnMeta
+	Values []any
+}
+
+// ArrayLength is `len(col) <op> value`: the number of elements compared
+// against a count. Build one with an array column's Len().Gt and the rest.
+type ArrayLength struct {
+	Col   ColumnMeta
+	Op    Operator
+	Value int
+}
+
 // subquerySource is something that renders as a single-column SELECT inside
 // another statement. Only this package's own query values satisfy it.
 type subquerySource interface {
@@ -240,9 +263,12 @@ func (Group) predicate()      {}
 func (Negation) predicate()   {}
 func (Existence) predicate()   {}
 func (InSubquery) predicate()  {}
-func (JSONHasKey) predicate()  {}
-func (JSONContains) predicate() {}
-func (JSONKey) predicate()     {}
+func (JSONHasKey) predicate()    {}
+func (JSONContains) predicate()  {}
+func (JSONKey) predicate()       {}
+func (ArrayContains) predicate() {}
+func (ArrayOverlaps) predicate() {}
+func (ArrayLength) predicate()   {}
 
 // And joins preds with AND.
 //

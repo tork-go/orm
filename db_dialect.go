@@ -82,6 +82,25 @@ type QueryDialect interface {
 	// rendered and the operator one of the six comparisons.
 	RenderJSONKey(quotedColumn, keyPlaceholder string, op Operator, valuePlaceholder string) (string, error)
 
+	// RenderArrayContains returns the test that an already-quoted array column
+	// holds every element its already-rendered placeholders bind. The list is
+	// never empty: an empty containment is handled before the dialect is asked,
+	// since it is true of every array.
+	//
+	// Arrays are a native type in Postgres and absent from MySQL, so a driver
+	// without them returns an error naming the operation.
+	RenderArrayContains(quotedColumn string, placeholders []string) (string, error)
+
+	// RenderArrayOverlaps returns the test that an already-quoted array column
+	// holds any of the elements its already-rendered placeholders bind. The
+	// list is never empty, for the same reason.
+	RenderArrayOverlaps(quotedColumn string, placeholders []string) (string, error)
+
+	// RenderArrayLength returns the comparison of an already-quoted array
+	// column's element count against a value, the placeholder already rendered
+	// and the operator one of the six comparisons.
+	RenderArrayLength(quotedColumn string, op Operator, placeholder string) (string, error)
+
 	// MaxBindParams reports how many parameters one statement may bind, or
 	// 0 when the database sets no practical limit.
 	//

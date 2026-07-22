@@ -233,6 +233,19 @@ func TestDistinct_InAProjection(t *testing.T) {
 	}
 }
 
+// A projection carries the source query's keyword, so it carries the
+// source query's mistakes about it too.
+func TestDistinctOn_ProjectionReportsAConflictingKeyword(t *testing.T) {
+	type row struct{ Age int }
+	_, _, err := orm.SelectAs[row](Users.With(pg()).Distinct().DistinctOn(Users.Age), Users.Age).SQL()
+	if err == nil {
+		t.Fatal("SQL() error = nil, want the pair refused in a projection too")
+	}
+	if !strings.Contains(err.Error(), "different questions") {
+		t.Errorf("error = %v", err)
+	}
+}
+
 // The reads that return a single value have no row to keep, and say so.
 func TestDistinctOn_RejectedByValueReads(t *testing.T) {
 	ctx := context.Background()

@@ -757,3 +757,46 @@ func (c *compiler) selectList(cols []ColumnMeta) (string, error) {
 	}
 	return strings.Join(parts, ", "), nil
 }
+
+// selectExprList renders a SelectAs projection's SELECT list: any mix of
+// plain columns and aggregate or window expressions.
+//
+// Unlike Predicate, SelectExpr is not sealed to this package — its only
+// method, GoType, is trivially implementable from outside it — so the
+// default case below is reachable by a caller's own bogus SelectExpr, not
+// merely defensive.
+func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
+	parts := make([]string, len(exprs))
+	for i, e := range exprs {
+		switch v := e.(type) {
+		case ColumnMeta:
+			name, err := c.column(v)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = name
+		case AggregateExpr:
+			s, err := c.aggregateExpr(v)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = s
+		default:
+			return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
+		}
+	}
+	return strings.Join(parts, ", "), nil
+}
+
+// aggregateExpr renders one AggregateExpr: an aggregate function applied to
+// a column, or COUNT(*) when col is nil, which only CountAll leaves it.
+func (c *compiler) aggregateExpr(a AggregateExpr) (string, error) {
+	if a.col == nil {
+		return "COUNT(*)", nil
+	}
+	name, err := c.column(a.col)
+	if err != nil {
+		return "", err
+	}
+	return a.fn + "(" + name + ")", nil
+}

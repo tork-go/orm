@@ -601,7 +601,7 @@ func (c *compiler) set(sets []Assignment) (string, error) {
 			return "", err
 		}
 		if a.Expr != nil {
-			rendered, err := c.renderExpr(*a.Expr)
+			rendered, err := c.expression(a.Expr)
 			if err != nil {
 				return "", err
 			}
@@ -617,37 +617,66 @@ func (c *compiler) set(sets []Assignment) (string, error) {
 	return strings.Join(parts, ", "), nil
 }
 
-// renderExpr renders the right-hand side of an Increment, Decrement or
-// SetExpr assignment: a column combined with either another column or a
-// bound value.
+// expression renders one expression: a lifted column, or two operands
+// combined by an arithmetic operator.
 //
-// The left-hand column is rendered through c.column like any other
-// reference, so an Expr built from a column this statement does not select
-// from is reported the same way a predicate over one is. The right-hand
-// side is checked for a ColumnMeta first, since that is the only other
-// shape Add/Sub/Mul/Div accept; anything else is a value to bind.
-func (c *compiler) renderExpr(e Expr) (string, error) {
-	left, err := c.column(e.left)
-	if err != nil {
-		return "", err
-	}
-	if rc, ok := e.right.(ColumnMeta); ok {
-		right, err := c.column(rc)
+// Arithmetic is always parenthesised. Precedence rules are a thing this
+// package would otherwise have to reimplement to know when parentheses are
+// needed, and getting that subtly wrong changes what a statement computes
+// rather than merely how it reads; a redundant pair of brackets costs
+// nothing and is what makes a nested expression mean what its Go reads as.
+//
+// The default is unreachable: exprKind is unexported and both of its values
+// are handled above, so only a node this package built can arrive.
+func (c *compiler) expression(e expression) (string, error) {
+	n := e.exprNode()
+	switch n.kind {
+	case exprColumn:
+		return c.column(n.col)
+	case exprArith:
+		left, err := c.operand(n.left, n.goType)
 		if err != nil {
 			return "", err
 		}
-		return left + " " + e.op.String() + " " + right, nil
+		right, err := c.operand(n.right, n.goType)
+		if err != nil {
+			return "", err
+		}
+		return "(" + left + " " + n.op.String() + " " + right + ")", nil
 	}
-	// c.value's error path is unreachable here: it only ever fails for a
-	// document column's value, and numericAssignable — the only source of
-	// an Expr — is embedded solely on numeric column types, none of which
-	// are ever JSON or JSONB. Checked anyway, since Expr's own fields carry
-	// no such guarantee for a caller reaching this some other way.
-	v, err := c.value(e.left, e.right)
-	if err != nil {
-		return "", err
+	return "", fmt.Errorf("orm: table %q: unknown expression", c.table)
+}
+
+// operand renders one side of an expression: a nested expression, a column,
+// or a literal to bind.
+//
+// want is the expression's own Go type, which a literal is checked against
+// before it is bound. That check is what the chained builders trade for
+// their ergonomics: Times takes an any so it can accept a column, an
+// expression or a value without Go overloading, so a wrongly typed literal
+// has to be caught here instead of by the compiler. It is reported the same
+// way Find already reports a wrongly typed key, naming both types, rather
+// than left for the database to complain about.
+//
+// A document column's codec is not run for a literal here. Arithmetic is
+// only ever reachable from a numeric column, and a document column lifted
+// by Value has its own operators (HasKey, Contains, Key) that are the right
+// way to ask about it, so an encoded document has no place in an
+// expression.
+func (c *compiler) operand(v any, want reflect.Type) (string, error) {
+	switch x := v.(type) {
+	case expression:
+		return c.expression(x)
+	case ColumnMeta:
+		return c.column(x)
 	}
-	return left + " " + e.op.String() + " " + c.args.bind(v), nil
+	if want != nil && v != nil {
+		if got := reflect.TypeOf(v); !got.AssignableTo(want) {
+			return "", fmt.Errorf("orm: table %q: this expression is %s but the value "+
+				"combined with it is %s", c.table, want, got)
+		}
+	}
+	return c.args.bind(v), nil
 }
 
 // rowsPerStatement returns how many of total rows one statement may carry
@@ -775,6 +804,12 @@ func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
 				return "", err
 			}
 			parts[i] = name
+		case expression:
+			s, err := c.expression(v)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = s
 		case AggregateExpr:
 			s, err := c.aggregateExpr(v)
 			if err != nil {

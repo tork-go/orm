@@ -42,7 +42,7 @@ type IntColumn struct {
 	ordered[int]
 	assignable[int]
 	sortable
-	numericAssignable[int]
+	numericOps[int]
 }
 
 var _ interface {
@@ -60,7 +60,7 @@ func NewIntColumn(name string) *IntColumn {
 	x.ordered = ordered[int]{c: c}
 	x.assignable = assignable[int]{c: c}
 	x.sortable = sortable{c: c}
-	x.numericAssignable = numericAssignable[int]{c: c}
+	x.numericOps = numericOps[int]{c: c}
 	return x
 }
 
@@ -102,7 +102,7 @@ type Int32Column struct {
 	ordered[int32]
 	assignable[int32]
 	sortable
-	numericAssignable[int32]
+	numericOps[int32]
 }
 
 var _ interface {
@@ -122,7 +122,7 @@ func NewInt32Column(name string) *Int32Column {
 	x.ordered = ordered[int32]{c: c}
 	x.assignable = assignable[int32]{c: c}
 	x.sortable = sortable{c: c}
-	x.numericAssignable = numericAssignable[int32]{c: c}
+	x.numericOps = numericOps[int32]{c: c}
 	return x
 }
 
@@ -164,7 +164,7 @@ type BigIntColumn struct {
 	ordered[int64]
 	assignable[int64]
 	sortable
-	numericAssignable[int64]
+	numericOps[int64]
 }
 
 var _ interface {
@@ -182,7 +182,7 @@ func NewBigIntColumn(name string) *BigIntColumn {
 	x.ordered = ordered[int64]{c: c}
 	x.assignable = assignable[int64]{c: c}
 	x.sortable = sortable{c: c}
-	x.numericAssignable = numericAssignable[int64]{c: c}
+	x.numericOps = numericOps[int64]{c: c}
 	return x
 }
 
@@ -223,7 +223,7 @@ type FloatColumn struct {
 	ordered[float32]
 	assignable[float32]
 	sortable
-	numericAssignable[float32]
+	numericOps[float32]
 }
 
 var _ interface {
@@ -241,7 +241,7 @@ func NewFloatColumn(name string) *FloatColumn {
 	x.ordered = ordered[float32]{c: c}
 	x.assignable = assignable[float32]{c: c}
 	x.sortable = sortable{c: c}
-	x.numericAssignable = numericAssignable[float32]{c: c}
+	x.numericOps = numericOps[float32]{c: c}
 	return x
 }
 
@@ -280,7 +280,7 @@ type DoubleColumn struct {
 	ordered[float64]
 	assignable[float64]
 	sortable
-	numericAssignable[float64]
+	numericOps[float64]
 }
 
 var _ interface {
@@ -297,7 +297,7 @@ func NewDoubleColumn(name string) *DoubleColumn {
 	x.ordered = ordered[float64]{c: c}
 	x.assignable = assignable[float64]{c: c}
 	x.sortable = sortable{c: c}
-	x.numericAssignable = numericAssignable[float64]{c: c}
+	x.numericOps = numericOps[float64]{c: c}
 	return x
 }
 
@@ -339,7 +339,7 @@ type DecimalColumn struct {
 	ordered[decimal.Decimal]
 	assignable[decimal.Decimal]
 	sortable
-	numericAssignable[decimal.Decimal]
+	numericOps[decimal.Decimal]
 }
 
 var _ interface {
@@ -358,7 +358,7 @@ func NewDecimalColumn(name string) *DecimalColumn {
 	x.ordered = ordered[decimal.Decimal]{c: c}
 	x.assignable = assignable[decimal.Decimal]{c: c}
 	x.sortable = sortable{c: c}
-	x.numericAssignable = numericAssignable[decimal.Decimal]{c: c}
+	x.numericOps = numericOps[decimal.Decimal]{c: c}
 	return x
 }
 

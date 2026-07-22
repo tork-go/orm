@@ -154,6 +154,22 @@ func (b chain[T, Self]) IsClientGenerated() bool { return b.c.IsClientGenerated(
 // GoType returns the column's Go value type, T.
 func (b chain[T, Self]) GoType() reflect.Type { return b.c.GoType() }
 
+// Value lifts the column into an expression, so it can be compared against
+// another column or an expression rather than against a value.
+//
+//	Items.With(db).Where(Items.Price.Value().GreaterThan(Items.Cost))
+//
+// A column's own Equals, GreaterThan and the rest take a value of the
+// column's type, which is what makes Users.Age.GreaterThan("x") a compile
+// error. That also means they cannot accept a column, since Go has no
+// overloading and a second mixin declaring the same method would make the
+// selector ambiguous. Value is the way across: an expression's comparisons
+// accept a column, an expression or a literal.
+//
+// Arithmetic needs no lift, since it already yields an expression:
+// Items.Price.Times(Items.Qty).GreaterThan(100.0) reads straight through.
+func (b chain[T, Self]) Value() Expr[T] { return colExpr[T](b.c) }
+
 // IsNullable reports whether T is a pointer kind.
 func (b chain[T, Self]) IsNullable() bool { return b.c.IsNullable() }
 

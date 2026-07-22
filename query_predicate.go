@@ -325,10 +325,15 @@ type Ordering struct {
 // query_expr.go), rendering `col = col <op> ...` rather than binding a
 // literal. It is nil for every assignment Set/SetPtr/SetNull produce,
 // which is the ordinary case and the only one that existed before Expr did.
+//
+// It holds the unexported expression interface rather than a concrete
+// Expr[T], for the reason InSubquery.Sub holds subquerySource: the field is
+// readable by anyone but satisfiable only by this package, and Assignment
+// itself is not parameterised by the column's type.
 type Assignment struct {
 	Col   ColumnMeta
 	Value any
-	Expr  *Expr
+	Expr  expression
 }
 
 // escapeLike neutralises the three characters LIKE treats specially, so a

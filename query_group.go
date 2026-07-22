@@ -192,7 +192,7 @@ func (g *Grouped[K, V]) compile() (string, []any, error) {
 		return "", nil, err
 	}
 
-	where, err := c.where(g.q.preds)
+	where, err := c.where(g.q.effectivePreds())
 	if err != nil {
 		return "", nil, err
 	}

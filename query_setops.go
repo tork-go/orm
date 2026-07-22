@@ -124,7 +124,7 @@ func (f *Filtered[E]) compileUpdateAll(op string, sets []Assignment) (string, []
 			"pass at least one assignment, as Users.Active.Set(false)", f.st.name, op)
 	}
 
-	c := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
+	c := f.compiler()
 
 	// The SET clause is rendered before the WHERE so its values are bound
 	// first, which is the order they appear in the statement.
@@ -132,11 +132,11 @@ func (f *Filtered[E]) compileUpdateAll(op string, sets []Assignment) (string, []
 	if err != nil {
 		return "", nil, err
 	}
-	where, err := c.where(f.preds)
+	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return "", nil, err
 	}
-	if err := f.requireFilter(op, "update", where); err != nil {
+	if err := f.requireFilter(op, "update"); err != nil {
 		return "", nil, err
 	}
 	return "UPDATE " + c.d.QuoteIdent(f.st.name) + " SET " + assignments + where,
@@ -195,12 +195,12 @@ func (f *Filtered[E]) compileDeleteAll(op string) (string, []any, error) {
 		return "", nil, err
 	}
 
-	c := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
-	where, err := c.where(f.preds)
+	c := f.compiler()
+	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return "", nil, err
 	}
-	if err := f.requireFilter(op, "delete", where); err != nil {
+	if err := f.requireFilter(op, "delete"); err != nil {
 		return "", nil, err
 	}
 	return "DELETE FROM " + c.d.QuoteIdent(f.st.name) + where, c.args.args, nil
@@ -279,11 +279,32 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 // a caller saying every row and meaning it, so that stays allowed and is the
 // escape hatch this points at rather than a method of its own.
 //
+// It compiles the caller's own conditions with a compiler of its own,
+// rather than reading the real statement's WHERE, and never the table's
+// implicit default scope: that scope is not something the caller wrote,
+// and its presence must not silently defeat this guard on exactly the
+// tables where an accidental mass write is worst.
+//
 // It tests the compiled clause rather than the number of predicates, so a
 // condition that is always true, like the empty And, is caught too: that
 // compiles away to no WHERE at all and would otherwise slip past a count.
-func (f *Filtered[E]) requireFilter(op, verb, where string) error {
-	if !f.whereCalled || where != "" {
+//
+// check.where's error return is unreachable from either call site today:
+// both already compile f.preds, as part of the larger effectivePreds, into
+// the real statement before calling this, so a predicate bad enough to
+// fail here would already have failed there. It is kept and handled rather
+// than ignored because compiler.where can fail in general, and a future
+// call site is not guaranteed to compile first.
+func (f *Filtered[E]) requireFilter(op, verb string) error {
+	if !f.whereCalled {
+		return nil
+	}
+	check := &compiler{d: f.db.d, args: &argBuilder{d: f.db.d}, table: f.st.name}
+	where, err := check.where(f.preds)
+	if err != nil {
+		return err
+	}
+	if where != "" {
 		return nil
 	}
 	return fmt.Errorf("orm: table %q: Where added no condition, so %s would %s every "+

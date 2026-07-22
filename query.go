@@ -74,6 +74,11 @@ type queryState struct {
 	// distinct drops duplicate rows.
 	distinct bool
 
+	// unscoped disables the table's default scope for this query: its
+	// Scoper predicate and/or its soft-delete "not yet deleted" filter.
+	// See Unscoped.
+	unscoped bool
+
 	// loads are the relationships to fetch alongside the rows, each in a
 	// statement of its own once the rows are in hand. See query_load.go.
 	loads []loadSpec
@@ -312,13 +317,13 @@ func (f *Filtered[E]) compileSelect() (string, []any, error) {
 
 // compiler starts a compiler for this query's table.
 func (q queryState) compiler() *compiler {
-	return &compiler{d: q.db.d, args: &argBuilder{d: q.db.d}, table: q.st.name}
+	return &compiler{d: q.db.d, args: &argBuilder{d: q.db.d}, table: q.st.name, unscoped: q.unscoped}
 }
 
 // compileRead wraps list in the clauses every read shares, so a projection, a
 // single column and a whole row differ only in what they select.
 func (q queryState) compileRead(c *compiler, list string) (string, error) {
-	where, err := c.where(q.preds)
+	where, err := c.where(q.effectivePreds())
 	if err != nil {
 		return "", err
 	}
@@ -493,7 +498,7 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	c := f.compiler()
-	where, err := c.where(f.preds)
+	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return 0, err
 	}

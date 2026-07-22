@@ -1,6 +1,9 @@
 package orm
 
-import "reflect"
+import (
+	"reflect"
+	"sync"
+)
 
 // NoEntity is the entity type for a model that maps to no row struct.
 //
@@ -45,6 +48,20 @@ type tableState struct {
 	// DefineTable rather than on every statement that needs them.
 	pk       []ColumnMeta
 	identity ColumnMeta
+
+	// scoper is the model itself when it declares a default scope. Stashed
+	// rather than called during declaration; see Scoper.
+	scoper Scoper
+
+	// softDelete is the column Delete and DeleteAll stamp instead of
+	// removing the row, and every read excludes rows where it is set
+	// unless the query is Unscoped. nil when the table declares none.
+	softDelete ColumnMeta
+
+	// scopeOnce and scopeVal cache the table's combined default-scope
+	// predicate; see defaultScope.
+	scopeOnce sync.Once
+	scopeVal  Predicate
 }
 
 // Table gives a model struct its database identity and, through E, the row

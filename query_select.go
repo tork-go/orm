@@ -152,7 +152,7 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	where, err := c.where(s.q.preds)
+	where, err := c.where(s.q.effectivePreds())
 	if err != nil {
 		return 0, err
 	}

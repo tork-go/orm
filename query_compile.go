@@ -47,6 +47,13 @@ type compiler struct {
 	// and an unqualified name would be resolved by how the two happen to be
 	// nested rather than by what the caller wrote.
 	qualify bool
+
+	// unscoped carries the outer query's Unscoped call into whatever this
+	// compiler renders, so a Has or HasNone predicate it compiles, or a
+	// sub-compiler it starts, treats the related table's default scope the
+	// same way the outer query treats its own. See existsDirect and
+	// existsThrough.
+	unscoped bool
 }
 
 // column renders a column reference, checking it belongs to the statement.

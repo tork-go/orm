@@ -345,7 +345,10 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 }
 
 // bindRelations attaches every relationship marker on m to its table, then
-// applies whatever the model's Relations method names.
+// stashes whatever optional interfaces m implements: Relater, for the
+// model's own Relations method, and Scoper, for its default scope. Both
+// are stashed rather than consulted here; see the field comments on
+// tableState.
 //
 // Markers are found by taking each field's address, since a marker is a
 // struct value on the model and binding has to write to the one the model
@@ -393,6 +396,12 @@ func bindRelations(table string, m Model, st *tableState) error {
 	// when a relationship is first used instead.
 	if r, ok := m.(Relater); ok {
 		st.relater = r
+	}
+	// Scoper is stashed rather than called for the same reason: DefaultScope
+	// commonly reaches for another table's column, which package level
+	// variable initialisation order may not have reached yet.
+	if s, ok := m.(Scoper); ok {
+		st.scoper = s
 	}
 	return nil
 }

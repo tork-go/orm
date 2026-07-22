@@ -100,7 +100,7 @@ func scalarAggregate[R any](ctx context.Context, src QuerySource, col ColumnMeta
 	if err != nil {
 		return zero, false, err
 	}
-	where, err := c.where(q.preds)
+	where, err := c.where(q.effectivePreds())
 	if err != nil {
 		return zero, false, err
 	}

@@ -167,6 +167,9 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 
 	case InSubquery:
 		return c.inSubquery(p)
+
+	case rawPredicate:
+		return c.raw(p)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown predicate %T", c.table, p)
 }

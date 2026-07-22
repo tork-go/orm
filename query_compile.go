@@ -1161,69 +1161,51 @@ func (c *compiler) selectExprListAs(exprs []SelectExpr, aliases []string) (strin
 	}
 	parts := make([]string, len(exprs))
 	for i, e := range exprs {
-		switch v := e.(type) {
-		case ColumnMeta:
-			name, err := c.column(v)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = name
-		case expression:
-			s, err := c.expression(v)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = s
-		case subquerySource:
-			// A subquery yielding one column reads as a column of this
-			// statement. It compiles through the same compileWithin an
-			// InQuery uses, so it shares this statement's arguments and
-			// qualifies its own columns.
-			s, err := v.compileWithin(c)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = "(" + s + ")"
-		case AggregateExpr:
-			s, err := c.aggregateExpr(v)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = s
-		case WindowExpr:
-			s, err := c.windowExpr(v)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = s
-		default:
-			return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
+		s, err := c.selectTerm(e)
+		if err != nil {
+			return "", err
 		}
 		if aliases != nil {
-			parts[i] += " AS " + c.d.QuoteIdent(aliases[i])
+			s += " AS " + c.d.QuoteIdent(aliases[i])
 		}
+		parts[i] = s
 	}
 	return strings.Join(parts, ", "), nil
 }
 
-// aggregateExpr renders one AggregateExpr: an aggregate function applied to
-// a column, or COUNT(*) when col is nil, which only CountAll leaves it.
-func (c *compiler) aggregateExpr(a AggregateExpr) (string, error) {
-	if a.expr != nil {
-		s, err := c.expression(a.expr)
+// selectTerm renders one item a projection can name: a column, an expression
+// — which an aggregate now is — a single-column subquery, or a window
+// function.
+//
+// It is shared by the SELECT list and the GROUP BY, so a computed value
+// spells identically in both. A database matches the two by the expression
+// it parses, not by any name, so rendering them through one function is what
+// makes grouping by a call work at all.
+//
+// Unlike Predicate, SelectExpr is not sealed to this package — its only
+// method, GoType, is trivially implementable from outside it — so the
+// default case below is reachable by a caller's own bogus SelectExpr, not
+// merely defensive.
+func (c *compiler) selectTerm(e SelectExpr) (string, error) {
+	switch v := e.(type) {
+	case ColumnMeta:
+		return c.column(v)
+	case expression:
+		return c.expression(v)
+	case subquerySource:
+		// A subquery yielding one column reads as a column of this
+		// statement. It compiles through the same compileWithin an InQuery
+		// uses, so it shares this statement's arguments and qualifies its
+		// own columns.
+		s, err := v.compileWithin(c)
 		if err != nil {
 			return "", err
 		}
-		return a.fn + "(" + s + ")", nil
+		return "(" + s + ")", nil
+	case WindowExpr:
+		return c.windowExpr(v)
 	}
-	if a.col == nil {
-		return "COUNT(*)", nil
-	}
-	name, err := c.column(a.col)
-	if err != nil {
-		return "", err
-	}
-	return a.fn + "(" + name + ")", nil
+	return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
 }
 
 // windowExpr renders one WindowExpr: the function, and its OVER clause's

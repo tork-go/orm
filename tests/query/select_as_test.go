@@ -102,7 +102,7 @@ func TestSelectAs_Having(t *testing.T) {
 		Authors.With(pg()).LeftJoin(Authors.Books),
 		Authors.Name,
 		bookCount,
-	).GroupBy(Authors.Name).Having(bookCount, orm.OpGreaterOrEqual, 3).SQL()
+	).GroupBy(Authors.Name).Having(bookCount.GreaterOrEqual(int64(3))).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -112,7 +112,9 @@ func TestSelectAs_Having(t *testing.T) {
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
-	if len(args) != 1 || args[0] != 3 {
+	// COUNT is an int64, so what it is compared against is one too: the
+	// aggregate's own type is what its comparisons check a value against.
+	if len(args) != 1 || args[0] != int64(3) {
 		t.Errorf("args = %v, want [3]", args)
 	}
 }
@@ -122,7 +124,7 @@ func TestSelectAs_Having(t *testing.T) {
 func TestSelectAs_HavingAggregateNotInSelectList(t *testing.T) {
 	type report struct{ Name string }
 	sql, _, err := orm.SelectAs[report](Authors.With(pg()).LeftJoin(Authors.Books), Authors.Name).
-		GroupBy(Authors.Name).Having(orm.CountAll(), orm.OpGreaterThan, 0).SQL()
+		GroupBy(Authors.Name).Having(orm.CountAll().GreaterThan(int64(0))).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -336,7 +338,7 @@ func TestSelectAs_GroupByForeignColumnRejected(t *testing.T) {
 func TestSelectAs_HavingForeignAggregateRejected(t *testing.T) {
 	type report struct{ Name string }
 	_, _, err := orm.SelectAs[report](Authors.With(pg()), Authors.Name).
-		GroupBy(Authors.Name).Having(orm.CountOf(Books.ID), orm.OpGreaterThan, 0).SQL()
+		GroupBy(Authors.Name).Having(orm.CountOf(Books.ID).GreaterThan(int64(0))).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the foreign column in Having rejected")
 	}

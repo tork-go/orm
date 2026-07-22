@@ -142,13 +142,14 @@ func TestAggregateOfExpr_ForeignColumnRejected(t *testing.T) {
 	}
 }
 
-// Having takes one, since it renders any AggregateExpr on its own terms.
+// Having takes one, since an aggregate over an expression compares like any
+// other expression.
 func TestAggregateOfExpr_InHaving(t *testing.T) {
 	type report struct{ Username string }
 	sql, _, err := orm.SelectAs[report](Users.With(pg()), Users.Username).
 		GroupBy(Users.Username).
-		Having(orm.SumOfExpr(orm.Case[int]().When(Users.Age.GreaterOrEqual(18), 1).Else(0)),
-			orm.OpGreaterThan, 0).
+		Having(orm.SumOfExpr(orm.Case[int]().When(Users.Age.GreaterOrEqual(18), 1).Else(0)).
+			GreaterThan(0)).
 		SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)

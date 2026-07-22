@@ -18,54 +18,39 @@ type SelectExpr interface {
 	GoType() reflect.Type
 }
 
-// AggregateExpr is one aggregate expression in a SelectAs projection or a
-// GroupBy's aggregate slot: COUNT, SUM, AVG, MIN or MAX over a column, or
-// COUNT(*) for CountAll.
-type AggregateExpr struct {
-	fn  string     // COUNT, SUM, AVG, MIN, MAX
-	col ColumnMeta // nil for CountAll, and for the OfExpr forms
+// An aggregate is an ordinary expression: a call, marked as one so DISTINCT
+// has somewhere to attach. That is what lets it be compared against another
+// aggregate, combined with arithmetic, ordered by, and read by SelectAs,
+// none of which needed a rule of its own.
+//
+//	orm.SumOf(Sales.Revenue).DividedBy(orm.CountAll())
+//	orm.SumOf(Sales.Revenue).GreaterThan(orm.SumOf(Sales.Cost))
+//	orm.CountOf(Books.AuthorID).Distinct()
 
-	// expr is set instead of col by the OfExpr forms, which aggregate a
-	// computed value rather than a stored one. Both nil is CountAll.
-	expr   expression
-	goType reflect.Type
-}
+// CountOf is COUNT(col), how many rows have a value in that column.
+func CountOf(col ColumnMeta) Expr[int64] { return aggregate[int64]("COUNT", col) }
 
-// GoType returns the Go type the aggregate's result decodes as.
-func (a AggregateExpr) GoType() reflect.Type { return a.goType }
-
-// CountOf is COUNT(col).
-func CountOf(col ColumnMeta) AggregateExpr {
-	return AggregateExpr{fn: "COUNT", col: col, goType: reflect.TypeFor[int64]()}
-}
-
-// CountAll is COUNT(*).
-func CountAll() AggregateExpr {
-	return AggregateExpr{fn: "COUNT", goType: reflect.TypeFor[int64]()}
+// CountAll is COUNT(*), how many rows there are.
+func CountAll() Expr[int64] {
+	e := aggregate[int64]("COUNT")
+	e.n.star = true
+	return e
 }
 
 // AvgOf is AVG(col), always a float64 whatever the column holds, for the
 // reason the free function Avg gives: a mean of integers is not an
 // integer, and rounding it silently would be a lie.
-func AvgOf(col ColumnMeta) AggregateExpr {
-	return AggregateExpr{fn: "AVG", col: col, goType: reflect.TypeFor[float64]()}
-}
+func AvgOf(col ColumnMeta) Expr[float64] { return aggregate[float64]("AVG", col) }
 
 // SumOf is SUM(col), typed by the column: T is inferred from col, the same
 // way the free function Sum's is.
-func SumOf[T any](col Ref[T]) AggregateExpr {
-	return AggregateExpr{fn: "SUM", col: col, goType: reflect.TypeFor[T]()}
-}
+func SumOf[T any](col Ref[T]) Expr[T] { return aggregate[T]("SUM", col) }
 
 // MinOf is MIN(col), typed by the column.
-func MinOf[T any](col Ref[T]) AggregateExpr {
-	return AggregateExpr{fn: "MIN", col: col, goType: reflect.TypeFor[T]()}
-}
+func MinOf[T any](col Ref[T]) Expr[T] { return aggregate[T]("MIN", col) }
 
 // MaxOf is MAX(col), typed by the column.
-func MaxOf[T any](col Ref[T]) AggregateExpr {
-	return AggregateExpr{fn: "MAX", col: col, goType: reflect.TypeFor[T]()}
-}
+func MaxOf[T any](col Ref[T]) Expr[T] { return aggregate[T]("MAX", col) }
 
 // The OfExpr forms aggregate a value the database computes rather than a
 // stored column: arithmetic, a CASE, anything an expression can be.
@@ -88,38 +73,19 @@ func MaxOf[T any](col Ref[T]) AggregateExpr {
 // the column.
 
 // CountOfExpr is COUNT(expr).
-func CountOfExpr[T any](e Expr[T]) AggregateExpr {
-	return AggregateExpr{fn: "COUNT", expr: e, goType: reflect.TypeFor[int64]()}
-}
+func CountOfExpr[T any](e Expr[T]) Expr[int64] { return aggregate[int64]("COUNT", e) }
 
 // SumOfExpr is SUM(expr), typed by the expression.
-func SumOfExpr[T any](e Expr[T]) AggregateExpr {
-	return AggregateExpr{fn: "SUM", expr: e, goType: reflect.TypeFor[T]()}
-}
+func SumOfExpr[T any](e Expr[T]) Expr[T] { return aggregate[T]("SUM", e) }
 
 // AvgOfExpr is AVG(expr), always a float64 for the reason AvgOf gives.
-func AvgOfExpr[T any](e Expr[T]) AggregateExpr {
-	return AggregateExpr{fn: "AVG", expr: e, goType: reflect.TypeFor[float64]()}
-}
+func AvgOfExpr[T any](e Expr[T]) Expr[float64] { return aggregate[float64]("AVG", e) }
 
 // MinOfExpr is MIN(expr), typed by the expression.
-func MinOfExpr[T any](e Expr[T]) AggregateExpr {
-	return AggregateExpr{fn: "MIN", expr: e, goType: reflect.TypeFor[T]()}
-}
+func MinOfExpr[T any](e Expr[T]) Expr[T] { return aggregate[T]("MIN", e) }
 
 // MaxOfExpr is MAX(expr), typed by the expression.
-func MaxOfExpr[T any](e Expr[T]) AggregateExpr {
-	return AggregateExpr{fn: "MAX", expr: e, goType: reflect.TypeFor[T]()}
-}
-
-// projectionHaving is one HAVING term of a Projection: which of its own
-// AggregateExpr values it compares, so a Having naming an aggregate the
-// SELECT list never listed is rejected rather than silently accepted.
-type projectionHaving struct {
-	expr  AggregateExpr
-	op    Operator
-	value any
-}
+func MaxOfExpr[T any](e Expr[T]) Expr[T] { return aggregate[T]("MAX", e) }
 
 // Projection is a computed read: a source query's conditions and ordering,
 // carried from a QuerySource the same way Scalars and Grouped carry them,
@@ -129,8 +95,8 @@ type Projection[T any] struct {
 	q     queryState
 	exprs []SelectExpr
 
-	groupBy []ColumnMeta
-	having  []projectionHaving
+	groupBy []SelectExpr
+	having  []Predicate
 	ords    []Ordering
 	limit   *int
 }
@@ -199,9 +165,21 @@ func checkProjectionShape[T any](exprs []SelectExpr) error {
 }
 
 // GroupBy adds a GROUP BY clause. Terms accumulate across calls.
-func (p *Projection[T]) GroupBy(cols ...ColumnMeta) *Projection[T] {
+//
+// A term is a column or any expression the SELECT list could carry, which is
+// what the report that groups by a computed value needs:
+//
+//	month := orm.Fn[time.Time]("date_trunc", "month", Orders.CreatedAt)
+//	orm.SelectAs[Monthly](Orders.With(db), month, orm.SumOf(Orders.Total)).
+//	    GroupBy(month)
+//
+// The expression is written out again in the GROUP BY rather than referred
+// to by its position in the SELECT list. An output column's ordinal is legal
+// in most databases and reads as a magic number in all of them, which is the
+// reason Grouped's own ordering repeats its aggregate too.
+func (p *Projection[T]) GroupBy(terms ...SelectExpr) *Projection[T] {
 	out := p.clone()
-	out.groupBy = append(out.groupBy, cols...)
+	out.groupBy = append(out.groupBy, terms...)
 	return out
 }
 
@@ -224,16 +202,30 @@ func (p *Projection[T]) Limit(n int) *Projection[T] {
 	return out
 }
 
-// Having keeps only the groups whose aggregate compares as given. expr is
-// rendered on its own terms, the same as any AggregateExpr passed to
-// SelectAs is, so it need not be one already in the SELECT list — SQL
-// itself allows HAVING COUNT(*) > 5 without COUNT(*) selected, and this
-// follows it. Passing one of SelectAs's own expressions is the usual case;
-// a Projection may carry several aggregates, unlike Grouped's implicit
-// single one, so Having has to say which.
-func (p *Projection[T]) Having(expr AggregateExpr, op Operator, value any) *Projection[T] {
+// Having keeps only the groups matching the given conditions.
+//
+//	orm.SelectAs[Report](Sales.With(db), Sales.Region, orm.SumOf(Sales.Revenue)).
+//	    GroupBy(Sales.Region).
+//	    Having(orm.SumOf(Sales.Revenue).GreaterThan(1000))
+//
+// It takes predicates, exactly as Where does, so everything that composes a
+// condition composes here: several accumulate and are joined with AND, orm.Or
+// nests alternatives, and both sides may be aggregates.
+//
+//	.Having(orm.SumOf(Sales.Revenue).GreaterThan(orm.SumOf(Sales.Cost)))
+//	.Having(orm.Or(orm.CountAll().GreaterThan(10), orm.AvgOf(Items.Price).LessThan(5.0)))
+//
+// A condition need not name an aggregate already in the SELECT list: SQL
+// allows HAVING COUNT(*) > 5 with nothing counted in the output, and this
+// follows it rather than second-guessing which aggregates a caller meant to
+// see.
+//
+// The difference from Where is which rows each is asked about. Where filters
+// rows before they are grouped; Having filters the groups afterwards, and is
+// the only one of the two that may name an aggregate at all.
+func (p *Projection[T]) Having(preds ...Predicate) *Projection[T] {
 	out := p.clone()
-	out.having = append(out.having, projectionHaving{expr: expr, op: op, value: value})
+	out.having = append(out.having, preds...)
 	return out
 }
 
@@ -243,8 +235,8 @@ func (p *Projection[T]) clone() *Projection[T] {
 	out := *p
 	out.q.preds = append([]Predicate(nil), p.q.preds...)
 	out.exprs = append([]SelectExpr(nil), p.exprs...)
-	out.groupBy = append([]ColumnMeta(nil), p.groupBy...)
-	out.having = append([]projectionHaving(nil), p.having...)
+	out.groupBy = append([]SelectExpr(nil), p.groupBy...)
+	out.having = append([]Predicate(nil), p.having...)
 	out.ords = append([]Ordering(nil), p.ords...)
 	return &out
 }
@@ -338,41 +330,46 @@ func (p *Projection[T]) derivedShape() []reflect.Type {
 func (p *Projection[T]) derivedDB() *DB { return p.q.db }
 
 // groupByClause renders GROUP BY, or "" when there is nothing to group by.
+//
+// A term renders exactly as it would in the SELECT list, through the same
+// selectTerm, which is what lets a computed value be grouped by: the two
+// clauses have to spell it identically for the database to see one
+// expression rather than two.
 func (p *Projection[T]) groupByClause(c *compiler) (string, error) {
 	if len(p.groupBy) == 0 {
 		return "", nil
 	}
 	parts := make([]string, len(p.groupBy))
-	for i, col := range p.groupBy {
-		name, err := c.column(col)
+	for i, term := range p.groupBy {
+		s, err := c.selectTerm(term)
 		if err != nil {
 			return "", err
 		}
-		parts[i] = name
+		parts[i] = s
 	}
 	return " GROUP BY " + strings.Join(parts, ", "), nil
 }
 
-// havingClause renders HAVING, or "" when there are no terms.
+// havingClause renders HAVING, or "" when there are no conditions.
 //
-// Each term's aggregate is re-rendered rather than referred to by
-// position, the same reason Grouped's orderClause re-renders its own
-// aggregate: repeating the expression is what every database understands,
-// where an output column's ordinal position is legal but reads as a magic
-// number.
+// The conditions are rendered by the same group a WHERE's are, so they are
+// joined with AND and nest through orm.Or identically. The one difference is
+// where the clause lands, which is what decides whether an aggregate may
+// appear in it.
+//
+// Each aggregate is written out again rather than referred to by its
+// position in the SELECT list, the same reason Grouped's orderClause repeats
+// its own: an output column's ordinal is legal in most databases and reads
+// as a magic number in all of them.
 func (p *Projection[T]) havingClause(c *compiler) (string, error) {
 	if len(p.having) == 0 {
 		return "", nil
 	}
-	parts := make([]string, len(p.having))
-	for i, h := range p.having {
-		agg, err := c.aggregateExpr(h.expr)
-		if err != nil {
-			return "", err
-		}
-		parts[i] = agg + " " + h.op.String() + " " + c.args.bind(h.value)
+	s, err := c.group(Group{Conj: ConjAnd, Preds: p.having})
+	if err != nil {
+		return "", err
 	}
-	return " HAVING " + strings.Join(parts, " AND "), nil
+	return " HAVING " + s, nil
 }
 
 // All runs the query and returns every matching row.

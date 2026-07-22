@@ -4,13 +4,15 @@ import "reflect"
 
 // WindowExpr is a window function in a SelectAs projection: a per-row rank
 // computed over a partition of the result, rather than collapsing rows the
-// way an AggregateExpr does.
+// way an aggregate does.
 //
-// v1 is read-only: nothing here can filter on a window function's own
-// result (a "top 3 per group" query), since that needs the result wrapped
-// as a derived table, which Projection does not yet support as a
-// QuerySource. Filter in Go after All, or reach for RawQuery, until that
-// lands.
+// Filtering on a window function's own result — the "top 3 per group" query
+// — is written by wrapping the projection as a derived table, since no
+// statement can name a window function in its own WHERE. See DefineDerived
+// and DerivedTable.From.
+//
+// The vocabulary here is the three ranking functions. LAG, LEAD, NTILE,
+// aggregates over a window and frame clauses are not built yet.
 type WindowExpr struct {
 	fn        string // ROW_NUMBER, RANK, DENSE_RANK
 	partition []ColumnMeta

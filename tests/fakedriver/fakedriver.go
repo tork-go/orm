@@ -459,6 +459,16 @@ func (d *Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placeh
 	return "SIZE(" + quotedColumn + ") " + op.String() + " " + placeholder, nil
 }
 
+// RenderFullText spells the match as a function unlike Postgres's operators,
+// and fails when NoFullText is set so the database with no full-text search has
+// somewhere to be tested.
+func (d *Dialect) RenderFullText(quotedColumn, placeholder string) (string, error) {
+	if d.NoFullText {
+		return "", errors.New("fake: this database has no full-text search")
+	}
+	return "SEARCH(" + quotedColumn + ", " + placeholder + ")", nil
+}
+
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
 // functional, backed by an in-memory map, for testing migrate's runner.
@@ -498,6 +508,10 @@ type Dialect struct {
 	// NoArray makes the three array renderers fail, standing in for a database
 	// with no native array type, as MySQL is.
 	NoArray bool
+
+	// NoFullText makes RenderFullText fail, standing in for a database with no
+	// full-text search facility.
+	NoFullText bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

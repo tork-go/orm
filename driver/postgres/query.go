@@ -146,6 +146,19 @@ func (Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placehold
 	return "cardinality(" + quotedColumn + ") " + op.String() + " " + placeholder, nil
 }
 
+// RenderFullText returns Postgres's full-text match, parsing the query with
+// websearch_to_tsquery.
+//
+// That parser is the one that accepts what a search box contains — quoted
+// "phrases", -exclusions, and or — and returns an empty query rather than an
+// error on malformed input, where to_tsquery raises a syntax error on a stray
+// operator. Both it and to_tsvector use the database's default text search
+// configuration, so the language is one the DBA sets rather than one fixed
+// here. For the full to_tsquery operator vocabulary, reach for orm.Raw.
+func (Dialect) RenderFullText(quotedColumn, placeholder string) (string, error) {
+	return "to_tsvector(" + quotedColumn + ") @@ websearch_to_tsquery(" + placeholder + ")", nil
+}
+
 // MaxBindParams reports Postgres's limit of 65535 parameters per
 // statement.
 //

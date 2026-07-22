@@ -190,6 +190,13 @@ type ArrayLength struct {
 	Value int
 }
 
+// FullText is a full-text search: the column's text matches the query. Build
+// one with a string column's Matches.
+type FullText struct {
+	Col   ColumnMeta
+	Query string
+}
+
 // subquerySource is something that renders as a single-column SELECT inside
 // another statement. Only this package's own query values satisfy it.
 type subquerySource interface {
@@ -275,6 +282,7 @@ func (JSONKey) predicate()       {}
 func (ArrayContains) predicate() {}
 func (ArrayOverlaps) predicate() {}
 func (ArrayLength) predicate()   {}
+func (FullText) predicate()      {}
 
 // And joins preds with AND.
 //

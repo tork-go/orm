@@ -130,6 +130,17 @@ func (m textOps) EndsWith(s string) Predicate {
 	return Pattern{Col: m.c, Value: "%" + escapeLike(s)}
 }
 
+// Matches is a full-text search: rows whose text matches the query.
+//
+// The query is parsed leniently — quoted "phrases", -exclusions and or are
+// understood, and malformed input matches nothing rather than erroring — so it
+// is safe to pass a search box's contents straight in. Unlike the other text
+// operations this one has no portable spelling, so the dialect writes it and a
+// database without full-text search returns an error naming the operation.
+func (m textOps) Matches(query string) Predicate {
+	return FullText{Col: m.c, Query: query}
+}
+
 // sortable supplies ORDER BY terms. Every column kind is sortable, so
 // every column type embeds this, including the nullable ones.
 type sortable struct{ c ColumnMeta }

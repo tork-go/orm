@@ -102,6 +102,16 @@ type QueryDialect interface {
 	// and the operator one of the six comparisons.
 	RenderArrayLength(quotedColumn string, op Operator, placeholder string) (string, error)
 
+	// RenderFullText returns a full-text match between an already-quoted text
+	// column and the query its already-rendered placeholder binds.
+	//
+	// It is the one operator riding on ordinary string columns rather than a
+	// kind of its own, so it is the one a dialect without full-text cannot
+	// avoid being asked for. Postgres, MySQL and SQLite each have a full-text
+	// facility spelled differently, and a driver with none returns an error
+	// naming the operation.
+	RenderFullText(quotedColumn, placeholder string) (string, error)
+
 	// MaxBindParams reports how many parameters one statement may bind, or
 	// 0 when the database sets no practical limit.
 	//

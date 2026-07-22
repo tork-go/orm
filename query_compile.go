@@ -215,6 +215,13 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 		}
 		return c.d.RenderArrayLength(col, p.Op, c.args.bind(p.Value))
 
+	case FullText:
+		col, err := c.column(p.Col)
+		if err != nil {
+			return "", err
+		}
+		return c.d.RenderFullText(col, c.args.bind(p.Query))
+
 	case rawPredicate:
 		return c.raw(p)
 	}

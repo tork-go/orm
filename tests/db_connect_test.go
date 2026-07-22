@@ -54,6 +54,9 @@ func (*stubDriver) RenderArrayOverlaps(col, mark string) (string, error) {
 func (*stubDriver) RenderArrayLength(col string, op orm.Operator, mark string) (string, error) {
 	return "cardinality(" + col + ") " + op.String() + " " + mark, nil
 }
+func (*stubDriver) RenderFullText(col, mark string) (string, error) {
+	return "to_tsvector(" + col + ") @@ websearch_to_tsquery(" + mark + ")", nil
+}
 
 func (d *stubDriver) Open(_ context.Context, cfg orm.Config) (orm.Conn, error) {
 	d.opened = append(d.opened, cfg)

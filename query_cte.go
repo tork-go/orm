@@ -2,6 +2,7 @@ package orm
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -101,6 +102,10 @@ func CTE[T any](name string) SubqueryOf[T] { return cteRef[T]{name: name} }
 type cteRef[T any] struct{ name string }
 
 func (cteRef[T]) subqueryOf(T) {}
+
+// GoType is the type the CTE's one column yields, so a CTE reference reads
+// as a projected column as well as matching with InQuery.
+func (cteRef[T]) GoType() reflect.Type { return reflect.TypeFor[T]() }
 
 func (c cteRef[T]) compileWithin(outer *compiler) (string, error) {
 	if c.name == "" {

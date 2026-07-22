@@ -120,8 +120,22 @@ func (c *compiler) qualified(table string, col ColumnMeta) string {
 // It shares this one's arguments, so placeholders keep counting across the
 // boundary rather than restarting and colliding, and it qualifies, since two
 // tables are now in scope.
+//
+// The enclosing statement's tables come along as ones the subquery may
+// name. That is what correlation is — a condition inside the subquery that
+// refers back out, as `books.author_id = authors.id` does — and without it
+// the ownership check would reject the outer column as belonging to a table
+// the inner statement does not select from. Everything stays qualified by
+// its own table, so which one is meant is never left to nesting.
 func (c *compiler) sub(table string) *compiler {
-	return &compiler{d: c.d, args: c.args, table: table, qualify: true, unscoped: c.unscoped}
+	return &compiler{
+		d:           c.d,
+		args:        c.args,
+		table:       table,
+		extraTables: append(append([]string(nil), c.extraTables...), c.table),
+		qualify:     true,
+		unscoped:    c.unscoped,
+	}
 }
 
 // addJoin extends this statement with one JOIN or LEFT JOIN, correlated on
@@ -883,6 +897,16 @@ func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
 				return "", err
 			}
 			parts[i] = s
+		case subquerySource:
+			// A subquery yielding one column reads as a column of this
+			// statement. It compiles through the same compileWithin an
+			// InQuery uses, so it shares this statement's arguments and
+			// qualifies its own columns.
+			s, err := v.compileWithin(c)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = "(" + s + ")"
 		case AggregateExpr:
 			s, err := c.aggregateExpr(v)
 			if err != nil {

@@ -40,6 +40,28 @@ var eItems = orm.DefineTable[eItem]("e_items", func(t *orm.TableBuilder[eItem]) 
 	}
 })
 
+type eSale struct {
+	ID     int
+	ItemID int
+	Amount int
+}
+
+type eSaleModel struct {
+	orm.Table[eSale]
+	ID     *orm.IntColumn
+	ItemID *orm.IntColumn
+	Amount *orm.IntColumn
+}
+
+var eSales = orm.DefineTable[eSale]("e_sales", func(t *orm.TableBuilder[eSale]) *eSaleModel {
+	return &eSaleModel{
+		Table:  t.Table(),
+		ID:     t.Int("id").PrimaryKey(),
+		ItemID: t.Int("item_id").NotNull(),
+		Amount: t.Int("amount").NotNull(),
+	}
+})
+
 // Expressions are tested against a fake dialect elsewhere, which only ever
 // proves the string Tork writes. This runs them against the database they
 // were written for, so what is checked is the rows that come back rather
@@ -172,6 +194,70 @@ func TestExpressions_AgainstPostgres(t *testing.T) {
 		}
 		if len(got) != 1 || got[0].Margin != 120 {
 			t.Fatalf("got %+v, want a margin of 120", got)
+		}
+	})
+
+	// A CASE decides a value per row, which the database evaluates.
+	t.Run("case picks per row", func(t *testing.T) {
+		type row struct {
+			Name    string
+			Verdict string
+		}
+		got, err := orm.SelectAs[row](
+			eItems.With(db),
+			eItems.Name,
+			orm.Case[string]().
+				When(eItems.Price.Value().GreaterThan(eItems.Cost), "profit").
+				When(eItems.Price.Value().Equals(eItems.Cost), "break-even").
+				Else("loss"),
+		).OrderBy(eItems.Name.Asc()).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		want := map[string]string{"gadget": "loss", "gizmo": "break-even", "widget": "profit"}
+		for _, r := range got {
+			if want[r.Name] != r.Verdict {
+				t.Errorf("%s = %q, want %q", r.Name, r.Verdict, want[r.Name])
+			}
+		}
+	})
+
+	// A correlated scalar subquery: for each item, a value looked up from
+	// another table by a condition naming both.
+	t.Run("correlated scalar subquery", func(t *testing.T) {
+		if _, err := conn.Exec(ctx, `
+			CREATE TABLE IF NOT EXISTS e_sales (
+				id serial PRIMARY KEY, item_id int NOT NULL, amount int NOT NULL)`); err != nil {
+			t.Fatalf("creating e_sales failed: %v", err)
+		}
+		t.Cleanup(func() { _, _ = conn.Exec(context.Background(), `DROP TABLE IF EXISTS e_sales`) })
+		if _, err := conn.Exec(ctx, `
+			INSERT INTO e_sales (item_id, amount)
+			SELECT id, price * 2 FROM e_items WHERE name = 'widget'`); err != nil {
+			t.Fatalf("seeding e_sales failed: %v", err)
+		}
+
+		amount := orm.Select(
+			eSales.With(db).Where(eSales.ItemID.Value().Equals(eItems.ID)),
+			eSales.Amount,
+		)
+		// Amount is an int rather than a pointer because the column is not
+		// nullable and this query is narrowed to the row that has a sale. A
+		// correlated subquery matching nothing yields NULL, so a projection
+		// that can miss needs a nullable column behind it.
+		type row struct {
+			Name   string
+			Amount int
+		}
+		got, err := orm.SelectAs[row](
+			eItems.With(db).Where(eItems.Name.Equals("widget")),
+			eItems.Name, amount,
+		).All(ctx)
+		if err != nil {
+			t.Fatalf("All() error = %v", err)
+		}
+		if len(got) != 1 || got[0].Amount != 200 {
+			t.Fatalf("got %+v, want widget with an amount of 200", got)
 		}
 	})
 

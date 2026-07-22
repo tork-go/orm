@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -188,6 +189,34 @@ func TestWith_SelectRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "With") {
 		t.Errorf("error %q does not name the problem", err)
+	}
+}
+
+// Scalars.Count builds its own statement, separately from Select's, and
+// rejects a With the same way.
+func TestWith_ScalarCountRejected(t *testing.T) {
+	db := pg()
+	_, err := orm.Select(
+		Authors.With(db).With("book_authors", authorIDs(db)), Authors.Name,
+	).Count(context.Background())
+	if err == nil {
+		t.Fatal("Count() error = nil, want the With rejected")
+	}
+	if !strings.Contains(err.Error(), "With") {
+		t.Errorf("error %q does not name the problem", err)
+	}
+}
+
+// Every SubqueryOf reports the Go type its one column yields, which is what
+// lets one be read as a projected column rather than only matched against.
+// A CTE reference is one, even though a query carrying a With cannot reach
+// SelectAs yet.
+func TestCTE_GoType(t *testing.T) {
+	if got := orm.CTE[int]("x").GoType(); got != reflect.TypeFor[int]() {
+		t.Errorf("GoType() = %s, want int", got)
+	}
+	if got := orm.CTE[string]("x").GoType(); got != reflect.TypeFor[string]() {
+		t.Errorf("GoType() = %s, want string", got)
 	}
 }
 

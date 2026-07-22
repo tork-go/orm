@@ -3,6 +3,7 @@ package orm
 import (
 	"context"
 	"fmt"
+	"reflect"
 )
 
 // Select reads one column, typed.
@@ -192,12 +193,27 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 // embedded. Selecting a nullable column gives a *Scalars[*T], which is a
 // SubqueryOf[*T] and so not accepted by a condition on a T; NonNull is how to
 // cross that gap, and says something worth saying while it does.
+// Every one of these is also a SelectExpr, through GoType: a query yielding
+// one column of T can be read as a column of an enclosing projection as
+// readily as it can be matched against with InQuery.
 type SubqueryOf[T any] interface {
 	subquerySource
 	subqueryOf(T)
+	GoType() reflect.Type
 }
 
 func (s *Scalars[T]) subqueryOf(T) {}
+
+// GoType returns the Go type the one selected column decodes as, which is
+// what makes a Scalars a SelectExpr: a subquery yielding one value can be
+// read as a column of an enclosing projection.
+//
+//	bookCount := orm.Select(
+//	    Books.With(db).Where(Books.AuthorID.Value().Equals(Authors.ID)),
+//	    Books.ID,
+//	)
+//	orm.SelectAs[Report](Authors.With(db), Authors.Name, orm.CountOf(...))
+func (s *Scalars[T]) GoType() reflect.Type { return reflect.TypeFor[T]() }
 
 // compileWithin renders this query as a subquery of another statement.
 //
@@ -242,6 +258,9 @@ func NonNull[T any](sub *Scalars[*T]) SubqueryOf[T] {
 type nonNullSubquery[T any] struct{ sub *Scalars[*T] }
 
 func (nonNullSubquery[T]) subqueryOf(T) {}
+
+// GoType is T, the non-pointer type NonNull narrowed to.
+func (nonNullSubquery[T]) GoType() reflect.Type { return reflect.TypeFor[T]() }
 
 func (n nonNullSubquery[T]) compileWithin(outer *compiler) (string, error) {
 	if n.sub == nil {

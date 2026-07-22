@@ -97,6 +97,11 @@ type queryState struct {
 	// nil for every stored table. See query_derived.go.
 	derived DerivedSource
 
+	// recursive is where a derived table's rows come from when they come
+	// from reading its own output, set by Recursive instead of derived. See
+	// query_cte_recursive.go.
+	recursive *recursiveSpec
+
 	// loads are the relationships to fetch alongside the rows, each in a
 	// statement of its own once the rows are in hand. See query_load.go.
 	loads []loadSpec

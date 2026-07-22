@@ -195,7 +195,7 @@ func TestDerived_WithInsteadOfFrom(t *testing.T) {
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the missing source rejected")
 	}
-	if !strings.Contains(err.Error(), "queried with From, not With") {
+	if !strings.Contains(err.Error(), "queried with From or Recursive, not With") {
 		t.Errorf("error %q does not say how to fix it", err)
 	}
 }
@@ -319,7 +319,7 @@ func TestDerived_ProjectionOverASourcelessDerivedTable(t *testing.T) {
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the missing source rejected")
 	}
-	if !strings.Contains(err.Error(), "queried with From, not With") {
+	if !strings.Contains(err.Error(), "queried with From or Recursive, not With") {
 		t.Errorf("error %q does not name the problem", err)
 	}
 }

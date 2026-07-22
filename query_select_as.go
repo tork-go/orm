@@ -296,6 +296,15 @@ func (p *Projection[T]) compiler() (*compiler, error) {
 // selected expression with AS, which is what a derived table needs so the
 // enclosing query can refer to the columns it declares.
 func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
+	// The WITH clause renders before anything else, so a definition's own
+	// placeholders number first — they are textually first in the finished
+	// statement. Only a recursion can reach here, since SelectAs refuses an
+	// ordinary With; dropping it silently would leave the statement reading
+	// from a table it never defined.
+	with, err := p.q.cteClause(c)
+	if err != nil {
+		return "", err
+	}
 	list, selected, err := c.selectTerms(p.exprs, aliases)
 	if err != nil {
 		return "", err
@@ -329,7 +338,7 @@ func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return keyword + list + " FROM " + from + c.joinsClause() +
+	return with + keyword + list + " FROM " + from + c.joinsClause() +
 		where + groupBy + having + order + limitOffset(p.limit, nil), nil
 }
 

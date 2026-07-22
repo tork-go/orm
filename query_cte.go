@@ -33,9 +33,11 @@ type cteSpec struct {
 // Only a plain read supports a With for now — Scalars, Grouped, the scalar
 // aggregates, SelectAs, a combined query and a set operation all reject
 // one rather than silently dropping its definition while a condition still
-// refers to it. The recursive form, where a CTE's own step correlates
-// against its own accumulating output, needs machinery this package does
-// not have yet.
+// refers to it.
+//
+// The recursive form is a different thing and has its own spelling, since it
+// defines the table being read rather than one a condition names: see
+// DerivedTable.Recursive.
 func (f *Filtered[E]) With(name string, source subquerySource) *Filtered[E] {
 	out := f.clone()
 	if name == "" {
@@ -64,19 +66,35 @@ func (q *Query[E]) With(name string, source subquerySource) *Filtered[E] {
 // textually first in "WITH ... AS (...) SELECT ...", and a placeholder's
 // number has to match its position in the finished string, not the order
 // its clause was built in Go.
+//
+// A recursive definition renders first and takes the RECURSIVE keyword with
+// it, which SQL puts on the WITH rather than on the definition: one
+// recursive CTE makes the whole list recursive, and the ordinary ones in it
+// are unaffected.
 func (q queryState) cteClause(c *compiler) (string, error) {
-	if len(q.ctes) == 0 {
+	recursive, err := q.recursiveClause(c)
+	if err != nil {
+		return "", err
+	}
+	if len(q.ctes) == 0 && recursive == "" {
 		return "", nil
 	}
-	parts := make([]string, len(q.ctes))
-	for i, spec := range q.ctes {
+	var parts []string
+	if recursive != "" {
+		parts = append(parts, recursive)
+	}
+	for _, spec := range q.ctes {
 		sql, err := spec.src.compileWithin(c)
 		if err != nil {
 			return "", err
 		}
-		parts[i] = c.d.QuoteIdent(spec.name) + " AS (" + sql + ")"
+		parts = append(parts, c.d.QuoteIdent(spec.name)+" AS ("+sql+")")
 	}
-	return "WITH " + strings.Join(parts, ", ") + " ", nil
+	keyword := "WITH "
+	if recursive != "" {
+		keyword = "WITH RECURSIVE "
+	}
+	return keyword + strings.Join(parts, ", ") + " ", nil
 }
 
 // noCTEs rejects a query carrying a With, mirroring noJoins's shape.

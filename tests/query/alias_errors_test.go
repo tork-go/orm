@@ -83,16 +83,18 @@ func TestLeftJoinTo_NoConditions(t *testing.T) {
 	}
 }
 
-// A derived table is queried with From rather than joined onto.
-func TestJoinTo_DerivedTable(t *testing.T) {
-	_, _, err := Users.With(pg()).
+// A derived model joins as its bare name, which is what a recursive step's
+// reference to the table being defined is. Outside a recursion the name is
+// one the statement never defined, and the database is what reports that.
+func TestJoinTo_DerivedTableJoinsAsItsName(t *testing.T) {
+	sql, _, err := Users.With(pg()).
 		JoinTo(RankedT, Users.Username.Value().Equals(RankedT.Username)).
 		SQL()
-	if err == nil {
-		t.Fatal("SQL() error = nil, want a derived table refused as a join target")
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "From") {
-		t.Errorf("error = %v, want it to point at From", err)
+	if !strings.Contains(sql, `JOIN "ranked" ON "users"."username" = "ranked"."username"`) {
+		t.Errorf("SQL() = %s, want the derived table joined under its own name", sql)
 	}
 }
 

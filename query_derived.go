@@ -126,9 +126,15 @@ func (q queryState) fromClause(c *compiler) (string, error) {
 	if !q.st.derived {
 		return name, nil
 	}
+	// A recursion is defined ahead of the statement in its WITH clause, so
+	// here it is just the name — the one derived table whose FROM is not a
+	// subquery. See DerivedTable.Recursive.
+	if q.recursive != nil {
+		return name, nil
+	}
 	if q.derived == nil {
 		return "", fmt.Errorf("orm: derived table %q: this query has no source; "+
-			"a derived table is queried with From, not With", q.st.name)
+			"a derived table is queried with From or Recursive, not With", q.st.name)
 	}
 	sub, err := q.derived.derivedSource(c, q.derivedAliases())
 	if err != nil {

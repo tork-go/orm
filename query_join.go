@@ -311,18 +311,22 @@ func aliasState(table, op string, m Model) (*tableState, error) {
 
 // joinTargetState is the table state behind a model given as something to
 // join onto, whatever the join form.
+//
+// A derived model is allowed, and joins as its bare name. That is what a
+// recursive step's reference to the table being defined is: inside the
+// recursion the name is in scope and holds every row found so far, so
+// joining it is the whole point. Outside one it is a name the statement
+// never defined, which the database reports — this package cannot tell the
+// two apart from the model alone, and refusing both would cost the feature
+// to keep an error message. See DerivedTable.Recursive.
 func joinTargetState(table string, m Model) (*tableState, error) {
 	if m == nil {
 		return nil, fmt.Errorf("orm: table %q: this join was given no table", table)
 	}
 	st := stateOf(m)
-	switch {
-	case st == nil:
+	if st == nil {
 		return nil, fmt.Errorf("orm: table %q: %T carries no table identity; declare it "+
 			"with DefineTable", table, m)
-	case st.derived:
-		return nil, fmt.Errorf("orm: table %q: %q is a derived table, which is queried "+
-			"with From rather than joined onto", table, st.name)
 	}
 	return st, nil
 }

@@ -198,7 +198,7 @@ func (c *compiler) addRelationJoin(spec joinSpec) error {
 	if err != nil {
 		return err
 	}
-	c.joinSQL = append(c.joinSQL, c.joinKeyword(spec.kind)+c.joinedTable(spec.alias, far)+
+	c.joinSQL = append(c.joinSQL, spec.kind.keyword()+c.joinedTable(spec.alias, far)+
 		" ON "+onSQL)
 	return nil
 }
@@ -216,7 +216,7 @@ func (c *compiler) addTableJoin(spec joinSpec) error {
 	if err != nil {
 		return err
 	}
-	c.joinSQL = append(c.joinSQL, c.joinKeyword(spec.kind)+
+	c.joinSQL = append(c.joinSQL, spec.kind.keyword()+
 		c.joinedTable(spec.to, spec.to.name)+" ON "+onSQL)
 	return nil
 }
@@ -238,13 +238,6 @@ func (c *compiler) addJoined(table string) error {
 	c.qualify = true
 	c.extraTables = append(c.extraTables, table)
 	return nil
-}
-
-func (c *compiler) joinKeyword(kind joinKind) string {
-	if kind == joinLeft {
-		return " LEFT JOIN "
-	}
-	return " JOIN "
 }
 
 // joinedTable names the joined table in the FROM clause: its own name, or a

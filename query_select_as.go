@@ -156,12 +156,32 @@ func checkProjectionShape[T any](exprs []SelectExpr) error {
 			t, len(fields), len(exprs))
 	}
 	for i, f := range fields {
-		if got := exprs[i].GoType(); !got.AssignableTo(f.Type) {
+		if got := exprs[i].GoType(); !readableInto(got, f.Type) {
 			return fmt.Errorf("orm: SelectAs: field %d, %q, is %s but expression %d is %s",
 				i, f.Name, f.Type, i, got)
 		}
 	}
 	return nil
+}
+
+// readableInto reports whether a value of type got can be read into a field
+// of type want.
+//
+// The obvious case is that they are the same. The other is a field one
+// pointer deeper — an int expression read into a *int — which is how a
+// caller says the value may be absent. That is not a hypothetical: a left,
+// right or full join returns rows where a whole side is unmatched, and every
+// column of that side comes back NULL however the table declared it. A
+// non-nullable column is only non-nullable in its own table.
+//
+// The reverse is not allowed. A nullable expression read into a plain field
+// would turn a NULL into a zero silently, and there is no way to tell the
+// two apart afterwards.
+func readableInto(got, want reflect.Type) bool {
+	if got.AssignableTo(want) {
+		return true
+	}
+	return want.Kind() == reflect.Pointer && got.AssignableTo(want.Elem())
 }
 
 // GroupBy adds a GROUP BY clause. Terms accumulate across calls.

@@ -2,13 +2,39 @@ package orm
 
 import "fmt"
 
-// joinKind distinguishes Join from LeftJoin.
+// joinKind distinguishes the four joins by which side's unmatched rows they
+// keep: neither, the left, the right, or both.
 type joinKind int
 
 const (
 	joinInner joinKind = iota
 	joinLeft
+	joinRight
+	joinFull
 )
+
+// keyword returns the SQL each kind is written with. OUTER is left out of
+// the two that allow it, since it is noise in every dialect: LEFT JOIN and
+// LEFT OUTER JOIN are the same join, and writing one word fewer keeps the
+// generated SQL readable.
+func (k joinKind) keyword() string {
+	switch k {
+	case joinLeft:
+		return " LEFT JOIN "
+	case joinRight:
+		return " RIGHT JOIN "
+	case joinFull:
+		return " FULL JOIN "
+	}
+	return " JOIN "
+}
+
+// keepsUnmatchedJoinedRows reports whether the kind can hand back a row the
+// primary table has no match for, which is what makes a read into *E
+// impossible. See Filtered.RightJoinTo.
+func (k joinKind) keepsUnmatchedJoinedRows() bool {
+	return k == joinRight || k == joinFull
+}
 
 // joinSpec is one join call: what is joined, which kind, and any extra
 // conditions ANDed onto the ON clause.
@@ -175,6 +201,39 @@ func (f *Filtered[E]) LeftJoinTo(table Model, preds ...Predicate) *Filtered[E] {
 	return f.joinTo(table, joinLeft, preds)
 }
 
+// RightJoinTo is JoinTo the other way round: it keeps a row of the joined
+// table that this one has no match for, leaving this table's columns NULL
+// for it.
+//
+//	orm.SelectAs[Row](
+//	    Users.With(db).RightJoinTo(Logins, Logins.UserID.Value().Equals(Users.ID)),
+//	    Logins.ID, Users.Username,
+//	)
+//	// every login, with the username where there is one
+//
+// It reads only through SelectAs. The rows a Filtered read scans into are
+// *E, and an unmatched row has no values for E's fields at all — not a zero
+// value but no row — so All and First refuse a query carrying one rather
+// than handing back a slice of blanks. Choosing a type that can hold the
+// absence is SelectAs's job, with a pointer field for each column of this
+// table.
+//
+// There is no RightJoin over a relationship. A relationship is declared on
+// this table and read outwards, so a join that keeps the far side's
+// unmatched rows reads backwards through it; writing the condition out says
+// plainly which side is being kept.
+func (f *Filtered[E]) RightJoinTo(table Model, preds ...Predicate) *Filtered[E] {
+	return f.joinTo(table, joinRight, preds)
+}
+
+// FullJoinTo keeps the unmatched rows of both tables, with the other side's
+// columns NULL for each.
+//
+// Like RightJoinTo it reads only through SelectAs, and for the same reason.
+func (f *Filtered[E]) FullJoinTo(table Model, preds ...Predicate) *Filtered[E] {
+	return f.joinTo(table, joinFull, preds)
+}
+
 func (f *Filtered[E]) join(rel Relationship, alias *tableState, kind joinKind, extra []Predicate) *Filtered[E] {
 	out := f.clone()
 	if err := f.noDerived("Join"); err != nil {
@@ -312,4 +371,14 @@ func (q *Query[E]) JoinTo(table Model, preds ...Predicate) *Filtered[E] {
 // LeftJoinTo is Filtered.LeftJoinTo, off an unfiltered query.
 func (q *Query[E]) LeftJoinTo(table Model, preds ...Predicate) *Filtered[E] {
 	return q.filtered().LeftJoinTo(table, preds...)
+}
+
+// RightJoinTo is Filtered.RightJoinTo, off an unfiltered query.
+func (q *Query[E]) RightJoinTo(table Model, preds ...Predicate) *Filtered[E] {
+	return q.filtered().RightJoinTo(table, preds...)
+}
+
+// FullJoinTo is Filtered.FullJoinTo, off an unfiltered query.
+func (q *Query[E]) FullJoinTo(table Model, preds ...Predicate) *Filtered[E] {
+	return q.filtered().FullJoinTo(table, preds...)
 }

@@ -372,6 +372,27 @@ func (q queryState) selectKeyword(c *compiler) (string, error) {
 	return "SELECT " + keyword + " ", nil
 }
 
+// rowsAreWhole reports whether every row this query returns has a row of
+// this table behind it, which reading into *E depends on.
+//
+// A right or full join hands back rows of the joined table that this one
+// never matched. Those rows have no values for E's fields — not zero values
+// but no row at all — so scanning them would fill a *E with blanks and hand
+// it back as if it were stored. The read is refused instead, naming the way
+// to write what the caller meant: a projection whose type can hold the
+// absence.
+func (q queryState) rowsAreWhole() error {
+	for _, spec := range q.joins {
+		if spec.kind.keepsUnmatchedJoinedRows() {
+			return fmt.Errorf("orm: table %q: this query keeps rows of the joined table "+
+				"that %q has no match for, which have no row to scan into; read it with "+
+				"SelectAs, whose type can hold the missing columns as pointers",
+				q.tableName(), q.tableName())
+		}
+	}
+	return nil
+}
+
 // noDistinctOn rejects an operation that cannot carry a DistinctOn,
 // mirroring noJoins and noCTEs.
 //
@@ -591,6 +612,9 @@ func (q queryState) readyToRead() error {
 
 // All runs the query and returns every matching row.
 func (f *Filtered[E]) All(ctx context.Context) ([]*E, error) {
+	if err := f.rowsAreWhole(); err != nil {
+		return nil, err
+	}
 	sql, args, err := f.compileSelect()
 	if err != nil {
 		return nil, err

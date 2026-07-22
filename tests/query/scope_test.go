@@ -68,7 +68,8 @@ func TestScoper_AppliesToSelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" WHERE "published" = $1`
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" ` +
+		`WHERE ("published" = $1 AND "deleted_at" IS NULL)`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -89,7 +90,7 @@ func TestScoper_AppliesToCount(t *testing.T) {
 	if n != 2 {
 		t.Errorf("Count() = %d, want 2", n)
 	}
-	want := `SELECT COUNT(*) FROM "scoped_posts" WHERE "published" = $1`
+	want := `SELECT COUNT(*) FROM "scoped_posts" WHERE ("published" = $1 AND "deleted_at" IS NULL)`
 	if got := c.QueryCalls()[0]; got != want {
 		t.Errorf("Count ran  %s\nwant       %s", got, want)
 	}
@@ -97,7 +98,7 @@ func TestScoper_AppliesToCount(t *testing.T) {
 
 func TestScoper_AppliesToExists(t *testing.T) {
 	c := fakedriver.NewConn()
-	c.QueueRows([]any{1, 1, "hi", true})
+	c.QueueRows([]any{1, 1, "hi", true, nil})
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	ok, err := ScopedPosts.With(db).Exists(context.Background())
@@ -108,7 +109,7 @@ func TestScoper_AppliesToExists(t *testing.T) {
 		t.Error("Exists() = false, want true")
 	}
 	got := c.QueryCalls()[0]
-	if !strings.Contains(got, `WHERE "published" = $1`) {
+	if !strings.Contains(got, `WHERE ("published" = $1 AND "deleted_at" IS NULL)`) {
 		t.Errorf("Exists ran %s, want the default scope in its WHERE", got)
 	}
 }
@@ -118,8 +119,8 @@ func TestScoper_AppliesToUserFilterToo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" ` +
-		`WHERE ("title" = $1 AND "published" = $2)`
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" ` +
+		`WHERE ("title" = $1 AND ("published" = $2 AND "deleted_at" IS NULL))`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -133,7 +134,7 @@ func TestScoper_Unscoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts"`
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts"`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -147,7 +148,7 @@ func TestScoper_UnscopedKeepsUserFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" WHERE "title" = $1`
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" WHERE "title" = $1`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -165,12 +166,17 @@ func TestScoper_UpdateAllRespectsScope(t *testing.T) {
 		UpdateAll(context.Background(), ScopedPosts.Title.Set("y")); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
-	want := `UPDATE "scoped_posts" SET "title" = $1 WHERE ("title" = $2 AND "published" = $3)`
+	want := `UPDATE "scoped_posts" SET "title" = $1 WHERE ("title" = $2 AND ("published" = $3 AND "deleted_at" IS NULL))`
 	if got := c.ExecCalls()[0]; got != want {
 		t.Errorf("UpdateAll ran  %s\nwant           %s", got, want)
 	}
 }
 
+// DeleteAll on this fixture also demonstrates the soft-delete rewrite
+// (soft_delete_test.go covers that directly): with a soft-delete column
+// declared, ScopedPosts compiles DeleteAll to an UPDATE rather than a
+// DELETE, and that UPDATE's WHERE still carries the default scope exactly
+// as any other statement's would.
 func TestScoper_DeleteAllRespectsScope(t *testing.T) {
 	c := fakedriver.NewConn()
 	c.RowsAffected = 1
@@ -180,7 +186,7 @@ func TestScoper_DeleteAllRespectsScope(t *testing.T) {
 		DeleteAll(context.Background()); err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
-	want := `DELETE FROM "scoped_posts" WHERE ("title" = $1 AND "published" = $2)`
+	want := `UPDATE "scoped_posts" SET "deleted_at" = $1 WHERE ("title" = $2 AND ("published" = $3 AND "deleted_at" IS NULL))`
 	if got := c.ExecCalls()[0]; got != want {
 		t.Errorf("DeleteAll ran  %s\nwant           %s", got, want)
 	}
@@ -195,7 +201,7 @@ func TestScoper_UnscopedSetOps(t *testing.T) {
 		DeleteAll(context.Background()); err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
-	want := `DELETE FROM "scoped_posts" WHERE "title" = $1`
+	want := `UPDATE "scoped_posts" SET "deleted_at" = $1 WHERE "title" = $2`
 	if got := c.ExecCalls()[0]; got != want {
 		t.Errorf("DeleteAll ran  %s\nwant           %s", got, want)
 	}
@@ -287,7 +293,7 @@ func TestScoper_UnscopedLeavesOriginalAlone(t *testing.T) {
 // order, matching author and book in load_test.go.
 func scopedAuthor(id int, name string) []any { return []any{id, name} }
 func scopedPost(id, authorID int, title string, published bool) []any {
-	return []any{id, authorID, title, published}
+	return []any{id, authorID, title, published, nil}
 }
 
 // A related table's default scope applies inside an eager load exactly as
@@ -312,8 +318,8 @@ func TestScoper_AppliesInsideLoad(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("ran %d statements, want 2:\n%v", len(calls), calls)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" ` +
-		`WHERE ("author_id" IN ($1) AND "published" = $2)`
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" ` +
+		`WHERE ("author_id" IN ($1) AND ("published" = $2 AND "deleted_at" IS NULL))`
 	if calls[1] != want {
 		t.Errorf("children ran  %s\nwant          %s", calls[1], want)
 	}
@@ -338,7 +344,7 @@ func TestScoper_UnscopedAppliesInsideLoad(t *testing.T) {
 		t.Fatalf("All() returned %d rows, want 1", len(authors))
 	}
 
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" WHERE "author_id" IN ($1)`
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" WHERE "author_id" IN ($1)`
 	if got := c.QueryCalls()[1]; got != want {
 		t.Errorf("children ran  %s\nwant          %s", got, want)
 	}
@@ -356,7 +362,8 @@ func TestScoper_AppliesInsideHas(t *testing.T) {
 		t.Fatalf("SQL() error = %v", err)
 	}
 	want := `SELECT "id", "name" FROM "scoped_authors" WHERE EXISTS (SELECT 1 FROM "scoped_posts" ` +
-		`WHERE "scoped_posts"."author_id" = "scoped_authors"."id" AND "scoped_posts"."published" = $1)`
+		`WHERE "scoped_posts"."author_id" = "scoped_authors"."id" AND ` +
+		`("scoped_posts"."published" = $1 AND "scoped_posts"."deleted_at" IS NULL))`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -388,7 +395,8 @@ func TestScoper_AppliesInsideHasNone(t *testing.T) {
 		t.Fatalf("SQL() error = %v", err)
 	}
 	want := `SELECT "id", "name" FROM "scoped_authors" WHERE NOT EXISTS (SELECT 1 FROM "scoped_posts" ` +
-		`WHERE "scoped_posts"."author_id" = "scoped_authors"."id" AND "scoped_posts"."published" = $1)`
+		`WHERE "scoped_posts"."author_id" = "scoped_authors"."id" AND ` +
+		`("scoped_posts"."published" = $1 AND "scoped_posts"."deleted_at" IS NULL))`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -408,10 +416,10 @@ func TestScoper_AppliesInsideHasThroughManyToMany(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" WHERE (` +
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" WHERE (` +
 		`EXISTS (SELECT 1 FROM "scoped_post_tags" WHERE "scoped_post_tags"."post_id" = "scoped_posts"."id" ` +
 		`AND EXISTS (SELECT 1 FROM "scoped_tags" WHERE "scoped_tags"."id" = "scoped_post_tags"."tag_id" ` +
-		`AND "scoped_tags"."active" = $1)) AND "published" = $2)`
+		`AND "scoped_tags"."active" = $1)) AND ("published" = $2 AND "deleted_at" IS NULL))`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -426,7 +434,7 @@ func TestScoper_UnscopedAppliesInsideHasThroughManyToMany(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "id", "author_id", "title", "published" FROM "scoped_posts" WHERE ` +
+	want := `SELECT "id", "author_id", "title", "published", "deleted_at" FROM "scoped_posts" WHERE ` +
 		`EXISTS (SELECT 1 FROM "scoped_post_tags" WHERE "scoped_post_tags"."post_id" = "scoped_posts"."id")`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)

@@ -11,6 +11,7 @@ type ColumnMeta interface {
 	Name() string
 	OwnerTable() string
 	IsPrimaryKey() bool
+	IsSoftDeleteColumn() bool
 	IsUnique() bool
 	HasNotNull() bool
 	MaxLength() (int, bool)

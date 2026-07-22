@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The set operations write every row a query matches, in one statement,
@@ -47,6 +48,12 @@ func (q *Query[E]) DeleteAll(ctx context.Context) (int64, error) {
 	return q.filtered().DeleteAll(ctx)
 }
 
+// ForceDeleteAll removes every row of the table, ignoring any soft-delete
+// column. See Filtered.ForceDeleteAll.
+func (q *Query[E]) ForceDeleteAll(ctx context.Context) (int64, error) {
+	return q.filtered().ForceDeleteAll(ctx)
+}
+
 // UpdateAllReturning writes sets to every row of the table and returns them.
 //
 // It is the unfiltered form; see Filtered.UpdateAllReturning.
@@ -59,6 +66,12 @@ func (q *Query[E]) UpdateAllReturning(ctx context.Context, sets ...Assignment) (
 // It is the unfiltered form; see Filtered.DeleteAllReturning.
 func (q *Query[E]) DeleteAllReturning(ctx context.Context) ([]*E, error) {
 	return q.filtered().DeleteAllReturning(ctx)
+}
+
+// ForceDeleteAllReturning removes every row of the table, ignoring any
+// soft-delete column, and returns them. See Filtered.ForceDeleteAllReturning.
+func (q *Query[E]) ForceDeleteAllReturning(ctx context.Context) ([]*E, error) {
+	return q.filtered().ForceDeleteAllReturning(ctx)
 }
 
 // UpdateAll writes sets to every row this query matches, in one statement,
@@ -156,9 +169,22 @@ func (f *Filtered[E]) compileUpdateAll(op string, sets []Assignment) (string, []
 // so can say that row was not there, this is given a condition, and a
 // condition matching nothing is an ordinary answer rather than a failure.
 //
+// A table with a soft-delete column is updated rather than deleted; see
+// SoftDelete. ForceDeleteAll always removes the rows.
+//
 // To remove a batch of rows already in hand, use DeleteMany.
 func (f *Filtered[E]) DeleteAll(ctx context.Context) (int64, error) {
-	sql, args, err := f.compileDeleteAll("DeleteAll")
+	return f.deleteAll(ctx, "DeleteAll", false)
+}
+
+// ForceDeleteAll is DeleteAll, but always issues a physical DELETE even when
+// the table has a soft-delete column.
+func (f *Filtered[E]) ForceDeleteAll(ctx context.Context) (int64, error) {
+	return f.deleteAll(ctx, "ForceDeleteAll", true)
+}
+
+func (f *Filtered[E]) deleteAll(ctx context.Context, op string, force bool) (int64, error) {
+	sql, args, err := f.compileDeleteAll(op, force)
 	if err != nil {
 		return 0, err
 	}
@@ -182,20 +208,51 @@ func (f *Filtered[E]) DeleteAll(ctx context.Context) (int64, error) {
 // can change what the second statement matches, so the two lists need not be
 // the same list; here they are the same statement.
 func (f *Filtered[E]) DeleteAllReturning(ctx context.Context) ([]*E, error) {
-	sql, args, err := f.compileDeleteAll("DeleteAllReturning")
+	return f.deleteAllReturning(ctx, "DeleteAllReturning", "DeleteAll", false)
+}
+
+// ForceDeleteAllReturning is DeleteAllReturning, but always issues a
+// physical DELETE even when the table has a soft-delete column.
+func (f *Filtered[E]) ForceDeleteAllReturning(ctx context.Context) ([]*E, error) {
+	return f.deleteAllReturning(ctx, "ForceDeleteAllReturning", "ForceDeleteAll", true)
+}
+
+func (f *Filtered[E]) deleteAllReturning(ctx context.Context, op, plain string, force bool) ([]*E, error) {
+	sql, args, err := f.compileDeleteAll(op, force)
 	if err != nil {
 		return nil, err
 	}
-	return f.returning(ctx, "DeleteAllReturning", "DeleteAll", sql, args)
+	return f.returning(ctx, op, plain, sql, args)
 }
 
-// compileDeleteAll builds the DELETE both spellings run.
-func (f *Filtered[E]) compileDeleteAll(op string) (string, []any, error) {
+// compileDeleteAll builds the DELETE (or, for a soft-delete table not
+// forced, the UPDATE) every spelling runs.
+func (f *Filtered[E]) compileDeleteAll(op string, force bool) (string, []any, error) {
 	if err := f.readyForSetOp(op); err != nil {
 		return "", nil, err
 	}
 
 	c := f.compiler()
+
+	if !force && f.st.softDelete != nil {
+		// c.set's error is unreachable here for the reason writer.delete's
+		// identical call documents: softDelete is always a real column of
+		// this table.
+		assignments, err := c.set([]Assignment{{Col: f.st.softDelete, Value: time.Now()}})
+		if err != nil {
+			return "", nil, err
+		}
+		where, err := c.where(f.effectivePreds())
+		if err != nil {
+			return "", nil, err
+		}
+		if err := f.requireFilter(op, "delete"); err != nil {
+			return "", nil, err
+		}
+		return "UPDATE " + c.d.QuoteIdent(f.st.name) + " SET " + assignments + where,
+			c.args.args, nil
+	}
+
 	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return "", nil, err

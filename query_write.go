@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // Insert writes e as a new row.
@@ -109,7 +110,20 @@ func (q *Query[E]) UpdateIf(ctx context.Context, e *E, conds ...Predicate) error
 }
 
 // Delete removes the row e's primary key identifies.
+//
+// A table with a soft-delete column is stamped rather than removed; see
+// SoftDelete. ForceDelete always removes the row.
 func (q *Query[E]) Delete(ctx context.Context, e *E) error {
+	return q.delete(ctx, e, false)
+}
+
+// ForceDelete is Delete, but always removes the row even when the table has
+// a soft-delete column. It fires the same hooks Delete does.
+func (q *Query[E]) ForceDelete(ctx context.Context, e *E) error {
+	return q.delete(ctx, e, true)
+}
+
+func (q *Query[E]) delete(ctx context.Context, e *E, force bool) error {
 	w, err := q.writer(e)
 	if err != nil {
 		return err
@@ -117,7 +131,7 @@ func (q *Query[E]) Delete(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeDelete", any(e), BeforeDeleter.BeforeDelete); err != nil {
 		return err
 	}
-	n, err := w.delete(ctx, nil)
+	n, err := w.delete(ctx, nil, force)
 	if err != nil {
 		return err
 	}
@@ -146,7 +160,7 @@ func (q *Query[E]) DeleteIf(ctx context.Context, e *E, conds ...Predicate) error
 	if err := runHook(ctx, w.st.name, "BeforeDelete", any(e), BeforeDeleter.BeforeDelete); err != nil {
 		return err
 	}
-	n, err := w.delete(ctx, conds)
+	n, err := w.delete(ctx, conds, false)
 	if err != nil {
 		return err
 	}
@@ -488,8 +502,37 @@ func (w *writer[E]) update(ctx context.Context, conds []Predicate) (int64, error
 
 // delete removes the row and reports how many rows it removed, for the same
 // reason update does.
-func (w *writer[E]) delete(ctx context.Context, conds []Predicate) (int64, error) {
+//
+// A table with a soft-delete column stamps it with the current time instead
+// of removing the row, unless force is set: force is what ForceDelete asks
+// for, a real DELETE regardless of the column.
+func (w *writer[E]) delete(ctx context.Context, conds []Predicate, force bool) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
+
+	if !force && w.st.softDelete != nil {
+		// The SET clause is rendered before the WHERE, matching update: its
+		// value binds first, which is the order it appears in the statement.
+		//
+		// c.set can only fail on a nil column or one belonging to another
+		// table, and softDelete is always a real column of this one, so the
+		// error is unreachable here; it is still checked, since c.set's
+		// contract does not promise that for every caller.
+		assignments, err := c.set([]Assignment{{Col: w.st.softDelete, Value: time.Now()}})
+		if err != nil {
+			return 0, err
+		}
+		where, err := w.keyFilter(c, conds)
+		if err != nil {
+			return 0, err
+		}
+		sql := "UPDATE " + c.d.QuoteIdent(w.st.name) + " SET " + assignments + where
+		res, err := w.db.ex.Exec(ctx, sql, c.args.args...)
+		if err != nil {
+			return 0, fmt.Errorf("orm: table %q: deleting: %w", w.st.name, err)
+		}
+		return res.RowsAffected, nil
+	}
+
 	where, err := w.keyFilter(c, conds)
 	if err != nil {
 		return 0, err

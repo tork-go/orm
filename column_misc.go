@@ -86,6 +86,9 @@ func NewTimeColumn(name string) *TimeColumn {
 }
 
 // NullableTimeColumn is a nullable timestamp column.
+//
+// It is the only column type that embeds softDeleteBuilder: soft delete
+// stamps a moment in time, so nothing else is a candidate for the marker.
 type NullableTimeColumn struct {
 	chain[*time.Time, *NullableTimeColumn]
 	nullEquatable[time.Time]
@@ -93,6 +96,7 @@ type NullableTimeColumn struct {
 	nullAssignable[time.Time]
 	nullness
 	sortable
+	softDeleteBuilder[*time.Time, *NullableTimeColumn]
 }
 
 var _ interface {
@@ -110,6 +114,7 @@ func NewNullableTimeColumn(name string) *NullableTimeColumn {
 	x.nullAssignable = nullAssignable[time.Time]{c: c}
 	x.nullness = nullness{c: c}
 	x.sortable = sortable{c: c}
+	x.softDeleteBuilder = softDeleteBuilder[*time.Time, *NullableTimeColumn]{c: c, self: x}
 	return x
 }
 

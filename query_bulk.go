@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The Many operations write a batch of rows the caller is already holding,
@@ -159,8 +160,25 @@ func (q *Query[E]) UpdateMany(ctx context.Context, es ...*E) (int64, error) {
 //	DELETE FROM "memberships"
 //	    WHERE (("org_id" = $1 AND "user_id" = $2) OR ("org_id" = $3 AND "user_id" = $4))
 //
+// A table with a soft-delete column is updated rather than deleted; see
+// SoftDelete. ForceDeleteMany always removes the rows.
+//
 // To remove every row matching a condition, that is DeleteAll.
 func (q *Query[E]) DeleteMany(ctx context.Context, es ...*E) (int64, error) {
+	return q.deleteMany(ctx, es, false)
+}
+
+// ForceDeleteMany is DeleteMany, but always issues a physical DELETE even
+// when the table has a soft-delete column.
+func (q *Query[E]) ForceDeleteMany(ctx context.Context, es ...*E) (int64, error) {
+	return q.deleteMany(ctx, es, true)
+}
+
+func (q *Query[E]) deleteMany(ctx context.Context, es []*E, force bool) (int64, error) {
+	op := "DeleteMany"
+	if force {
+		op = "ForceDeleteMany"
+	}
 	if len(es) == 0 {
 		return 0, nil
 	}
@@ -170,9 +188,9 @@ func (q *Query[E]) DeleteMany(ctx context.Context, es ...*E) (int64, error) {
 	}
 	pk := q.st.pk
 	if len(pk) == 0 {
-		return 0, fmt.Errorf("orm: table %q: DeleteMany needs a primary key to say which "+
+		return 0, fmt.Errorf("orm: table %q: %s needs a primary key to say which "+
 			"rows it means, and the table declares none; use Where(...).DeleteAll instead",
-			q.st.name)
+			q.st.name, op)
 	}
 
 	for _, w := range ws {
@@ -188,7 +206,7 @@ func (q *Query[E]) DeleteMany(ctx context.Context, es ...*E) (int64, error) {
 	var affected int64
 	if err := q.db.atomically(ctx, per < len(ws), func(db *DB) error {
 		for start := 0; start < len(ws); start += per {
-			n, err := deleteBatch(ctx, db, q.st, ws[start:min(start+per, len(ws))])
+			n, err := deleteBatch(ctx, db, q.st, ws[start:min(start+per, len(ws))], force)
 			if err != nil {
 				return err
 			}
@@ -204,7 +222,7 @@ func (q *Query[E]) DeleteMany(ctx context.Context, es ...*E) (int64, error) {
 			return affected, err
 		}
 	}
-	return affected, partialWrite(q.st.name, "DeleteMany", "deleted", affected, int64(len(ws)))
+	return affected, partialWrite(q.st.name, op, "deleted", affected, int64(len(ws)))
 }
 
 // bulkWriters resolves every row, reporting the query's own problems once
@@ -395,7 +413,10 @@ func (ch insertChunk[E]) run(ctx context.Context, db *DB) (int64, error) {
 }
 
 // deleteBatch removes one statement's worth of rows, identified by key.
-func deleteBatch[E any](ctx context.Context, db *DB, st *tableState, ws []*writer[E]) (int64, error) {
+//
+// A table with a soft-delete column is updated rather than deleted, unless
+// force is set, the same choice writer.delete makes for a single row.
+func deleteBatch[E any](ctx context.Context, db *DB, st *tableState, ws []*writer[E], force bool) (int64, error) {
 	pk := st.pk
 
 	// A single column key is a list; a composite one has no list form, so it
@@ -422,6 +443,28 @@ func deleteBatch[E any](ctx context.Context, db *DB, st *tableState, ws []*write
 	}
 
 	c := &compiler{d: db.d, args: &argBuilder{d: db.d}, table: st.name}
+
+	if !force && st.softDelete != nil {
+		// Neither error is reachable: softDelete is always a real column of
+		// this table, and pred is built entirely from st.pk, columns of this
+		// same table. Checked anyway, for the reason writer.delete's
+		// identical c.set call documents.
+		assignments, err := c.set([]Assignment{{Col: st.softDelete, Value: time.Now()}})
+		if err != nil {
+			return 0, err
+		}
+		where, err := c.where([]Predicate{pred})
+		if err != nil {
+			return 0, err
+		}
+		sql := "UPDATE " + c.d.QuoteIdent(st.name) + " SET " + assignments + where
+		res, err := db.ex.Exec(ctx, sql, c.args.args...)
+		if err != nil {
+			return 0, fmt.Errorf("orm: table %q: deleting: %w", st.name, err)
+		}
+		return res.RowsAffected, nil
+	}
+
 	where, err := c.where([]Predicate{pred})
 	if err != nil {
 		return 0, err

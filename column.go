@@ -12,6 +12,7 @@ type Column[T any] struct {
 	name             string
 	ownerTable       string
 	primaryKey       bool
+	softDeleteMarker bool
 	unique           bool
 	notNull          bool
 	maxLen           int
@@ -60,6 +61,12 @@ func NewColumn[T any](name string) *Column[T] {
 // PrimaryKey marks the column as (part of) the table's primary key.
 func (c *Column[T]) PrimaryKey() *Column[T] {
 	c.primaryKey = true
+	return c
+}
+
+// SoftDelete marks the column as the table's soft-delete marker.
+func (c *Column[T]) SoftDelete() *Column[T] {
+	c.softDeleteMarker = true
 	return c
 }
 
@@ -180,6 +187,11 @@ func (c *Column[T]) Name() string {
 // IsPrimaryKey reports whether PrimaryKey was called.
 func (c *Column[T]) IsPrimaryKey() bool {
 	return c.primaryKey
+}
+
+// IsSoftDeleteColumn reports whether SoftDelete was called.
+func (c *Column[T]) IsSoftDeleteColumn() bool {
+	return c.softDeleteMarker
 }
 
 // IsUnique reports whether Unique was called.

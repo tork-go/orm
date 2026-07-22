@@ -129,6 +129,9 @@ func (b chain[T, Self]) Base() *Column[T] { return b.c }
 // IsPrimaryKey reports whether PrimaryKey was called.
 func (b chain[T, Self]) IsPrimaryKey() bool { return b.c.IsPrimaryKey() }
 
+// IsSoftDeleteColumn reports whether SoftDelete was called.
+func (b chain[T, Self]) IsSoftDeleteColumn() bool { return b.c.IsSoftDeleteColumn() }
+
 // IsUnique reports whether Unique was called.
 func (b chain[T, Self]) IsUnique() bool { return b.c.IsUnique() }
 

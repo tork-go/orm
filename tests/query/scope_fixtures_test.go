@@ -1,11 +1,15 @@
 package query_test
 
-import "github.com/tork-go/orm"
+import (
+	"time"
 
-// A table with a default scope, and a HasMany into it, so scope reach into
-// eager loading and Has/HasNone (query_load.go, query_compile.go) has
-// something to load and check against. The soft-delete column is added
-// alongside ScopedPost's other tests once SoftDelete exists.
+	"github.com/tork-go/orm"
+)
+
+// A table with a default scope, a soft-delete column, and a HasMany into
+// it, so scope reach into eager loading and Has/HasNone (query_load.go,
+// query_compile.go) and the two default-scope sources combining (Scoper
+// and soft delete) all have something to exercise.
 
 type ScopedAuthor struct {
 	ID    int
@@ -34,6 +38,7 @@ type ScopedPost struct {
 	AuthorID  int
 	Title     string
 	Published bool
+	DeletedAt *time.Time
 
 	Tags []ScopedTag // ManyToMany, through ScopedPostTags
 }
@@ -44,11 +49,13 @@ type ScopedPostModel struct {
 	AuthorID  *orm.IntColumn
 	Title     *orm.StringColumn
 	Published *orm.BoolColumn
+	DeletedAt *orm.NullableTimeColumn
 	Author    orm.BelongsTo[ScopedAuthor]
 	Tags      orm.ManyToMany[ScopedTag]
 }
 
-// DefaultScope keeps only published posts visible by default.
+// DefaultScope keeps only published posts visible by default, ANDed with
+// the implicit soft-delete filter DeletedAt.SoftDelete() adds.
 func (m *ScopedPostModel) DefaultScope() orm.Predicate {
 	return m.Published.Eq(true)
 }
@@ -68,6 +75,7 @@ var ScopedPosts = orm.DefineTable[ScopedPost]("scoped_posts",
 			AuthorID:  t.Int("author_id").NotNull().References(ScopedAuthors.ID),
 			Title:     t.String("title").NotNull(),
 			Published: t.Bool("published").NotNull(),
+			DeletedAt: t.NullableTime("deleted_at").SoftDelete(),
 		}
 	})
 

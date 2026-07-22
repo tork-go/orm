@@ -1,5 +1,10 @@
 package orm
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Scoper is implemented by a model that filters every read and set
 // operation on its table by default, unless the query calls Unscoped().
 //
@@ -38,4 +43,30 @@ func (st *tableState) defaultScope() Predicate {
 		}
 	})
 	return st.scopeVal
+}
+
+// softDeleteColumnOf returns the table's soft-delete marker column, or nil
+// if it declares none, erroring if it declares more than one: only one
+// column can be stamped or checked, so two is ambiguous rather than a
+// choice DefineTable could make on the caller's behalf.
+func softDeleteColumnOf(table string, cols []ColumnMeta) (ColumnMeta, error) {
+	var found []ColumnMeta
+	for _, c := range cols {
+		if c.IsSoftDeleteColumn() {
+			found = append(found, c)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return nil, nil
+	case 1:
+		return found[0], nil
+	default:
+		names := make([]string, len(found))
+		for i, c := range found {
+			names[i] = `"` + c.Name() + `"`
+		}
+		return nil, fmt.Errorf("orm: table %q: declares %d soft-delete columns (%s); "+
+			"only one is allowed", table, len(found), strings.Join(names, ", "))
+	}
 }

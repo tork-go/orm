@@ -24,6 +24,21 @@ func (b lengthBuilder[T, Self]) MaxLen(n int) Self {
 	return b.self
 }
 
+// softDeleteBuilder supplies SoftDelete to nullable timestamp columns.
+type softDeleteBuilder[T any, Self any] struct {
+	c    *Column[T]
+	self Self
+}
+
+// SoftDelete marks this column as the table's soft-delete marker: Delete
+// and DeleteAll set it to the current time instead of removing the row,
+// and every read excludes rows where it is set, unless the query is
+// Unscoped.
+func (b softDeleteBuilder[T, Self]) SoftDelete() Self {
+	b.c.SoftDelete()
+	return b.self
+}
+
 // numericBuilder supplies Numeric to fixed-point columns.
 type numericBuilder[T any, Self any] struct {
 	c    *Column[T]

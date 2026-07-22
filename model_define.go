@@ -319,6 +319,11 @@ func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M 
 	if id, ok := identityOf(cols); ok {
 		st.identity = id
 	}
+	sd, err := softDeleteColumnOf(name, cols)
+	if err != nil {
+		panic(err.Error())
+	}
+	st.softDelete = sd
 	for _, c := range cols {
 		if s, ok := c.(ownerSetter); ok {
 			s.setOwner(name)

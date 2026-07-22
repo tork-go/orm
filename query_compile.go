@@ -138,14 +138,31 @@ func (c *compiler) sub(table string) *compiler {
 	}
 }
 
-// addJoin extends this statement with one JOIN or LEFT JOIN, correlated on
-// the relationship's own foreign key — the same correlation existsDirect
-// already renders as a nested EXISTS, rendered here as a real join instead.
+// addJoin extends this statement with one JOIN or LEFT JOIN.
+//
+// A join names a relationship or a table. A relationship supplies its own
+// correlation, on the foreign key it resolves to — the same correlation
+// existsDirect already renders as a nested EXISTS, rendered here as a real
+// join instead. A table supplies none, so the caller's conditions are the
+// whole of the ON clause; see Filtered.JoinTo.
+//
+// Either way the joined table joins this statement's scope before its
+// conditions render, since a condition over it would otherwise fail the
+// ownership check that names a table the statement does not select from.
+func (c *compiler) addJoin(spec joinSpec) error {
+	if spec.to != nil {
+		return c.addTableJoin(spec)
+	}
+	return c.addRelationJoin(spec)
+}
+
+// addRelationJoin renders a join correlated on a relationship's foreign key,
+// under the alias the caller named the far side with if there was one.
 //
 // It rejects a many to many outright: that needs two joins through a join
 // table, which multiplies rows in a way Has and HasNone, built on EXISTS,
 // never do, and this package already has an answer for that question.
-func (c *compiler) addJoin(spec joinSpec) error {
+func (c *compiler) addRelationJoin(spec joinSpec) error {
 	info, err := spec.rel.info()
 	if err != nil {
 		return err
@@ -158,21 +175,85 @@ func (c *compiler) addJoin(spec joinSpec) error {
 		return fmt.Errorf("orm: table %q: Join does not support a many to many "+
 			"relationship, which needs two joins; use Has or HasNone instead", c.table)
 	}
-	c.qualify = true
-	c.extraTables = append(c.extraTables, info.ForeignTable)
 
-	on := c.qualified(info.ForeignTable, info.ForeignColumn) + " = " +
+	// The far side is the stored table under its own name, or, when the
+	// caller gave one, the alias this statement reads that table as. Only
+	// the name changes: qualified writes a column under the table it is
+	// given, so the relationship's own far column still names the key.
+	far := info.ForeignTable
+	if spec.alias != nil {
+		if spec.alias.aliasOf != info.ForeignTable {
+			return fmt.Errorf("orm: table %q: this relationship joins table %q, but the "+
+				"alias given is of table %q", c.table, info.ForeignTable, spec.alias.aliasOf)
+		}
+		far = spec.alias.name
+	}
+
+	if err := c.addJoined(far); err != nil {
+		return err
+	}
+	on := c.qualified(far, info.ForeignColumn) + " = " +
 		c.qualified(info.LocalTable, info.LocalColumn)
 	onSQL, err := c.conditions(on, spec.extra)
 	if err != nil {
 		return err
 	}
-	kw := " JOIN "
-	if spec.kind == joinLeft {
-		kw = " LEFT JOIN "
-	}
-	c.joinSQL = append(c.joinSQL, kw+c.d.QuoteIdent(info.ForeignTable)+" ON "+onSQL)
+	c.joinSQL = append(c.joinSQL, c.joinKeyword(spec.kind)+c.joinedTable(spec.alias, far)+
+		" ON "+onSQL)
 	return nil
+}
+
+// addTableJoin renders a join onto a table named directly, whose ON clause
+// is the caller's conditions and nothing else.
+//
+// The conditions are already known to be non-empty: JoinTo rejects a call
+// with none, where it can say which table was to be joined on nothing.
+func (c *compiler) addTableJoin(spec joinSpec) error {
+	if err := c.addJoined(spec.to.name); err != nil {
+		return err
+	}
+	onSQL, err := c.group(Group{Conj: ConjAnd, Preds: spec.extra})
+	if err != nil {
+		return err
+	}
+	c.joinSQL = append(c.joinSQL, c.joinKeyword(spec.kind)+
+		c.joinedTable(spec.to, spec.to.name)+" ON "+onSQL)
+	return nil
+}
+
+// addJoined brings a table into this statement's scope under the name it is
+// joined as, and refuses a name already in it.
+//
+// Two of one name in a statement is not something a database resolves: a
+// condition naming that table has two candidates and every one of them
+// rejects the statement outright. It is reachable most often through a self
+// referencing relationship, where the far side is the declaring table, so
+// the error names the way to write what the caller meant.
+func (c *compiler) addJoined(table string) error {
+	if c.owns(table) {
+		return fmt.Errorf("orm: table %q: this join names table %q, which the statement "+
+			"already reads from; give one side a name of its own with orm.Alias and join "+
+			"it with JoinAs", c.table, table)
+	}
+	c.qualify = true
+	c.extraTables = append(c.extraTables, table)
+	return nil
+}
+
+// joinedTable names the joined table in the FROM clause: its own name, or a
+// stored table under the alias this statement reads it as.
+func (c *compiler) joinedTable(st *tableState, name string) string {
+	if st != nil && st.aliasOf != "" {
+		return c.d.QuoteIdent(st.aliasOf) + " AS " + c.d.QuoteIdent(name)
+	}
+	return c.d.QuoteIdent(name)
+}
+
+func (c *compiler) joinKeyword(kind joinKind) string {
+	if kind == joinLeft {
+		return " LEFT JOIN "
+	}
+	return " JOIN "
 }
 
 // joinsClause renders every join addJoin has added, in call order, or ""

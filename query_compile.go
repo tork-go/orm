@@ -781,6 +781,12 @@ func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
 				return "", err
 			}
 			parts[i] = s
+		case WindowExpr:
+			s, err := c.windowExpr(v)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = s
 		default:
 			return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
 		}
@@ -799,4 +805,40 @@ func (c *compiler) aggregateExpr(a AggregateExpr) (string, error) {
 		return "", err
 	}
 	return a.fn + "(" + name + ")", nil
+}
+
+// windowExpr renders one WindowExpr: the function, and its OVER clause's
+// PARTITION BY and ORDER BY, each omitted when empty. A window function
+// with neither reads as fn() OVER (), which is valid SQL meaning one
+// partition holding the whole result, ordered however the database likes.
+func (c *compiler) windowExpr(w WindowExpr) (string, error) {
+	var clauses []string
+	if len(w.partition) > 0 {
+		parts := make([]string, len(w.partition))
+		for i, col := range w.partition {
+			name, err := c.column(col)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = name
+		}
+		clauses = append(clauses, "PARTITION BY "+strings.Join(parts, ", "))
+	}
+	if len(w.order) > 0 {
+		parts := make([]string, len(w.order))
+		for i, o := range w.order {
+			name, err := c.column(o.Col)
+			if err != nil {
+				return "", err
+			}
+			if o.Desc {
+				name += " DESC"
+			} else {
+				name += " ASC"
+			}
+			parts[i] = name
+		}
+		clauses = append(clauses, "ORDER BY "+strings.Join(parts, ", "))
+	}
+	return w.fn + "() OVER (" + strings.Join(clauses, " ") + ")", nil
 }

@@ -24,6 +24,12 @@ type DerivedSource interface {
 	// derivedDB is the handle the source was built on, which the derived
 	// query runs on too.
 	derivedDB() *DB
+
+	// derivedErr is whatever the source is already carrying, so From
+	// reports the reason the source is unusable rather than a consequence
+	// of it — a combined query built from a nil operand has no handle and
+	// no shape, and neither of those is the thing that went wrong.
+	derivedErr() error
 }
 
 // From gives the derived table its rows.
@@ -58,6 +64,10 @@ func (d DerivedTable[E]) From(src DerivedSource) *Filtered[E] {
 	}
 	if src == nil {
 		out.fail(fmt.Errorf("orm: derived table %q: From was given no source", d.st.name))
+		return out
+	}
+	if err := src.derivedErr(); err != nil {
+		out.fail(err)
 		return out
 	}
 	out.db = src.derivedDB()

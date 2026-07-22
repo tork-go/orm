@@ -884,11 +884,26 @@ func limitOffset(limit, offset *int) string {
 // rendered inside a subquery is qualified along with the rest of it. A
 // statement over one table qualifies nothing, which is every read but that one.
 func (c *compiler) selectList(cols []ColumnMeta) (string, error) {
+	return c.selectListAs(cols, nil)
+}
+
+// selectListAs is selectList, naming each column with AS when aliases is
+// given, which is what a derived table needs so the statement wrapping this
+// one can refer to the columns its model declares. See selectExprListAs,
+// whose count check is unreachable for the same reason.
+func (c *compiler) selectListAs(cols []ColumnMeta, aliases []string) (string, error) {
+	if aliases != nil && len(aliases) != len(cols) {
+		return "", fmt.Errorf("orm: table %q: %d column(s) to alias but %d name(s) given",
+			c.table, len(cols), len(aliases))
+	}
 	parts := make([]string, len(cols))
 	for i, col := range cols {
 		name, err := c.column(col)
 		if err != nil {
 			return "", err
+		}
+		if aliases != nil {
+			name += " AS " + c.d.QuoteIdent(aliases[i])
 		}
 		parts[i] = name
 	}

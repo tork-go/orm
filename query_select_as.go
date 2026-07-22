@@ -418,3 +418,5 @@ func (p *Projection[T]) First(ctx context.Context) (T, error) {
 	}
 	return rows[0], nil
 }
+
+func (p *Projection[T]) derivedErr() error { return p.q.err }

@@ -3,6 +3,7 @@ package orm
 import (
 	"context"
 	"fmt"
+	"reflect"
 )
 
 // combineOp is which of the four set operations joins a Combined's two
@@ -143,23 +144,8 @@ func (c *Combined[E]) clone() *Combined[E] {
 func (c *Combined[E]) SQL() (string, []any, error) { return c.compile() }
 
 func (c *Combined[E]) compile() (string, []any, error) {
-	if c.err != nil {
-		return "", nil, c.err
-	}
-	if err := c.left.ready(); err != nil {
+	if err := c.checkOperands(); err != nil {
 		return "", nil, err
-	}
-	if err := c.right.ready(); err != nil {
-		return "", nil, err
-	}
-	if c.left.db != c.right.db {
-		return "", nil, fmt.Errorf("orm: %s: the left and right query must share one "+
-			"database handle", c.op.name())
-	}
-	if len(c.left.columns()) != len(c.right.columns()) {
-		return "", nil, fmt.Errorf("orm: %s: the left query reads %d column(s) but the "+
-			"right reads %d; both sides of a %s must select the same shape",
-			c.op.name(), len(c.left.columns()), len(c.right.columns()), c.op.name())
 	}
 
 	// One argBuilder shared by both operands, the same technique
@@ -167,25 +153,100 @@ func (c *Combined[E]) compile() (string, []any, error) {
 	// continuously across the whole statement rather than each operand's
 	// own compiler restarting at 1 and colliding with the other's.
 	args := &argBuilder{d: c.left.db.d}
-	leftSQL, err := c.left.compileWithinCombine(c.op.name(), args)
+	sql, err := c.render(args, nil)
 	if err != nil {
 		return "", nil, err
 	}
-	rightSQL, err := c.right.compileWithinCombine(c.op.name(), args)
+	return sql, args.args, nil
+}
+
+// checkOperands is everything that has to hold before either operand is
+// rendered: both runnable, on one handle, reading the same shape.
+func (c *Combined[E]) checkOperands() error {
+	if c.err != nil {
+		return c.err
+	}
+	if err := c.left.ready(); err != nil {
+		return err
+	}
+	if err := c.right.ready(); err != nil {
+		return err
+	}
+	if c.left.db != c.right.db {
+		return fmt.Errorf("orm: %s: the left and right query must share one "+
+			"database handle", c.op.name())
+	}
+	if len(c.left.columns()) != len(c.right.columns()) {
+		return fmt.Errorf("orm: %s: the left query reads %d column(s) but the "+
+			"right reads %d; both sides of a %s must select the same shape",
+			c.op.name(), len(c.left.columns()), len(c.right.columns()), c.op.name())
+	}
+	return nil
+}
+
+// render writes the combined statement against args.
+//
+// aliases, when given, go to the left operand alone: SQL takes a combined
+// result's column names from its first operand, so naming them there names
+// them for the whole thing, and repeating the names on the right would say
+// nothing.
+func (c *Combined[E]) render(args *argBuilder, aliases []string) (string, error) {
+	leftSQL, err := c.left.compileWithinCombine(c.op.name(), args, aliases)
 	if err != nil {
-		return "", nil, err
+		return "", err
+	}
+	rightSQL, err := c.right.compileWithinCombine(c.op.name(), args, nil)
+	if err != nil {
+		return "", err
 	}
 
 	oc := c.left.compiler()
 	oc.args = args
 	order, err := oc.orderBy(c.ords)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	sql := "(" + leftSQL + ") " + c.op.String() + " (" + rightSQL + ")" +
-		order + limitOffset(c.limit, nil)
-	return sql, args.args, nil
+	return "(" + leftSQL + ") " + c.op.String() + " (" + rightSQL + ")" +
+		order + limitOffset(c.limit, nil), nil
+}
+
+// derivedSource renders the combined query as a derived table's rows,
+// sharing the enclosing statement's arguments so placeholders number
+// continuously across the boundary.
+func (c *Combined[E]) derivedSource(outer *compiler, aliases []string) (string, error) {
+	if err := c.checkOperands(); err != nil {
+		return "", err
+	}
+	return c.render(outer.args, aliases)
+}
+
+// derivedShape is the Go type each of the left operand's columns yields,
+// which is what a combined result's columns are.
+//
+// The nil check cannot fire through From, which asks derivedErr first and
+// stops on the error a nil operand already recorded. It is kept because a
+// method that dereferences a field it does not own should not depend on
+// being called in one particular order.
+func (c *Combined[E]) derivedShape() []reflect.Type {
+	if c.left == nil {
+		return nil
+	}
+	cols := c.left.columns()
+	out := make([]reflect.Type, len(cols))
+	for i, col := range cols {
+		out[i] = col.GoType()
+	}
+	return out
+}
+
+// derivedDB is the left operand's handle; the nil check is unreachable for
+// the reason derivedShape's is.
+func (c *Combined[E]) derivedDB() *DB {
+	if c.left == nil {
+		return nil
+	}
+	return c.left.db
 }
 
 // compileWithinCombine renders f as one operand of a Combined, sharing args
@@ -199,7 +260,7 @@ func (c *Combined[E]) compile() (string, []any, error) {
 // never running the load the caller wrote. A With is rejected because this
 // renders only the operand's own SELECT, with nowhere to hang the WITH
 // clause its CTE's definition needs.
-func (f *Filtered[E]) compileWithinCombine(op string, args *argBuilder) (string, error) {
+func (f *Filtered[E]) compileWithinCombine(op string, args *argBuilder, aliases []string) (string, error) {
 	if f.lock != nil {
 		return "", fmt.Errorf("orm: table %q: %s cannot run over a query with a lock; "+
 			"no dialect Tork targets accepts FOR UPDATE or FOR SHARE beside a set operation",
@@ -224,12 +285,66 @@ func (f *Filtered[E]) compileWithinCombine(op string, args *argBuilder) (string,
 	// table's own columns, which always pass. Checked anyway, since
 	// selectList is a general renderer with no way to know which caller
 	// guarantees what.
-	list, err := c.selectList(f.columns())
+	list, err := c.selectListAs(f.columns(), aliases)
 	if err != nil {
 		return "", err
 	}
 	return f.compileRead(c, list)
 }
+
+// derivedSource renders this read as a derived table's rows.
+//
+// A lock is rejected: a derived table's rows are the output of a query, and
+// no dialect Tork targets locks rows through one. A Preload is rejected for
+// the reason a combined query's is — it runs a query of its own against
+// rows this statement never has on their own.
+func (f *Filtered[E]) derivedSource(outer *compiler, aliases []string) (string, error) {
+	if err := f.ready(); err != nil {
+		return "", err
+	}
+	if err := f.noLock("From"); err != nil {
+		return "", err
+	}
+	if len(f.loads) > 0 {
+		return "", fmt.Errorf("orm: table %q: From cannot take a query carrying a Preload; "+
+			"a derived table is read in one round trip, with no rows of its own to load "+
+			"against", f.st.name)
+	}
+	c, err := f.compilerJoined()
+	if err != nil {
+		return "", err
+	}
+	c.args = outer.args
+	with, err := f.cteClause(c)
+	if err != nil {
+		return "", err
+	}
+	// selectListAs's error is unreachable here for the reason
+	// compileWithinCombine's identical call documents: f.columns() is
+	// either f.sel, which Select already rejects a foreign column from at
+	// build time, or this table's own columns, which always pass.
+	list, err := c.selectListAs(f.columns(), aliases)
+	if err != nil {
+		return "", err
+	}
+	sql, err := f.compileRead(c, list)
+	if err != nil {
+		return "", err
+	}
+	return with + sql, nil
+}
+
+// derivedShape is the Go type each column this read covers yields.
+func (f *Filtered[E]) derivedShape() []reflect.Type {
+	cols := f.columns()
+	out := make([]reflect.Type, len(cols))
+	for i, col := range cols {
+		out[i] = col.GoType()
+	}
+	return out
+}
+
+func (f *Filtered[E]) derivedDB() *DB { return f.db }
 
 // All runs the combined statement and returns every row it matches.
 func (c *Combined[E]) All(ctx context.Context) ([]*E, error) {
@@ -255,3 +370,7 @@ func (c *Combined[E]) First(ctx context.Context) (*E, error) {
 	}
 	return rows[0], nil
 }
+
+func (c *Combined[E]) derivedErr() error { return c.err }
+
+func (f *Filtered[E]) derivedErr() error { return f.err }

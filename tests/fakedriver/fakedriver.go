@@ -26,6 +26,7 @@ type Conn struct {
 	queryCalls []string
 	queryArgs  [][]any
 	queued     []queuedRows
+	results    []*Rows
 	failOn     map[string]bool
 	txs        []*Tx
 	FailBegin  bool // if true, Begin returns an error, simulating a dropped connection
@@ -119,16 +120,20 @@ func (c *Conn) Query(_ context.Context, sql string, args ...any) (driver.Rows, e
 	if c.failOn[sql] {
 		return nil, errors.New("fakedriver: simulated Query failure")
 	}
+	var r *Rows
 	if len(c.queued) == 0 {
-		return &Rows{err: c.RowsErr}, nil
+		r = &Rows{err: c.RowsErr}
+	} else {
+		next := c.queued[0]
+		c.queued = c.queued[1:]
+		err := c.RowsErr
+		if next.err != nil {
+			err = next.err
+		}
+		r = &Rows{rows: next.rows, err: err}
 	}
-	next := c.queued[0]
-	c.queued = c.queued[1:]
-	err := c.RowsErr
-	if next.err != nil {
-		err = next.err
-	}
-	return &Rows{rows: next.rows, err: err}, nil
+	c.results = append(c.results, r)
+	return r, nil
 }
 
 func (c *Conn) QueryRow(_ context.Context, sql string, args ...any) driver.Row {
@@ -178,6 +183,17 @@ func (c *Conn) Begin(context.Context) (driver.Tx, error) {
 	return t, nil
 }
 func (c *Conn) Close(context.Context) error { return nil }
+
+// Results returns every result set Query handed out, in order, so a test can
+// assert a streamed read released its cursor, by checking the one it opened
+// was Closed after the loop broke out early.
+func (c *Conn) Results() []*Rows {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]*Rows, len(c.results))
+	copy(out, c.results)
+	return out
+}
 
 // Txs returns every transaction started on this connection, in order, so a
 // test can assert both how many a write opened and whether each was

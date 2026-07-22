@@ -40,6 +40,7 @@ const (
 	exprColumn exprKind = iota // a column, lifted by Value
 	exprArith                  // left <op> right
 	exprCase                   // CASE WHEN ... THEN ... ELSE ... END
+	exprCall                   // fn(args...), which an aggregate also is
 )
 
 // exprNode is one expression, flattened into a non-generic shape.
@@ -62,6 +63,20 @@ type exprNode struct {
 
 	whens []caseWhen // exprCase
 	els   any
+
+	// exprCall. fn is the function's name, checked as an identifier when the
+	// statement compiles, and args its arguments, each a column, an
+	// expression or a literal to bind.
+	//
+	// An aggregate is a call like any other, differing only in the three
+	// flags below: agg marks it as one, which is what DISTINCT applies to,
+	// star is COUNT(*), the one call whose argument list names nothing, and
+	// distinct is COUNT(DISTINCT x).
+	fn       string
+	args     []any
+	agg      bool
+	star     bool
+	distinct bool
 }
 
 // expression is the non-generic view of an Expr[T].
@@ -137,6 +152,67 @@ func (e Expr[T]) LessOrEqual(other any) Predicate { return e.compare(OpLessOrEqu
 
 func (e Expr[T]) compare(op Operator, other any) Predicate {
 	return exprComparison{left: e, op: op, right: other}
+}
+
+// Fn calls a SQL function, which is what everything the database can compute
+// and this package has no name of its own for goes through.
+//
+//	orm.Fn[time.Time]("date_trunc", "month", Orders.CreatedAt)
+//	// DATE_TRUNC(CAST($1 AS TEXT), "created_at")
+//
+//	orm.Fn[string]("concat_ws", ", ", Users.Surname, Users.Forename)
+//	orm.Fn[time.Time]("now")
+//
+// T is the type the result decodes as, given rather than inferred because
+// nothing about a function's name says what it returns. It is what lets the
+// call be read into a struct field by SelectAs and compared against a value
+// of the right type, the same as any other expression.
+//
+// Arguments are columns, expressions and values, mixed freely. A value is
+// bound as a parameter like every other value this package sends, so a
+// function's argument is never a way to write SQL: only the name is written
+// literally, and it is checked to be an identifier — optionally qualified,
+// as pg_catalog.lower — when the statement compiles.
+//
+// The name is not translated between databases. Where every dialect Tork
+// targets spells a function the same way, this package wraps it (see Lower,
+// Coalesce and the rest of query_fn.go); where they differ, writing the call
+// here is what makes the choice of spelling visible at the call site rather
+// than hidden behind a name that cannot mean the same thing everywhere.
+func Fn[T any](name string, args ...any) Expr[T] {
+	return Expr[T]{n: exprNode{
+		kind:   exprCall,
+		goType: reflect.TypeFor[T](),
+		fn:     name,
+		args:   append([]any(nil), args...),
+	}}
+}
+
+// aggregate builds the call an aggregate is, shared by every constructor in
+// query_select_as.go so they differ only in their name and result type.
+func aggregate[T any](name string, args ...any) Expr[T] {
+	e := Fn[T](name, args...)
+	e.n.agg = true
+	return e
+}
+
+// Distinct restricts an aggregate to the distinct values of its argument.
+//
+//	orm.CountOf(Books.AuthorID).Distinct()  // COUNT(DISTINCT "author_id")
+//
+// It belongs to an aggregate and to nothing else — LOWER(DISTINCT x) is not
+// a thing SQL has — so an expression that is not one is reported when the
+// statement compiles, naming what it was asked of. COUNT(*) is refused for
+// the same reason: its argument is every row, which cannot be narrowed to
+// the distinct ones; count the column you mean instead.
+//
+// That the check is not the Go compiler's is the cost of an aggregate being
+// an ordinary expression, which is what lets it be compared, ordered by, and
+// combined with arithmetic.
+func (e Expr[T]) Distinct() Expr[T] {
+	out := e
+	out.n.distinct = true
+	return out
 }
 
 // Asc orders by the expression's value, smallest first.

@@ -735,8 +735,8 @@ func (c *compiler) set(sets []Assignment) (string, error) {
 // rather than merely how it reads; a redundant pair of brackets costs
 // nothing and is what makes a nested expression mean what its Go reads as.
 //
-// The default is unreachable: exprKind is unexported and both of its values
-// are handled above, so only a node this package built can arrive.
+// The default is unreachable: exprKind is unexported and every one of its
+// values is handled above, so only a node this package built can arrive.
 func (c *compiler) expression(e expression) (string, error) {
 	n := e.exprNode()
 	switch n.kind {
@@ -754,8 +754,147 @@ func (c *compiler) expression(e expression) (string, error) {
 		return "(" + left + " " + n.op.String() + " " + right + ")", nil
 	case exprCase:
 		return c.caseExpr(n)
+	case exprCall:
+		return c.call(n)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown expression", c.table)
+}
+
+// call renders a function call: NAME(args...), and the aggregate spellings
+// COUNT(*) and COUNT(DISTINCT x) that are the same node with a flag.
+//
+// No parentheses beyond the call's own: a call is already delimited by them,
+// and an arithmetic expression carrying one brackets around it anyway.
+func (c *compiler) call(n exprNode) (string, error) {
+	name, err := c.functionName(n.fn)
+	if err != nil {
+		return "", err
+	}
+	if err := c.checkDistinct(n); err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	b.WriteString(name)
+	b.WriteByte('(')
+	if n.distinct {
+		b.WriteString("DISTINCT ")
+	}
+	if n.star {
+		b.WriteString("*)")
+		return b.String(), nil
+	}
+	for i, arg := range n.args {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		s, err := c.callArg(arg)
+		if err != nil {
+			return "", fmt.Errorf("orm: table %q: %s argument %d: %w", c.table, name, i, err)
+		}
+		b.WriteString(s)
+	}
+	b.WriteByte(')')
+	return b.String(), nil
+}
+
+// checkDistinct rejects DISTINCT where SQL has nowhere to put it.
+func (c *compiler) checkDistinct(n exprNode) error {
+	switch {
+	case !n.distinct:
+		return nil
+	case n.star:
+		return fmt.Errorf("orm: table %q: COUNT(*) cannot be made distinct; its argument "+
+			"is every row rather than a value to take the distinct ones of, so count the "+
+			"column you mean instead", c.table)
+	case !n.agg:
+		return fmt.Errorf("orm: table %q: Distinct was called on %s, which is not an "+
+			"aggregate; DISTINCT narrows what an aggregate reads and has no meaning in "+
+			"an ordinary function call", c.table, n.fn)
+	}
+	return nil
+}
+
+// callArg renders one argument of a function call.
+//
+// A column or a nested expression carries its own type, so it renders as it
+// would anywhere. A value is bound and then told what it is, which is the
+// same treatment a CASE arm gets and for the same reason: a bare parameter
+// inside a call has nothing beside it to settle its type, so Postgres reads
+// it as text and then cannot find a function taking one.
+//
+// It is the value's own type that is named, not the call's. A function's
+// result type says nothing about what goes in — DATE_TRUNC returns a
+// timestamp from a text unit — so casting an argument to the result's type
+// would be wrong exactly where it matters.
+func (c *compiler) callArg(v any) (string, error) {
+	// A helper's own requirement is checked before anything is rendered, so
+	// a column of the wrong type is named here rather than by the database.
+	if t, ok := v.(textArg); ok {
+		if err := requireText(t.v); err != nil {
+			return "", err
+		}
+		v = t.v
+	}
+	switch v.(type) {
+	case expression, ColumnMeta:
+		return c.operand(v, nil)
+	}
+	// A value is bound here rather than through operand, which would only
+	// add a type check there is nothing to check against: what an argument
+	// should be is the function's business, not this package's.
+	return c.d.RenderTypedPlaceholder(c.args.bind(v), reflect.TypeOf(v)), nil
+}
+
+// functionName returns the name to write for a call, having checked it is
+// one a caller could have meant.
+//
+// This is the only place a caller's own text reaches a statement outside Raw
+// and the DDL expressions, since a function's name cannot be a parameter.
+// An identifier, optionally qualified by a schema, is exactly what a
+// function's name may be, so anything else is refused here rather than
+// written out and left to the database — or to whoever supplied it.
+//
+// The name is written as given rather than quoted: an unquoted identifier is
+// what every dialect folds to its own case, and quoting would make
+// orm.Fn[...]("Lower", ...) a call to a function nobody declared.
+func (c *compiler) functionName(name string) (string, error) {
+	if isFunctionName(name) {
+		return name, nil
+	}
+	return "", fmt.Errorf("orm: table %q: %q is not a usable function name; it must be "+
+		"an identifier — letters, digits and underscores, not starting with a digit — "+
+		"optionally qualified by a schema, as pg_catalog.lower", c.table, name)
+}
+
+// isFunctionName reports whether name is an identifier, or two joined by a
+// single dot.
+//
+// Written out rather than compiled as a regexp: it runs once per call per
+// statement, and a handful of comparisons is both faster and easier to check
+// by eye than a pattern would be.
+func isFunctionName(name string) bool {
+	part, rest, qualified := strings.Cut(name, ".")
+	if qualified && !isIdentifier(rest) {
+		return false
+	}
+	return isIdentifier(part)
+}
+
+func isIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r == '_':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // caseExpr renders CASE WHEN ... THEN ... ELSE ... END.

@@ -1130,18 +1130,8 @@ func (c *compiler) selectListAs(cols []ColumnMeta, aliases []string) (string, er
 	return strings.Join(parts, ", "), nil
 }
 
-// selectExprList renders a SelectAs projection's SELECT list: any mix of
-// plain columns and aggregate or window expressions.
-//
-// Unlike Predicate, SelectExpr is not sealed to this package — its only
-// method, GoType, is trivially implementable from outside it — so the
-// default case below is reachable by a caller's own bogus SelectExpr, not
-// merely defensive.
-func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
-	return c.selectExprListAs(exprs, nil)
-}
-
-// selectExprListAs is selectExprList, naming each expression with AS when
+// selectExprListAs renders a SelectAs projection's SELECT list — any mix of
+// columns, expressions and window functions — naming each with AS when
 // aliases is given.
 //
 // Only a derived table asks for that, so that the statement wrapping this

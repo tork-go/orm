@@ -92,6 +92,37 @@ func TestJoinOn_ExtraConditionsLandOnON(t *testing.T) {
 	}
 }
 
+// LeftJoinOn is where JoinOn's own ON-vs-WHERE distinction actually
+// matters: the extra condition lands on the ON clause, so a primary row
+// with no matching related row still comes back rather than being dropped
+// the way a WHERE condition would drop it.
+func TestLeftJoinOn_ExtraConditionsLandOnON(t *testing.T) {
+	sql, args, err := Authors.With(pg()).LeftJoinOn(Authors.Desk, Desks.Colour.Eq("red")).SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	want := `SELECT "authors"."id", "authors"."name" FROM "authors" ` +
+		`LEFT JOIN "desks" ON "desks"."author_id" = "authors"."id" AND "desks"."colour" = $1`
+	if sql != want {
+		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
+	}
+	if len(args) != 1 || args[0] != "red" {
+		t.Errorf("args = %v, want [red]", args)
+	}
+}
+
+// LeftJoinOn off an unfiltered query goes through the same Query forwarder
+// every other join call does.
+func TestLeftJoinOn_FromQuery(t *testing.T) {
+	sql, _, err := Authors.With(pg()).LeftJoinOn(Authors.Desk, Desks.Colour.Eq("red")).SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	if !strings.Contains(sql, `LEFT JOIN "desks" ON "desks"."author_id" = "authors"."id" AND "desks"."colour" = $1`) {
+		t.Errorf("SQL() = %s, want the extra condition on the ON clause of a LEFT JOIN", sql)
+	}
+}
+
 // A many to many needs two joins through a join table, which Join does not
 // attempt: Has/HasNone already answer the question without the row
 // multiplication a join brings.

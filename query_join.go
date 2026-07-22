@@ -47,14 +47,25 @@ func (f *Filtered[E]) LeftJoin(rel Relationship) *Filtered[E] { return f.join(re
 // JoinOn is Join, ANDing extra conditions onto the ON clause rather than
 // the WHERE clause.
 //
-// The difference matters most for a LeftJoin: a condition on the joined
-// table added to WHERE is checked after the join runs, so it also drops
-// every primary row that had no matching related row at all — silently
-// turning the left join back into an inner one. JoinOn's condition is
-// checked as part of matching related rows instead, so a primary row with
-// none still comes back, with the related columns NULL.
+// The difference matters most for a left join, which is what LeftJoinOn is
+// for: a condition on the joined table added to WHERE is checked after the
+// join runs, so it also drops every primary row that had no matching
+// related row at all — silently turning the left join back into an inner
+// one. A condition ANDed onto ON instead is checked as part of matching
+// related rows, so a primary row with none still comes back, with the
+// related columns NULL.
 func (f *Filtered[E]) JoinOn(rel Relationship, preds ...Predicate) *Filtered[E] {
 	return f.join(rel, joinInner, preds)
+}
+
+// LeftJoinOn is LeftJoin, ANDing extra conditions onto the ON clause rather
+// than the WHERE clause — JoinOn's own reasoning applied to the join kind
+// that reasoning is actually about: a LeftJoin's whole point is a primary
+// row that keeps coming back with no matching related row, and a condition
+// on the joined table checked as part of the join, rather than after it,
+// is what keeps that true.
+func (f *Filtered[E]) LeftJoinOn(rel Relationship, preds ...Predicate) *Filtered[E] {
+	return f.join(rel, joinLeft, preds)
 }
 
 func (f *Filtered[E]) join(rel Relationship, kind joinKind, extra []Predicate) *Filtered[E] {
@@ -80,4 +91,9 @@ func (q *Query[E]) LeftJoin(rel Relationship) *Filtered[E] { return q.filtered()
 // JoinOn is Filtered.JoinOn, off an unfiltered query.
 func (q *Query[E]) JoinOn(rel Relationship, preds ...Predicate) *Filtered[E] {
 	return q.filtered().JoinOn(rel, preds...)
+}
+
+// LeftJoinOn is Filtered.LeftJoinOn, off an unfiltered query.
+func (q *Query[E]) LeftJoinOn(rel Relationship, preds ...Predicate) *Filtered[E] {
+	return q.filtered().LeftJoinOn(rel, preds...)
 }

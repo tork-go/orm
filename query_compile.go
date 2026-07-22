@@ -90,7 +90,7 @@ func (c *compiler) qualified(table string, col ColumnMeta) string {
 // boundary rather than restarting and colliding, and it qualifies, since two
 // tables are now in scope.
 func (c *compiler) sub(table string) *compiler {
-	return &compiler{d: c.d, args: c.args, table: table, qualify: true}
+	return &compiler{d: c.d, args: c.args, table: table, qualify: true, unscoped: c.unscoped}
 }
 
 // The two constants below stand in for an always true and an always false
@@ -416,7 +416,8 @@ func (c *compiler) existsDirect(e Existence, info RelationInfo) (string, error) 
 	correlate := sub.qualified(info.ForeignTable, info.ForeignColumn) + " = " +
 		sub.qualified(info.LocalTable, info.LocalColumn)
 
-	where, err := sub.conditions(correlate, e.Preds)
+	preds := scopedPreds(c, e)
+	where, err := sub.conditions(correlate, preds)
 	if err != nil {
 		return "", err
 	}
@@ -427,20 +428,22 @@ func (c *compiler) existsDirect(e Existence, info RelationInfo) (string, error) 
 // existsThrough renders a many to many, whose two hops become two EXISTS
 // rather than a join.
 //
-// The inner one is written only when there is something to ask about the far
-// rows. Without it, a row in the join table is already the answer: a foreign
-// key means the row it names is there.
+// The inner one is written whenever there is something to ask about the far
+// rows: conditions the caller gave Has or HasNone, or the far table's own
+// default scope. Without either, a row in the join table is already the
+// answer: a foreign key means the row it names is there.
 func (c *compiler) existsThrough(e Existence, info RelationInfo) (string, error) {
 	join := c.sub(info.JoinTable)
 	correlate := join.qualified(info.JoinTable, info.LocalJoinColumn) + " = " +
 		join.qualified(info.LocalTable, info.LocalColumn)
 
+	farPreds := scopedPreds(c, e)
 	var nested []string
-	if len(e.Preds) > 0 {
+	if len(farPreds) > 0 {
 		far := join.sub(info.ForeignTable)
 		farCorrelate := far.qualified(info.ForeignTable, info.ForeignColumn) + " = " +
 			far.qualified(info.JoinTable, info.ForeignJoinColumn)
-		farWhere, err := far.conditions(farCorrelate, e.Preds)
+		farWhere, err := far.conditions(farCorrelate, farPreds)
 		if err != nil {
 			return "", err
 		}
@@ -454,6 +457,31 @@ func (c *compiler) existsThrough(e Existence, info RelationInfo) (string, error)
 	}
 	return "EXISTS (SELECT 1 FROM " + c.d.QuoteIdent(info.JoinTable) + " WHERE " +
 		where + ")", nil
+}
+
+// scopedPreds is what Has and HasNone actually test against: the caller's
+// own conditions, plus the related table's default scope, unless the outer
+// query was Unscoped. The join table in a many to many carries no scope of
+// its own here; only the far, related table's does.
+//
+// lookupTable failing is unreachable here: existence, the only caller, has
+// already called e.Rel.info(), which looks up the same table by the same
+// entity and fails first if it is not registered. It is checked anyway
+// rather than assumed, since a lookup that can fail should never be treated
+// as one that cannot.
+func scopedPreds(c *compiler, e Existence) []Predicate {
+	if c.unscoped {
+		return e.Preds
+	}
+	related, ok := lookupTable(e.Rel.entity)
+	if !ok {
+		return e.Preds
+	}
+	scope := related.defaultScope()
+	if scope == nil {
+		return e.Preds
+	}
+	return append(append([]Predicate(nil), e.Preds...), scope)
 }
 
 // conditions joins a subquery's correlation to the caller's own conditions.

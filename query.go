@@ -404,7 +404,7 @@ func (f *Filtered[E]) load(ctx context.Context, rows []*E) error {
 	for i, r := range rows {
 		parents[i] = reflect.ValueOf(r).Elem()
 	}
-	return runLoads(ctx, f.db, f.st, parents, f.loads)
+	return runLoads(ctx, f.db, f.st, parents, f.loads, f.unscoped)
 }
 
 // keysWereRead rejects a load whose matching column the query did not read.

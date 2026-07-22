@@ -34,6 +34,8 @@ type ScopedPost struct {
 	AuthorID  int
 	Title     string
 	Published bool
+
+	Tags []ScopedTag // ManyToMany, through ScopedPostTags
 }
 
 type ScopedPostModel struct {
@@ -43,11 +45,19 @@ type ScopedPostModel struct {
 	Title     *orm.StringColumn
 	Published *orm.BoolColumn
 	Author    orm.BelongsTo[ScopedAuthor]
+	Tags      orm.ManyToMany[ScopedTag]
 }
 
 // DefaultScope keeps only published posts visible by default.
 func (m *ScopedPostModel) DefaultScope() orm.Predicate {
 	return m.Published.Eq(true)
+}
+
+// The join table is named here rather than inferred, the same as BookModel
+// names BookTags: nothing about a ManyToMany[ScopedTag] says which table
+// joins the two.
+func (m *ScopedPostModel) Relations() []orm.RelationDef {
+	return []orm.RelationDef{orm.Through(&m.Tags, ScopedPostTags.PostID, ScopedPostTags.TagID)}
 }
 
 var ScopedPosts = orm.DefineTable[ScopedPost]("scoped_posts",
@@ -58,5 +68,54 @@ var ScopedPosts = orm.DefineTable[ScopedPost]("scoped_posts",
 			AuthorID:  t.Int("author_id").NotNull().References(ScopedAuthors.ID),
 			Title:     t.String("title").NotNull(),
 			Published: t.Bool("published").NotNull(),
+		}
+	})
+
+// ScopedTag has its own default scope, so Has and HasNone over a many to
+// many relationship (query_compile.go's existsThrough) has a far table
+// whose scope reach can be tested independently of the join table's.
+type ScopedTag struct {
+	ID     int
+	Name   string
+	Active bool
+}
+
+type ScopedTagModel struct {
+	orm.Table[ScopedTag]
+	ID     *orm.IntColumn
+	Name   *orm.StringColumn
+	Active *orm.BoolColumn
+}
+
+func (m *ScopedTagModel) DefaultScope() orm.Predicate {
+	return m.Active.Eq(true)
+}
+
+var ScopedTags = orm.DefineTable[ScopedTag]("scoped_tags", func(t *orm.TableBuilder[ScopedTag]) *ScopedTagModel {
+	return &ScopedTagModel{
+		Table:  t.Table(),
+		ID:     t.Int("id").PrimaryKey(),
+		Name:   t.String("name").NotNull(),
+		Active: t.Bool("active").NotNull(),
+	}
+})
+
+type ScopedPostTag struct {
+	PostID int
+	TagID  int
+}
+
+type ScopedPostTagModel struct {
+	orm.Table[ScopedPostTag]
+	PostID *orm.IntColumn
+	TagID  *orm.IntColumn
+}
+
+var ScopedPostTags = orm.DefineTable[ScopedPostTag]("scoped_post_tags",
+	func(t *orm.TableBuilder[ScopedPostTag]) *ScopedPostTagModel {
+		return &ScopedPostTagModel{
+			Table:  t.Table(),
+			PostID: t.Int("post_id").PrimaryKey().References(ScopedPosts.ID),
+			TagID:  t.Int("tag_id").PrimaryKey().References(ScopedTags.ID),
 		}
 	})

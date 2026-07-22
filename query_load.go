@@ -212,19 +212,25 @@ func (r *relation) resolveTarget(entity reflect.Type) (relationTarget, error) {
 // It is not generic because it recurses: the rows a nested load starts from
 // are of the related type, which the type parameter of the query that began
 // it cannot name.
-func runLoads(ctx context.Context, db *DB, st *tableState, parents []reflect.Value, specs []loadSpec) error {
+//
+// unscoped carries the top query's Unscoped call into every statement a
+// load runs, since it is read here rather than stamped onto a loadSpec when
+// Load was called: Users.With(db).Load(...).Unscoped() and
+// Users.With(db).Unscoped().Load(...) must load the same rows either way,
+// which only reading it at the point a load actually runs guarantees.
+func runLoads(ctx context.Context, db *DB, st *tableState, parents []reflect.Value, specs []loadSpec, unscoped bool) error {
 	if len(parents) == 0 {
 		return nil
 	}
 	for _, spec := range specs {
-		if err := runLoad(ctx, db, st, parents, spec); err != nil {
+		if err := runLoad(ctx, db, st, parents, spec, unscoped); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func runLoad(ctx context.Context, db *DB, st *tableState, parents []reflect.Value, spec loadSpec) error {
+func runLoad(ctx context.Context, db *DB, st *tableState, parents []reflect.Value, spec loadSpec, unscoped bool) error {
 	info, err := spec.rel.info()
 	if err != nil {
 		return err
@@ -257,17 +263,17 @@ func runLoad(ctx context.Context, db *DB, st *tableState, parents []reflect.Valu
 	}
 
 	if info.Kind == KindManyToMany {
-		return loadThrough(ctx, db, st, related, info, spec, target, keys, byKey)
+		return loadThrough(ctx, db, st, related, info, spec, target, keys, byKey, unscoped)
 	}
 
-	rows, err := fetchRelated(ctx, db, related, info.ForeignColumn, keys, spec)
+	rows, err := fetchRelated(ctx, db, related, info.ForeignColumn, keys, spec, unscoped)
 	if err != nil {
 		return err
 	}
 	// The rows are filled before they are handed out, because assign copies
 	// them: a nested load run afterwards would fill the originals and leave
 	// every copy already in a parent empty.
-	if err := loadNested(ctx, db, related, rows, spec.nested); err != nil {
+	if err := loadNested(ctx, db, related, rows, spec.nested, unscoped); err != nil {
 		return err
 	}
 	for _, row := range rows {
@@ -287,7 +293,7 @@ func runLoad(ctx context.Context, db *DB, st *tableState, parents []reflect.Valu
 // than one table, and the related rows come back once each however many
 // parents point at them.
 func loadThrough(ctx context.Context, db *DB, st, related *tableState, info RelationInfo,
-	spec loadSpec, target relationTarget, keys []any, byKey map[any][]reflect.Value) error {
+	spec loadSpec, target relationTarget, keys []any, byKey map[any][]reflect.Value, unscoped bool) error {
 
 	pairs, err := fetchJoinPairs(ctx, db, info, keys)
 	if err != nil {
@@ -307,12 +313,12 @@ func loadThrough(ctx context.Context, db *DB, st, related *tableState, info Rela
 		}
 	}
 
-	rows, err := fetchRelated(ctx, db, related, info.ForeignColumn, farKeys, spec)
+	rows, err := fetchRelated(ctx, db, related, info.ForeignColumn, farKeys, spec, unscoped)
 	if err != nil {
 		return err
 	}
 	// Filled before they are handed out, for the reason runLoad gives.
-	if err := loadNested(ctx, db, related, rows, spec.nested); err != nil {
+	if err := loadNested(ctx, db, related, rows, spec.nested, unscoped); err != nil {
 		return err
 	}
 
@@ -373,14 +379,14 @@ func fetchJoinPairs(ctx context.Context, db *DB, info RelationInfo, keys []any) 
 
 // fetchRelated reads the related rows whose key column matches keys.
 func fetchRelated(ctx context.Context, db *DB, related *tableState, key ColumnMeta,
-	keys []any, spec loadSpec) ([]reflect.Value, error) {
+	keys []any, spec loadSpec, unscoped bool) ([]reflect.Value, error) {
 
 	// A limit is per parent, which one statement cannot express, so a limited
 	// load runs one statement for each key rather than one for all of them.
 	if spec.limit != nil {
 		var out []reflect.Value
 		for _, k := range keys {
-			rows, err := relatedQuery(ctx, db, related, key, []any{k}, spec)
+			rows, err := relatedQuery(ctx, db, related, key, []any{k}, spec, unscoped)
 			if err != nil {
 				return nil, err
 			}
@@ -391,7 +397,7 @@ func fetchRelated(ctx context.Context, db *DB, related *tableState, key ColumnMe
 
 	var out []reflect.Value
 	err := inChunks(db, keys, 1, func(chunk []any) error {
-		rows, err := relatedQuery(ctx, db, related, key, chunk, spec)
+		rows, err := relatedQuery(ctx, db, related, key, chunk, spec, unscoped)
 		if err != nil {
 			return err
 		}
@@ -402,14 +408,19 @@ func fetchRelated(ctx context.Context, db *DB, related *tableState, key ColumnMe
 }
 
 func relatedQuery(ctx context.Context, db *DB, related *tableState, key ColumnMeta,
-	keys []any, spec loadSpec) ([]reflect.Value, error) {
+	keys []any, spec loadSpec, unscoped bool) ([]reflect.Value, error) {
 
-	c := &compiler{d: db.d, args: &argBuilder{d: db.d}, table: related.name}
+	c := &compiler{d: db.d, args: &argBuilder{d: db.d}, table: related.name, unscoped: unscoped}
 	list, err := c.selectList(related.cols)
 	if err != nil {
 		return nil, err
 	}
 	preds := append([]Predicate{InList{Col: key, Values: keys}}, spec.preds...)
+	if !unscoped {
+		if scope := related.defaultScope(); scope != nil {
+			preds = append(preds, scope)
+		}
+	}
 	where, err := c.where(preds)
 	if err != nil {
 		return nil, err
@@ -446,11 +457,11 @@ func relatedQuery(ctx context.Context, db *DB, related *tableState, key ColumnMe
 }
 
 // loadNested runs a load's own loads, with the rows it fetched as the parents.
-func loadNested(ctx context.Context, db *DB, related *tableState, rows []reflect.Value, nested []loadSpec) error {
+func loadNested(ctx context.Context, db *DB, related *tableState, rows []reflect.Value, nested []loadSpec, unscoped bool) error {
 	if len(nested) == 0 {
 		return nil
 	}
-	return runLoads(ctx, db, related, rows, nested)
+	return runLoads(ctx, db, related, rows, nested, unscoped)
 }
 
 // parentKeys collects the distinct key values of the parent rows, and an

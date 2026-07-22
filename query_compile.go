@@ -657,8 +657,48 @@ func (c *compiler) expression(e expression) (string, error) {
 			return "", err
 		}
 		return "(" + left + " " + n.op.String() + " " + right + ")", nil
+	case exprCase:
+		return c.caseExpr(n)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown expression", c.table)
+}
+
+// caseExpr renders CASE WHEN ... THEN ... ELSE ... END.
+//
+// No parentheses of its own: CASE is already delimited by its own END, and
+// an arithmetic expression carrying one parenthesises around it anyway.
+//
+// Each arm's condition and value render in the order they were written, so
+// their placeholders number in the order they appear in the statement, with
+// the ELSE's last.
+func (c *compiler) caseExpr(n exprNode) (string, error) {
+	if len(n.whens) == 0 {
+		return "", fmt.Errorf("orm: table %q: this Case has no When arms; a CASE with "+
+			"nothing to test is just its Else", c.table)
+	}
+	var b strings.Builder
+	b.WriteString("CASE")
+	for _, w := range n.whens {
+		if w.cond == nil {
+			return "", fmt.Errorf("orm: table %q: this Case has a When with no condition",
+				c.table)
+		}
+		cond, err := c.predicate(w.cond)
+		if err != nil {
+			return "", err
+		}
+		then, err := c.operand(w.then, n.goType)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(" WHEN " + cond + " THEN " + then)
+	}
+	els, err := c.operand(n.els, n.goType)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(" ELSE " + els + " END")
+	return b.String(), nil
 }
 
 // operand renders one side of an expression: a nested expression, a column,

@@ -39,6 +39,7 @@ type exprKind int
 const (
 	exprColumn exprKind = iota // a column, lifted by Value
 	exprArith                  // left <op> right
+	exprCase                   // CASE WHEN ... THEN ... ELSE ... END
 )
 
 // exprNode is one expression, flattened into a non-generic shape.
@@ -58,6 +59,9 @@ type exprNode struct {
 	op    arithOp // exprArith
 	left  any     // a ColumnMeta, an expression, or a literal
 	right any
+
+	whens []caseWhen // exprCase
+	els   any
 }
 
 // expression is the non-generic view of an Expr[T].

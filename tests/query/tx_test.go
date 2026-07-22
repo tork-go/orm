@@ -97,8 +97,9 @@ func TestTransaction_RollsBackOnPanicAndKeepsPanicking(t *testing.T) {
 }
 
 // A handle that is already a transaction has no connection to start a second
-// one from, so an inner call joins the outer one.
-func TestTransaction_JoinsRatherThanNests(t *testing.T) {
+// one from, so an inner call marks a savepoint inside the one already open:
+// one transaction, one handle, one commit.
+func TestTransaction_NestsWithASavepoint(t *testing.T) {
 	c := fakedriver.NewConn()
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
@@ -125,8 +126,9 @@ func TestTransaction_JoinsRatherThanNests(t *testing.T) {
 	}
 }
 
-// An inner failure rolls the whole thing back, which is the consequence of
-// joining rather than nesting and is worth pinning down.
+// An inner failure the outer call passes on still rolls the whole thing
+// back: the savepoint undoes its own part, and the outer transaction then
+// fails for the reason it was handed.
 func TestTransaction_InnerErrorRollsBackTheOuter(t *testing.T) {
 	c := fakedriver.NewConn()
 	db := orm.NewDB(c, postgres.Dialect{})

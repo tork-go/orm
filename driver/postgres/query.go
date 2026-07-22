@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tork-go/orm"
 	"github.com/tork-go/orm/schema"
 )
@@ -80,20 +81,30 @@ func (Dialect) RenderUpsertDoUpdate(target, updates []string) (string, error) {
 
 // RenderLock returns Postgres's row locking clause.
 //
-// Postgres has four strengths, of which these are the two worth naming: FOR
-// UPDATE, which blocks everything, and FOR SHARE, which blocks writers. The
-// other two, FOR NO KEY UPDATE and FOR KEY SHARE, differ only in how they
-// interact with foreign key checks, and are what Postgres itself takes on a
-// caller's behalf rather than something to reach for.
-func (Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait) (string, error) {
+// Postgres has four strengths, in two pairs. FOR UPDATE and FOR SHARE lock
+// the whole row, exclusively and against writers; FOR NO KEY UPDATE and FOR
+// KEY SHARE are the same two narrowed to leave foreign key checks alone,
+// which is what stops a lock on a parent row blocking every insert of a
+// child. Postgres takes the narrow pair on a caller's behalf during a write;
+// naming one here is for the reader who wants that behaviour deliberately.
+func (Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait, of []string) (string, error) {
 	var b string
 	switch mode {
 	case orm.LockUpdate:
 		b = "FOR UPDATE"
 	case orm.LockShare:
 		b = "FOR SHARE"
+	case orm.LockNoKeyUpdate:
+		b = "FOR NO KEY UPDATE"
+	case orm.LockKeyShare:
+		b = "FOR KEY SHARE"
 	default:
 		return "", fmt.Errorf("postgres: unknown lock mode %d", mode)
+	}
+	// The narrowing sits between the mode and the wait, which is the one
+	// order Postgres accepts.
+	if len(of) > 0 {
+		b += " OF " + strings.Join(of, ", ")
 	}
 	switch wait {
 	case orm.LockBlock:
@@ -186,6 +197,56 @@ func (Dialect) RenderDistinctOn(columns []string) (string, error) {
 		return "", errors.New("postgres: DISTINCT ON needs at least one column")
 	}
 	return "DISTINCT ON (" + strings.Join(columns, ", ") + ")", nil
+}
+
+// RenderTransactionOptions returns the SET TRANSACTION statement applying
+// these options, or "" when the zero options ask for nothing.
+//
+// Postgres accepts the clause on BEGIN as well, but this driver does not
+// write the BEGIN — pgx does — so the statement form is the one that fits.
+// It is legal as the first statement of a transaction, which is where it is
+// run, and every level Postgres has is one this package names.
+func (Dialect) RenderTransactionOptions(opts orm.TxOptions) (string, error) {
+	var clauses []string
+	if opts.Isolation != orm.IsolationDefault {
+		clauses = append(clauses, "ISOLATION LEVEL "+opts.Isolation.String())
+	}
+	if opts.ReadOnly {
+		clauses = append(clauses, "READ ONLY")
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return "SET TRANSACTION " + strings.Join(clauses, " "), nil
+}
+
+// IsRetryable reports whether Postgres refused to commit because of a
+// conflict it could not resolve, which running the transaction again may
+// settle.
+//
+// The two conditions are serialization_failure, which SERIALIZABLE and
+// REPEATABLE READ raise when concurrent transactions cannot be ordered, and
+// deadlock_detected, which is the same answer to a cycle of waiters: one
+// transaction is chosen and refused so the others proceed. Both are worth
+// retrying and nothing else here is — a constraint violation fails the same
+// way however many times it runs.
+//
+// The check is on the SQLSTATE rather than the message, which is what makes
+// it independent of the server's language and version.
+func (Dialect) IsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	switch pgErr.Code {
+	case "40001", // serialization_failure
+		"40P01": // deadlock_detected
+		return true
+	}
+	return false
 }
 
 // RenderTypedPlaceholder casts a placeholder to the Postgres type matching

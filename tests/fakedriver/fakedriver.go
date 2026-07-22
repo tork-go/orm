@@ -20,17 +20,18 @@ import (
 
 // Conn is an in-memory fake driver.Conn.
 type Conn struct {
-	mu         sync.Mutex
-	execCalls  []string
-	execArgs   [][]any
-	queryCalls []string
-	queryArgs  [][]any
-	queued     []queuedRows
-	results    []*Rows
-	failOn     map[string]bool
-	txs        []*Tx
-	FailBegin  bool // if true, Begin returns an error, simulating a dropped connection
-	FailCommit bool // if true, Commit returns an error, simulating a failure at the end
+	mu           sync.Mutex
+	execCalls    []string
+	execArgs     [][]any
+	queryCalls   []string
+	queryArgs    [][]any
+	queued       []queuedRows
+	results      []*Rows
+	failOn       map[string]bool
+	failPrefixes []string
+	txs          []*Tx
+	FailBegin    bool // if true, Begin returns an error, simulating a dropped connection
+	FailCommit   bool // if true, Commit returns an error, simulating a failure at the end
 
 	// RowsAffected is what Exec reports back. Zero unless a test sets it.
 	RowsAffected int64
@@ -51,6 +52,34 @@ func NewConn() *Conn { return &Conn{failOn: map[string]bool{}} }
 // FailOn makes Exec return an error whenever called with exactly this SQL
 // string, so a test can simulate a migration failing partway through.
 func (c *Conn) FailOn(sql string) { c.failOn[sql] = true }
+
+// FailOnPrefix makes Exec and Query fail on any statement starting with
+// this string.
+//
+// It is for the statements whose text a test cannot predict in full — a
+// savepoint carries a generated name — where matching the whole string
+// would mean reproducing how the name is built.
+func (c *Conn) FailOnPrefix(prefix string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.failPrefixes = append(c.failPrefixes, prefix)
+}
+
+// fails reports whether this statement is one a test asked to fail.
+//
+// The caller holds the lock: it is only ever reached from Query and Exec,
+// which take it to record the call in the first place.
+func (c *Conn) fails(sql string) bool {
+	if c.failOn[sql] {
+		return true
+	}
+	for _, p := range c.failPrefixes {
+		if strings.HasPrefix(sql, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // ExecCalls returns every SQL string passed to Exec (on the connection or
 // any transaction from it), in call order.
@@ -117,7 +146,7 @@ func (c *Conn) Query(_ context.Context, sql string, args ...any) (driver.Rows, e
 	defer c.mu.Unlock()
 	c.queryCalls = append(c.queryCalls, sql)
 	c.queryArgs = append(c.queryArgs, args)
-	if c.failOn[sql] {
+	if c.fails(sql) {
 		return nil, errors.New("fakedriver: simulated Query failure")
 	}
 	var r *Rows
@@ -154,7 +183,7 @@ func (c *Conn) Exec(_ context.Context, sql string, args ...any) (driver.Result, 
 	defer c.mu.Unlock()
 	c.execCalls = append(c.execCalls, sql)
 	c.execArgs = append(c.execArgs, args)
-	if c.failOn[sql] {
+	if c.fails(sql) {
 		return driver.Result{}, errors.New("fakedriver: simulated Exec failure")
 	}
 	return driver.Result{RowsAffected: c.RowsAffected, LastInsertID: c.LastInsertID}, nil
@@ -354,6 +383,33 @@ func (d *Dialect) SupportsReturning() bool { return d.CanReturn }
 // would take to cross.
 func (d *Dialect) MaxBindParams() int { return d.BindLimit }
 
+// RenderTransactionOptions spells the statement nothing like Postgres does,
+// and fails when NoIsolation is set so the database that cannot be asked for
+// a level has somewhere to be tested.
+func (d *Dialect) RenderTransactionOptions(opts orm.TxOptions) (string, error) {
+	if opts.Isolation == orm.IsolationDefault && !opts.ReadOnly {
+		return "", nil
+	}
+	if d.NoIsolation {
+		return "", errors.New("fake: this database has one isolation level and no way to ask")
+	}
+	var parts []string
+	if opts.Isolation != orm.IsolationDefault {
+		parts = append(parts, "LEVEL "+opts.Isolation.String())
+	}
+	if opts.ReadOnly {
+		parts = append(parts, "NO WRITES")
+	}
+	return "SET TX " + strings.Join(parts, " "), nil
+}
+
+// IsRetryable reports whether err is RetryableErr, which a test sets to
+// stand in for the conflict a real database raises when it cannot order two
+// transactions.
+func (d *Dialect) IsRetryable(err error) bool {
+	return d.RetryableErr != nil && errors.Is(err, d.RetryableErr)
+}
+
 // RenderNullsOrder spells the placement as a suffix nothing like Postgres's,
 // and fails when NoNullsOrder is set so the database that cannot say where
 // NULLs sort has somewhere to be tested.
@@ -383,7 +439,7 @@ func (d *Dialect) RenderDistinctOn(columns []string) (string, error) {
 // RenderLock spells the clause nothing like Postgres does, and fails when
 // NoLocking is set so the dialect whose database locks something other than
 // rows has somewhere to be tested.
-func (d *Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait) (string, error) {
+func (d *Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait, of []string) (string, error) {
 	if d.NoLocking {
 		return "", errors.New("fake: this database has no way to lock a row")
 	}
@@ -393,8 +449,18 @@ func (d *Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait) (string, erro
 		b = "LOCK EXCLUSIVE"
 	case orm.LockShare:
 		b = "LOCK SHARED"
+	case orm.LockNoKeyUpdate:
+		b = "LOCK EXCLUSIVE KEEPING KEYS"
+	case orm.LockKeyShare:
+		b = "LOCK SHARED KEEPING KEYS"
 	default:
 		return "", fmt.Errorf("fake: unknown lock mode %d", mode)
+	}
+	// The narrowing sits between the mode and the wait, as it does in the
+	// dialects that have it, spelled differently for the reason the group
+	// comment gives.
+	if len(of) > 0 {
+		b += " ON " + strings.Join(of, "+")
 	}
 	switch wait {
 	case orm.LockBlock:
@@ -555,6 +621,15 @@ type Dialect struct {
 	// NoDistinctOn makes RenderDistinctOn fail, standing in for every
 	// database but Postgres, none of which has the clause.
 	NoDistinctOn bool
+
+	// NoIsolation makes RenderTransactionOptions fail, standing in for a
+	// database with one isolation level and no way to ask for another.
+	NoIsolation bool
+
+	// RetryableErr is the error IsRetryable recognises, so a test can raise
+	// the conflict a real database raises when two transactions cannot be
+	// ordered. nil, the default, makes nothing retryable.
+	RetryableErr error
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

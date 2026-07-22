@@ -33,25 +33,63 @@ import (
 // is the point: a bulk write opens a transaction of its own, and calling one
 // inside a Transaction must not deadlock or silently commit halfway.
 //
-// The consequence is that an inner Transaction returning an error rolls back
-// the whole outer one, rather than just its own part. Real nesting means
-// savepoints, which no driver method exposes yet; joining is the honest
-// behaviour to document until one does.
+// A Transaction inside a Transaction opens a savepoint rather than a second
+// transaction, so an inner failure undoes only the inner part and the outer
+// one carries on. That is what nesting means, and it composes: a bulk write
+// opening a transaction of its own inside a caller's neither deadlocks nor
+// commits halfway.
 func (db *DB) Transaction(ctx context.Context, fn func(tx *DB) error) error {
+	return db.TransactionWith(ctx, TxOptions{}, fn)
+}
+
+// TransactionWith is Transaction, opened with options.
+//
+//	err := db.TransactionWith(ctx, orm.TxOptions{
+//	    Isolation: orm.IsolationSerializable,
+//	    Retries:   3,
+//	}, func(tx *orm.DB) error { ... })
+//
+// The zero TxOptions is what Transaction runs with, so the two differ only
+// in whether the caller had something to say.
+//
+// Options belong to a transaction rather than to a savepoint, so an inner
+// call carrying them inside an outer transaction is refused: the level is
+// already set, and quietly ignoring what was asked for would be worse than
+// saying so.
+func (db *DB) TransactionWith(ctx context.Context, opts TxOptions, fn func(tx *DB) error) error {
 	if db == nil || db.ex == nil {
 		return fmt.Errorf("orm: no database handle; pass one to NewDB")
 	}
 	if db.conn == nil {
-		return fn(db)
+		return db.nested(ctx, opts, fn)
+	}
+	if opts.Retries < 0 {
+		return fmt.Errorf("orm: Retries(%d) is negative", opts.Retries)
 	}
 
+	var err error
+	for attempt := 0; ; attempt++ {
+		err = db.once(ctx, opts, fn)
+		if err == nil || attempt >= opts.Retries || !db.d.IsRetryable(err) {
+			return err
+		}
+		// A retry starts a fresh transaction: the failed one is already
+		// rolled back, and a serialization failure leaves nothing to reuse.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return err
+		}
+	}
+}
+
+// once runs fn in one transaction, from BEGIN to COMMIT or ROLLBACK.
+func (db *DB) once(ctx context.Context, opts TxOptions, fn func(tx *DB) error) error {
 	tx, err := db.conn.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("orm: beginning a transaction: %w", err)
 	}
 
 	// conn is deliberately left nil, which is what marks this handle as
-	// already being a transaction and makes the join above possible.
+	// already being a transaction and makes the nesting above possible.
 	inner := &DB{ex: tx, d: db.d}
 
 	committed := false
@@ -63,6 +101,18 @@ func (db *DB) Transaction(ctx context.Context, fn func(tx *DB) error) error {
 			_ = tx.Rollback(ctx)
 		}
 	}()
+
+	// The options are applied as the transaction's first statement, before
+	// anything the caller does can have read or written at the wrong level.
+	setup, err := db.d.RenderTransactionOptions(opts)
+	if err != nil {
+		return fmt.Errorf("orm: %w", err)
+	}
+	if setup != "" {
+		if _, err := tx.Exec(ctx, setup); err != nil {
+			return fmt.Errorf("orm: setting the transaction's options: %w", err)
+		}
+	}
 
 	if err := fn(inner); err != nil {
 		return err

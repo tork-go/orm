@@ -63,7 +63,13 @@ type QueryDialect interface {
 	// rather than rows and so has no clause at all. A dialect that cannot
 	// express a mode returns an error naming it, rather than reading rows it
 	// has not locked and leaving the caller to find out later.
-	RenderLock(mode LockMode, wait LockWait) (string, error)
+	//
+	// of is the already-quoted tables the lock is narrowed to, and is empty
+	// when it covers every table the statement reads. It is passed here
+	// rather than appended by the caller because it belongs between the mode
+	// and the wait — FOR UPDATE OF "books" NOWAIT — which only something
+	// writing the whole clause can place.
+	RenderLock(mode LockMode, wait LockWait, of []string) (string, error)
 
 	// RenderJSONHasKey returns the test that an already-quoted JSON column has
 	// the given top-level key, whose already-rendered placeholder binds it.
@@ -137,6 +143,30 @@ type QueryDialect interface {
 	// operation, since the alternative is a different statement rather than
 	// a different spelling of this one.
 	RenderDistinctOn(columns []string) (string, error)
+
+	// RenderTransactionOptions returns the statement that applies these
+	// options to the transaction just opened, or "" when there is nothing to
+	// apply — which the zero TxOptions always is.
+	//
+	// It is a statement rather than a clause on BEGIN because that is the
+	// portable half: Postgres accepts both `BEGIN ISOLATION LEVEL ...` and
+	// `SET TRANSACTION ISOLATION LEVEL ...` as the first statement, while a
+	// driver that opens transactions through its own client API never writes
+	// the BEGIN at all. A dialect that cannot express a level returns an
+	// error naming it, rather than running at a level the caller did not
+	// ask for and cannot see.
+	RenderTransactionOptions(opts TxOptions) (string, error)
+
+	// IsRetryable reports whether an error is the database refusing to
+	// commit because of a conflict with another transaction, which running
+	// the whole transaction again may resolve.
+	//
+	// Only the driver can answer it: the condition is a SQLSTATE, or a
+	// vendor code, or a string, depending on the database, and recognising
+	// it is what separates a transaction worth retrying from one that will
+	// fail the same way forever. A dialect that cannot tell reports false,
+	// which retries nothing.
+	IsRetryable(err error) bool
 
 	// RenderTypedPlaceholder returns an already-rendered placeholder with
 	// its type made explicit, for the few positions where the database

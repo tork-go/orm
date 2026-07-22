@@ -34,7 +34,7 @@ func (*stubDriver) RenderUpsertDoNothing([]string) (string, error) {
 func (*stubDriver) RenderUpsertDoUpdate(_, _ []string) (string, error) {
 	return "ON CONFLICT DO UPDATE", nil
 }
-func (*stubDriver) RenderLock(orm.LockMode, orm.LockWait) (string, error) {
+func (*stubDriver) RenderLock(orm.LockMode, orm.LockWait, []string) (string, error) {
 	return "FOR UPDATE", nil
 }
 func (*stubDriver) RenderJSONHasKey(col, key string) (string, error) {
@@ -58,6 +58,13 @@ func (*stubDriver) RenderArrayLength(col string, op orm.Operator, mark string) (
 func (*stubDriver) RenderFullText(col, mark string) (string, error) {
 	return "to_tsvector(" + col + ") @@ websearch_to_tsquery(" + mark + ")", nil
 }
+func (*stubDriver) RenderTransactionOptions(opts orm.TxOptions) (string, error) {
+	if opts.Isolation == orm.IsolationDefault && !opts.ReadOnly {
+		return "", nil
+	}
+	return "SET TRANSACTION " + opts.Isolation.String(), nil
+}
+func (*stubDriver) IsRetryable(error) bool { return false }
 func (*stubDriver) RenderNullsOrder(term string, first bool) (string, error) {
 	if first {
 		return term + " NULLS FIRST", nil

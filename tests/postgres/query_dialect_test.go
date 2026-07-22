@@ -115,10 +115,12 @@ func TestRenderLock(t *testing.T) {
 		{"skipping locked rows", orm.LockUpdate, orm.LockSkip, "FOR UPDATE SKIP LOCKED"},
 		{"refusing to wait", orm.LockUpdate, orm.LockNoWait, "FOR UPDATE NOWAIT"},
 		{"share, skipping", orm.LockShare, orm.LockSkip, "FOR SHARE SKIP LOCKED"},
+		{"no key update", orm.LockNoKeyUpdate, orm.LockBlock, "FOR NO KEY UPDATE"},
+		{"key share", orm.LockKeyShare, orm.LockBlock, "FOR KEY SHARE"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := d.RenderLock(tt.mode, tt.wait)
+			got, err := d.RenderLock(tt.mode, tt.wait, nil)
 			if err != nil {
 				t.Fatalf("RenderLock() error = %v", err)
 			}
@@ -136,10 +138,10 @@ func TestRenderLock(t *testing.T) {
 func TestRenderLock_UnknownValues(t *testing.T) {
 	d := postgres.Dialect{}
 
-	if _, err := d.RenderLock(orm.LockMode(99), orm.LockBlock); err == nil {
+	if _, err := d.RenderLock(orm.LockMode(99), orm.LockBlock, nil); err == nil {
 		t.Error("RenderLock() error = nil, want the unknown mode rejected")
 	}
-	if _, err := d.RenderLock(orm.LockUpdate, orm.LockWait(99)); err == nil {
+	if _, err := d.RenderLock(orm.LockUpdate, orm.LockWait(99), nil); err == nil {
 		t.Error("RenderLock() error = nil, want the unknown wait rejected")
 	}
 }

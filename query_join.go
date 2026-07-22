@@ -36,6 +36,30 @@ func (k joinKind) keepsUnmatchedJoinedRows() bool {
 	return k == joinRight || k == joinFull
 }
 
+// joinedName is the name this join gives the table it brings in: its alias
+// where one was given, its own name otherwise.
+//
+// It is what the statement calls that table, which is what every clause
+// naming it afterwards has to use — an OF list in a locking read, and the
+// error saying which tables a statement reads.
+func (s joinSpec) joinedName() string {
+	switch {
+	case s.alias != nil:
+		return s.alias.name
+	case s.to != nil:
+		return s.to.name
+	case s.rel != nil:
+		// The error is dropped rather than checked: every caller runs after
+		// the joins have rendered, which is what resolving a relationship
+		// is, so one that was going to fail already has. A failed resolve
+		// leaves the zero RelationInfo, whose table name is "" — the same
+		// nothing this returns for a join carrying no target at all.
+		info, _ := s.rel.info()
+		return info.ForeignTable
+	}
+	return ""
+}
+
 // joinSpec is one join call: what is joined, which kind, and any extra
 // conditions ANDed onto the ON clause.
 //

@@ -240,6 +240,13 @@ func (c *compiler) addJoined(table string) error {
 	return nil
 }
 
+func (c *compiler) joinKeyword(kind joinKind) string {
+	if kind == joinLeft {
+		return " LEFT JOIN "
+	}
+	return " JOIN "
+}
+
 // joinedTable names the joined table in the FROM clause: its own name, or a
 // stored table under the alias this statement reads it as.
 func (c *compiler) joinedTable(st *tableState, name string) string {
@@ -247,13 +254,6 @@ func (c *compiler) joinedTable(st *tableState, name string) string {
 		return c.d.QuoteIdent(st.aliasOf) + " AS " + c.d.QuoteIdent(name)
 	}
 	return c.d.QuoteIdent(name)
-}
-
-func (c *compiler) joinKeyword(kind joinKind) string {
-	if kind == joinLeft {
-		return " LEFT JOIN "
-	}
-	return " JOIN "
 }
 
 // joinsClause renders every join addJoin has added, in call order, or ""
@@ -739,6 +739,9 @@ func (c *compiler) set(sets []Assignment) (string, error) {
 // values is handled above, so only a node this package built can arrive.
 func (c *compiler) expression(e expression) (string, error) {
 	n := e.exprNode()
+	if err := c.checkCallClauses(n); err != nil {
+		return "", err
+	}
 	switch n.kind {
 	case exprColumn:
 		return c.column(n.col)
@@ -795,7 +798,102 @@ func (c *compiler) call(n exprNode) (string, error) {
 		b.WriteString(s)
 	}
 	b.WriteByte(')')
+
+	if n.over != nil {
+		over, err := c.over(n.over)
+		if err != nil {
+			return "", fmt.Errorf("orm: table %q: %s: %w", c.table, name, err)
+		}
+		b.WriteString(over)
+	}
 	return b.String(), nil
+}
+
+// over renders an OVER clause: which rows share a window, in what order they
+// are counted, and how much of the window each row sees. Each part is
+// omitted when empty, so a window function with none reads as fn() OVER (),
+// which is valid SQL meaning one window holding the whole result, in
+// whatever order the database visits it.
+func (c *compiler) over(w *windowSpec) (string, error) {
+	var clauses []string
+	if len(w.partition) > 0 {
+		parts := make([]string, len(w.partition))
+		for i, col := range w.partition {
+			name, err := c.column(col)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = name
+		}
+		clauses = append(clauses, "PARTITION BY "+strings.Join(parts, ", "))
+	}
+	if len(w.order) > 0 {
+		parts := make([]string, len(w.order))
+		for i, o := range w.order {
+			term, err := c.orderTerm(o)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = term
+		}
+		clauses = append(clauses, "ORDER BY "+strings.Join(parts, ", "))
+	}
+	if w.frame != nil {
+		frame, err := c.frame(w.frame)
+		if err != nil {
+			return "", err
+		}
+		clauses = append(clauses, frame)
+	}
+	return " OVER (" + strings.Join(clauses, " ") + ")", nil
+}
+
+// frame renders a window's frame, having checked that its two ends are in an
+// order a window can have.
+//
+// A frame reaching from where it ends back to where it starts describes no
+// rows at all, which every database rejects, so it is named here instead:
+// the mistake is in how the two bounds were written, which the caller can
+// see, rather than in a syntax error naming neither.
+func (c *compiler) frame(f *frameSpec) (string, error) {
+	if f.start.kind > f.end.kind {
+		return "", fmt.Errorf("this window's frame starts at %s and ends at %s, which is "+
+			"before it starts", f.start, f.end)
+	}
+	if f.start.kind == boundUnboundedFollowing {
+		return "", fmt.Errorf("this window's frame starts at %s, which is the end of the "+
+			"window and so cannot be where it begins", f.start)
+	}
+	if f.end.kind == boundUnboundedPreceding {
+		return "", fmt.Errorf("this window's frame ends at %s, which is the start of the "+
+			"window and so cannot be where it stops", f.end)
+	}
+	return f.kind.String() + " BETWEEN " + f.start.String() + " AND " + f.end.String(), nil
+}
+
+// checkCallClauses rejects the two clauses only a call can carry, on an
+// expression that is not one.
+//
+// DISTINCT and OVER attach to a function: SUM(DISTINCT x) and SUM(x) OVER
+// (...) are things SQL has, where ("a" + "b") DISTINCT and a windowed CASE
+// are not. Both are set by a method on Expr, which is the one expression
+// type since an aggregate became one, so a caller can write them anywhere
+// and is told here rather than left with a clause silently dropped.
+func (c *compiler) checkCallClauses(n exprNode) error {
+	if n.kind == exprCall {
+		return nil
+	}
+	switch {
+	case n.distinct:
+		return fmt.Errorf("orm: table %q: Distinct was called on an expression that is "+
+			"not a function call; DISTINCT narrows what an aggregate reads and has "+
+			"nowhere to go here", c.table)
+	case n.over != nil:
+		return fmt.Errorf("orm: table %q: this expression is not a function call, so it "+
+			"cannot be given a window; OVER belongs to a call, and arithmetic or a CASE "+
+			"is windowed by putting it inside one", c.table)
+	}
+	return nil
 }
 
 // checkDistinct rejects DISTINCT where SQL has nowhere to put it.
@@ -1192,39 +1290,6 @@ func (c *compiler) selectTerm(e SelectExpr) (string, error) {
 			return "", err
 		}
 		return "(" + s + ")", nil
-	case WindowExpr:
-		return c.windowExpr(v)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
-}
-
-// windowExpr renders one WindowExpr: the function, and its OVER clause's
-// PARTITION BY and ORDER BY, each omitted when empty. A window function
-// with neither reads as fn() OVER (), which is valid SQL meaning one
-// partition holding the whole result, ordered however the database likes.
-func (c *compiler) windowExpr(w WindowExpr) (string, error) {
-	var clauses []string
-	if len(w.partition) > 0 {
-		parts := make([]string, len(w.partition))
-		for i, col := range w.partition {
-			name, err := c.column(col)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = name
-		}
-		clauses = append(clauses, "PARTITION BY "+strings.Join(parts, ", "))
-	}
-	if len(w.order) > 0 {
-		parts := make([]string, len(w.order))
-		for i, o := range w.order {
-			term, err := c.orderTerm(o)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = term
-		}
-		clauses = append(clauses, "ORDER BY "+strings.Join(parts, ", "))
-	}
-	return w.fn + "() OVER (" + strings.Join(clauses, " ") + ")", nil
 }

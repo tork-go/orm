@@ -77,6 +77,12 @@ type exprNode struct {
 	agg      bool
 	star     bool
 	distinct bool
+
+	// over is the OVER clause a window function carries, and nil for a call
+	// that is not one. A window function computes a value per row from the
+	// rows around it rather than collapsing them, which is the one thing
+	// that separates SUM(x) from SUM(x) OVER (...). See query_window.go.
+	over *windowSpec
 }
 
 // expression is the non-generic view of an Expr[T].

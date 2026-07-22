@@ -108,7 +108,7 @@ func TestAliases_AgainstPostgres(t *testing.T) {
 	// Ben is inactive, so a condition on the manager can be told apart from
 	// one on the employee.
 	if _, err := conn.Exec(ctx, `
-		INSERT INTO a_staff (id, name, active, manager_id) VALUES
+		INSERT INTO a_staff (id, name, active, manager_id) OVERRIDING SYSTEM VALUE VALUES
 			(1, 'ada', true,  NULL),
 			(2, 'ben', false, 1),
 			(3, 'cal', true,  1),
@@ -116,7 +116,7 @@ func TestAliases_AgainstPostgres(t *testing.T) {
 		t.Fatalf("seeding staff failed: %v", err)
 	}
 	if _, err := conn.Exec(ctx, `
-		INSERT INTO a_badges (id, staff_id, label) VALUES
+		INSERT INTO a_badges (id, staff_id, label) OVERRIDING SYSTEM VALUE VALUES
 			(1, 1, 'founder'), (2, 3, 'mentor')`); err != nil {
 		t.Fatalf("seeding badges failed: %v", err)
 	}
@@ -195,18 +195,20 @@ func TestAliases_AgainstPostgres(t *testing.T) {
 		if len(got) != 4 {
 			t.Fatalf("SelectAs.All() returned %d rows, want 4", len(got))
 		}
-		// dee reports to cal, who is active; everyone else's manager is
-		// absent or inactive.
+		// ada reports to nobody, so nothing matches her however the
+		// condition reads; the other three all report to an active manager.
+		// The point is that ada still comes back at all, which a WHERE on
+		// the same condition would have dropped.
+		want := map[string]string{"ben": "ada", "cal": "ada", "dee": "cal"}
 		for _, row := range got {
-			switch row.Staff {
-			case "dee":
-				if row.Manager == nil || *row.Manager != "cal" {
-					t.Errorf("dee's manager = %v, want cal", row.Manager)
-				}
-			default:
+			if row.Staff == "ada" {
 				if row.Manager != nil {
-					t.Errorf("%s's manager = %v, want none matched", row.Staff, *row.Manager)
+					t.Errorf("ada's manager = %v, want none matched", *row.Manager)
 				}
+				continue
+			}
+			if row.Manager == nil || *row.Manager != want[row.Staff] {
+				t.Errorf("%s's manager = %v, want %s", row.Staff, row.Manager, want[row.Staff])
 			}
 		}
 	})

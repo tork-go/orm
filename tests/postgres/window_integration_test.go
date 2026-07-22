@@ -100,7 +100,7 @@ func TestWindows_AgainstPostgres(t *testing.T) {
 	// Sensor a: 10, 20, 30 over days 1..3. Sensor b: 5, 15 over days 1..2.
 	// Comments are missing for two rows, so NULL placement is visible.
 	if _, err := conn.Exec(ctx, `
-		INSERT INTO w_readings (id, sensor, day, value, comment) VALUES
+		INSERT INTO w_readings (id, sensor, day, value, comment) OVERRIDING SYSTEM VALUE VALUES
 			(1, 'a', 1, 10, 'first'),
 			(2, 'a', 2, 20, NULL),
 			(3, 'a', 3, 30, 'third'),
@@ -109,7 +109,7 @@ func TestWindows_AgainstPostgres(t *testing.T) {
 		t.Fatalf("seeding readings failed: %v", err)
 	}
 	if _, err := conn.Exec(ctx, `
-		INSERT INTO w_alerts (id, reading_id, level) VALUES
+		INSERT INTO w_alerts (id, reading_id, level) OVERRIDING SYSTEM VALUE VALUES
 			(1, 3, 'high'), (2, 99, 'orphan')`); err != nil {
 		t.Fatalf("seeding alerts failed: %v", err)
 	}

@@ -79,7 +79,7 @@ func TestFunctions_AgainstPostgres(t *testing.T) {
 	// February: north 300, south 400 + 400 — the last two equal, so a
 	// distinct count differs from a plain one.
 	if _, err := conn.Exec(ctx, `
-		INSERT INTO f_orders (id, region, label, total, created_at) VALUES
+		INSERT INTO f_orders (id, region, label, total, created_at) OVERRIDING SYSTEM VALUE VALUES
 			(1, 'NORTH', 'retail', 100, '2026-01-05'),
 			(2, 'north', NULL,     200, '2026-01-19'),
 			(3, 'south', 'trade',   50, '2026-01-25'),

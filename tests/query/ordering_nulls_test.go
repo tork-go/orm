@@ -136,6 +136,22 @@ func TestNullsOrder_InAProjection(t *testing.T) {
 	}
 }
 
+// An ordering that reuses the SELECT list's rendering still places NULLs and
+// still takes its direction, since only the term itself is reused.
+func TestNullsOrder_OnAReusedProjectionTerm(t *testing.T) {
+	sql, args, err := orm.SelectAs[oneValue](Users.With(pg()), orm.Lower(Users.Email)).
+		OrderBy(orm.Lower(Users.Email).Desc().NullsFirst()).SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	if !strings.HasSuffix(sql, `ORDER BY LOWER("email") DESC NULLS FIRST`) {
+		t.Errorf("SQL() = %s", sql)
+	}
+	if len(args) != 0 {
+		t.Errorf("args = %v, want none", args)
+	}
+}
+
 func TestNullsOrder_PostgresDialectDirectly(t *testing.T) {
 	d := postgres.Dialect{}
 	first, err := d.RenderNullsOrder(`"a" ASC`, true)

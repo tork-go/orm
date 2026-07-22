@@ -112,19 +112,41 @@ func TestExprOrder_GroupedRejects(t *testing.T) {
 	}
 }
 
-// A projection orders by an expression the same way a plain read does.
+// A projection orders by an expression the same way a plain read does —
+// and, when the SELECT list already carries that expression, by exactly what
+// it wrote there rather than by a second rendering with a second parameter.
 func TestExprOrder_InSelectAs(t *testing.T) {
 	type row struct {
 		Name string
 		N    int
 	}
-	sql, _, err := orm.SelectAs[row](Users.With(pg()), Users.Username, Users.Age.Times(2)).
+	sql, args, err := orm.SelectAs[row](Users.With(pg()), Users.Username, Users.Age.Times(2)).
 		OrderBy(Users.Age.Times(2).Desc()).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if !strings.HasSuffix(sql, `ORDER BY ("age" * $2) DESC`) {
+	if !strings.HasSuffix(sql, `ORDER BY ("age" * $1) DESC`) {
 		t.Errorf("SQL() = %s", sql)
+	}
+	if len(args) != 1 {
+		t.Errorf("args = %v, want the expression's value bound once", args)
+	}
+}
+
+// An ordering the SELECT list does not carry is rendered on its own terms,
+// which is every ordering a projection had before the reuse existed.
+func TestExprOrder_InSelectAsUnselected(t *testing.T) {
+	type row struct{ Name string }
+	sql, args, err := orm.SelectAs[row](Users.With(pg()), Users.Username).
+		OrderBy(Users.Age.Times(3).Desc()).SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	if !strings.HasSuffix(sql, `ORDER BY ("age" * $1) DESC`) {
+		t.Errorf("SQL() = %s", sql)
+	}
+	if len(args) != 1 || args[0] != 3 {
+		t.Errorf("args = %v, want [3]", args)
 	}
 }
 

@@ -296,7 +296,7 @@ func (p *Projection[T]) compiler() (*compiler, error) {
 // selected expression with AS, which is what a derived table needs so the
 // enclosing query can refer to the columns it declares.
 func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
-	list, err := c.selectExprListAs(p.exprs, aliases)
+	list, selected, err := c.selectTerms(p.exprs, aliases)
 	if err != nil {
 		return "", err
 	}
@@ -310,7 +310,7 @@ func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	groupBy, err := p.groupByClause(c)
+	groupBy, err := p.groupByClause(c, selected)
 	if err != nil {
 		return "", err
 	}
@@ -318,7 +318,7 @@ func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	order, err := c.orderBy(p.ords)
+	order, err := p.orderClause(c, selected)
 	if err != nil {
 		return "", err
 	}
@@ -358,23 +358,96 @@ func (p *Projection[T]) derivedDB() *DB { return p.q.db }
 
 // groupByClause renders GROUP BY, or "" when there is nothing to group by.
 //
-// A term renders exactly as it would in the SELECT list, through the same
-// selectTerm, which is what lets a computed value be grouped by: the two
-// clauses have to spell it identically for the database to see one
-// expression rather than two.
-func (p *Projection[T]) groupByClause(c *compiler) (string, error) {
+// selected is what the SELECT list made of each of this projection's own
+// expressions, so a term that is one of them is written exactly as it was
+// written there rather than rendered again; see reuse.
+func (p *Projection[T]) groupByClause(c *compiler, selected []string) (string, error) {
 	if len(p.groupBy) == 0 {
 		return "", nil
 	}
 	parts := make([]string, len(p.groupBy))
 	for i, term := range p.groupBy {
-		s, err := c.selectTerm(term)
+		s, err := p.term(c, term, selected)
 		if err != nil {
 			return "", err
 		}
 		parts[i] = s
 	}
 	return " GROUP BY " + strings.Join(parts, ", "), nil
+}
+
+// orderClause renders a projection's ORDER BY, reusing the SELECT list's own
+// rendering for a term that appears there.
+//
+// It is the projection's own rather than the compiler's orderBy for that
+// reason alone: a read with no GROUP BY can render an ordering afresh, and
+// this one cannot.
+func (p *Projection[T]) orderClause(c *compiler, selected []string) (string, error) {
+	if len(p.ords) == 0 {
+		return "", nil
+	}
+	parts := make([]string, len(p.ords))
+	for i, o := range p.ords {
+		s, err := p.orderTerm(c, o, selected)
+		if err != nil {
+			return "", err
+		}
+		parts[i] = s
+	}
+	return " ORDER BY " + strings.Join(parts, ", "), nil
+}
+
+// orderTerm renders one ordering, reusing what the SELECT list wrote for the
+// column or expression it names, and adding the direction and any NULL
+// placement itself.
+func (p *Projection[T]) orderTerm(c *compiler, o Ordering, selected []string) (string, error) {
+	var named any = o.Col
+	if o.expr != nil {
+		named = o.expr
+	}
+	s, ok := p.reuse(named, selected)
+	if !ok {
+		return c.orderTerm(o)
+	}
+	if o.Desc {
+		s += " DESC"
+	} else {
+		s += " ASC"
+	}
+	if o.nulls != nullsDefault {
+		return c.d.RenderNullsOrder(s, o.nulls == nullsFirst)
+	}
+	return s, nil
+}
+
+// term renders one GROUP BY term, reusing the SELECT list's rendering when
+// it has one.
+func (p *Projection[T]) term(c *compiler, e SelectExpr, selected []string) (string, error) {
+	if s, ok := p.reuse(e, selected); ok {
+		return s, nil
+	}
+	return c.selectTerm(e)
+}
+
+// reuse returns what the SELECT list wrote for e, if e is one of the
+// expressions it wrote.
+//
+// Two expressions match when they hold the same thing, not merely when they
+// are the same variable: a caller who writes the same call out twice means
+// the same expression both times, and a database that is handed two
+// renderings with two placeholders would disagree.
+//
+// The comparison is deep rather than by identity because an expression is a
+// value — OrderBy holds a copy of the one the SELECT list was given. Columns
+// compare by pointer inside it, which is what DeepEqual does for a pointer
+// that is the same pointer.
+func (p *Projection[T]) reuse(e any, selected []string) (string, bool) {
+	for i, sel := range p.exprs {
+		if i < len(selected) && reflect.DeepEqual(any(sel), e) {
+			return selected[i], true
+		}
+	}
+	return "", false
 }
 
 // havingClause renders HAVING, or "" when there are no conditions.

@@ -161,16 +161,57 @@ func TestGroupBy_OnACall(t *testing.T) {
 		t.Fatalf("SQL() error = %v", err)
 	}
 	want := `SELECT date_trunc(CAST($1 AS TEXT), "created_at"), SUM("age") FROM "users" ` +
-		`GROUP BY date_trunc(CAST($2 AS TEXT), "created_at") ` +
-		`HAVING SUM("age") > $3 ` +
-		`ORDER BY date_trunc(CAST($4 AS TEXT), "created_at") ASC`
+		`GROUP BY date_trunc(CAST($1 AS TEXT), "created_at") ` +
+		`HAVING SUM("age") > $2 ` +
+		`ORDER BY date_trunc(CAST($1 AS TEXT), "created_at") ASC`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
-	// The expression is written out in each clause, so its own argument is
-	// bound once per appearance, in the order the clauses read.
-	if len(args) != 4 || args[0] != "month" || args[2] != 100 || args[3] != "month" {
-		t.Errorf("args = %v", args)
+	// The expression is written out in each clause but bound once: two
+	// placeholders are two different expressions to a database, however
+	// alike they read, and a GROUP BY that does not match its SELECT is
+	// rejected outright.
+	if len(args) != 2 || args[0] != "month" || args[1] != 100 {
+		t.Errorf("args = %v, want [month 100]", args)
+	}
+}
+
+// The reuse is by what an expression holds, not by which variable holds it:
+// the same call written out twice means the same expression both times.
+func TestGroupBy_OnACallWrittenTwice(t *testing.T) {
+	type monthly struct {
+		Month time.Time
+		Total int
+	}
+	sql, args, err := orm.SelectAs[monthly](Users.With(pg()),
+		orm.Fn[time.Time]("date_trunc", "month", Users.CreatedAt), orm.SumOf(Users.Age)).
+		GroupBy(orm.Fn[time.Time]("date_trunc", "month", Users.CreatedAt)).
+		SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	if !strings.Contains(sql, `GROUP BY date_trunc(CAST($1 AS TEXT), "created_at")`) {
+		t.Errorf("SQL() = %s, want the GROUP BY to reuse the SELECT list's parameter", sql)
+	}
+	if len(args) != 1 {
+		t.Errorf("args = %v, want the value bound once", args)
+	}
+}
+
+// A grouping term the SELECT list does not carry is rendered on its own.
+func TestGroupBy_TermNotSelected(t *testing.T) {
+	type row struct{ N int64 }
+	sql, args, err := orm.SelectAs[row](Users.With(pg()), orm.CountAll()).
+		GroupBy(orm.Fn[time.Time]("date_trunc", "month", Users.CreatedAt)).
+		SQL()
+	if err != nil {
+		t.Fatalf("SQL() error = %v", err)
+	}
+	if !strings.Contains(sql, `GROUP BY date_trunc(CAST($1 AS TEXT), "created_at")`) {
+		t.Errorf("SQL() = %s", sql)
+	}
+	if len(args) != 1 || args[0] != "month" {
+		t.Errorf("args = %v, want [month]", args)
 	}
 }
 

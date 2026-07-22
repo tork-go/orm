@@ -1209,7 +1209,7 @@ func (c *compiler) selectList(cols []ColumnMeta) (string, error) {
 
 // selectListAs is selectList, naming each column with AS when aliases is
 // given, which is what a derived table needs so the statement wrapping this
-// one can refer to the columns its model declares. See selectExprListAs,
+// one can refer to the columns its model declares. See selectTerms,
 // whose count check is unreachable for the same reason.
 func (c *compiler) selectListAs(cols []ColumnMeta, aliases []string) (string, error) {
 	if aliases != nil && len(aliases) != len(cols) {
@@ -1230,37 +1230,34 @@ func (c *compiler) selectListAs(cols []ColumnMeta, aliases []string) (string, er
 	return strings.Join(parts, ", "), nil
 }
 
-// selectExprListAs renders a SelectAs projection's SELECT list — any mix of
-// columns, expressions and window functions — naming each with AS when
-// aliases is given.
+// selectTerms renders a SELECT list and hands back both the finished clause
+// and each term on its own, before any alias was appended.
 //
-// Only a derived table asks for that, so that the statement wrapping this
-// one can refer to a computed column by the name its model declares. It
-// changes nothing about how rows are matched to fields, which stays
-// positional everywhere: the names are for the database, which has no other
-// way to be told what a computed column is called.
-// The count check is unreachable from the one caller that passes aliases:
-// they come from the derived table's own columns, and From has already
-// rejected a source whose expression count differs from that. It is checked
-// rather than assumed, since a renderer taking two parallel slices should
-// not trust that they line up.
-func (c *compiler) selectExprListAs(exprs []SelectExpr, aliases []string) (string, error) {
+// The bare terms are what a GROUP BY or an ORDER BY over the same expression
+// has to repeat. Rendering it a second time would bind its values a second
+// time, and two placeholders are two different expressions to a database
+// however alike they read: `GROUP BY date_trunc($2, "day")` does not satisfy
+// a `SELECT date_trunc($1, "day")`, and Postgres says so. Handing back what
+// was already written is what keeps the two the same expression.
+func (c *compiler) selectTerms(exprs []SelectExpr, aliases []string) (string, []string, error) {
 	if aliases != nil && len(aliases) != len(exprs) {
-		return "", fmt.Errorf("orm: table %q: %d expression(s) to alias but %d name(s) given",
+		return "", nil, fmt.Errorf("orm: table %q: %d expression(s) to alias but %d name(s) given",
 			c.table, len(exprs), len(aliases))
 	}
+	bare := make([]string, len(exprs))
 	parts := make([]string, len(exprs))
 	for i, e := range exprs {
 		s, err := c.selectTerm(e)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
+		bare[i] = s
 		if aliases != nil {
 			s += " AS " + c.d.QuoteIdent(aliases[i])
 		}
 		parts[i] = s
 	}
-	return strings.Join(parts, ", "), nil
+	return strings.Join(parts, ", "), bare, nil
 }
 
 // selectTerm renders one item a projection can name: a column, an expression

@@ -7,7 +7,7 @@ import "fmt"
 //
 //	err := db.Transaction(ctx, func(tx *orm.DB) error {
 //	    jobs, err := Jobs.With(tx).
-//	        Where(Jobs.State.Eq("queued")).
+//	        Where(Jobs.State.Equals("queued")).
 //	        ForUpdate().SkipLocked().
 //	        Limit(10).
 //	        All(ctx)
@@ -58,7 +58,7 @@ type lockClause struct {
 // ForUpdate locks the rows this query returns against every other
 // transaction, which is what a reader about to write them needs.
 //
-//	Jobs.With(tx).Where(Jobs.State.Eq("queued")).ForUpdate().Limit(10).All(ctx)
+//	Jobs.With(tx).Where(Jobs.State.Equals("queued")).ForUpdate().Limit(10).All(ctx)
 //	// SELECT ... FROM "jobs" WHERE "state" = $1 LIMIT 10 FOR UPDATE
 //
 // Without it, two workers reading the same queue both see the same rows and
@@ -93,7 +93,7 @@ func (f *Filtered[E]) locked(mode LockMode) *Filtered[E] {
 // SkipLocked passes over rows another transaction has locked rather than
 // waiting for them.
 //
-//	Jobs.With(tx).Where(Jobs.State.Eq("queued")).ForUpdate().SkipLocked().Limit(10).All(ctx)
+//	Jobs.With(tx).Where(Jobs.State.Equals("queued")).ForUpdate().SkipLocked().Limit(10).All(ctx)
 //	// SELECT ... FOR UPDATE SKIP LOCKED
 //
 // This is what makes a table usable as a work queue. Ten workers each asking

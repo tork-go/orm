@@ -18,32 +18,32 @@ func TestLock_Shapes(t *testing.T) {
 	}{
 		{
 			name:   "for update",
-			narrow: func(q *orm.Query[User]) *orm.Filtered[User] { return q.Where(Users.ID.Eq(1)).ForUpdate() },
+			narrow: func(q *orm.Query[User]) *orm.Filtered[User] { return q.Where(Users.ID.Equals(1)).ForUpdate() },
 			want:   ` FOR UPDATE`,
 		},
 		{
 			name:   "for share",
-			narrow: func(q *orm.Query[User]) *orm.Filtered[User] { return q.Where(Users.ID.Eq(1)).ForShare() },
+			narrow: func(q *orm.Query[User]) *orm.Filtered[User] { return q.Where(Users.ID.Equals(1)).ForShare() },
 			want:   ` FOR SHARE`,
 		},
 		{
 			name: "for update, skipping locked rows",
 			narrow: func(q *orm.Query[User]) *orm.Filtered[User] {
-				return q.Where(Users.ID.Eq(1)).ForUpdate().SkipLocked()
+				return q.Where(Users.ID.Equals(1)).ForUpdate().SkipLocked()
 			},
 			want: ` FOR UPDATE SKIP LOCKED`,
 		},
 		{
 			name: "for update, refusing to wait",
 			narrow: func(q *orm.Query[User]) *orm.Filtered[User] {
-				return q.Where(Users.ID.Eq(1)).ForUpdate().NoWait()
+				return q.Where(Users.ID.Equals(1)).ForUpdate().NoWait()
 			},
 			want: ` FOR UPDATE NOWAIT`,
 		},
 		{
 			name: "for share, skipping locked rows",
 			narrow: func(q *orm.Query[User]) *orm.Filtered[User] {
-				return q.Where(Users.ID.Eq(1)).ForShare().SkipLocked()
+				return q.Where(Users.ID.Equals(1)).ForShare().SkipLocked()
 			},
 			want: ` FOR SHARE SKIP LOCKED`,
 		},
@@ -65,7 +65,7 @@ func TestLock_Shapes(t *testing.T) {
 // The clause goes last, after the paging, which is where every dialect that
 // has one puts it.
 func TestLock_ComesAfterLimitAndOffset(t *testing.T) {
-	sql, _, err := Users.With(pg()).Where(Users.Age.Gt(18)).
+	sql, _, err := Users.With(pg()).Where(Users.Age.GreaterThan(18)).
 		OrderBy(Users.ID.Asc()).Limit(10).Offset(5).ForUpdate().SkipLocked().SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -80,11 +80,11 @@ func TestLock_ComesAfterLimitAndOffset(t *testing.T) {
 // The two halves are one clause, so writing them in either order says the
 // same thing.
 func TestLock_HalvesComposeInEitherOrder(t *testing.T) {
-	first, _, err := Users.With(pg()).Where(Users.ID.Eq(1)).ForUpdate().SkipLocked().SQL()
+	first, _, err := Users.With(pg()).Where(Users.ID.Equals(1)).ForUpdate().SkipLocked().SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	second, _, err := Users.With(pg()).Where(Users.ID.Eq(1)).ForUpdate().SkipLocked().ForShare().SQL()
+	second, _, err := Users.With(pg()).Where(Users.ID.Equals(1)).ForUpdate().SkipLocked().ForShare().SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -99,7 +99,7 @@ func TestLock_HalvesComposeInEitherOrder(t *testing.T) {
 
 // Locking a read narrows a copy, as every other builder method does.
 func TestLock_DoesNotChangeTheQueryItCameFrom(t *testing.T) {
-	base := Users.With(pg()).Where(Users.ID.Eq(1))
+	base := Users.With(pg()).Where(Users.ID.Equals(1))
 	if _, _, err := base.ForUpdate().SkipLocked().SQL(); err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -118,7 +118,7 @@ func TestLock_RunsAnOrdinaryRead(t *testing.T) {
 	c.QueueRows(userRow(1, "alice"))
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	got, err := Users.With(db).Where(Users.ID.Eq(1)).ForUpdate().All(context.Background())
+	got, err := Users.With(db).Where(Users.ID.Equals(1)).ForUpdate().All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestLock_First(t *testing.T) {
 	c.QueueRows(userRow(1, "alice"))
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).ForUpdate().NoWait().
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).ForUpdate().NoWait().
 		First(context.Background()); err != nil {
 		t.Fatalf("First() error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestLock_First(t *testing.T) {
 
 // Reading one column is still reading rows, so it can lock them.
 func TestLock_ScalarRead(t *testing.T) {
-	sql, _, err := orm.Select(Users.With(pg()).Where(Users.ID.Eq(1)).ForUpdate(),
+	sql, _, err := orm.Select(Users.With(pg()).Where(Users.ID.Equals(1)).ForUpdate(),
 		Users.Username).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -159,7 +159,7 @@ func TestLock_ScalarRead(t *testing.T) {
 
 // Nothing about it may assume Postgres's spelling.
 func TestLock_AsksTheDialect(t *testing.T) {
-	sql, _, err := Users.With(fake()).Where(Users.ID.Eq(1)).ForShare().SkipLocked().SQL()
+	sql, _, err := Users.With(fake()).Where(Users.ID.Equals(1)).ForShare().SkipLocked().SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -175,7 +175,7 @@ func TestLock_UnsupportedByTheDialect(t *testing.T) {
 	d.NoLocking = true
 	db := orm.NewDB(fakedriver.NewConn(), d)
 
-	_, _, err := Users.With(db).Where(Users.ID.Eq(1)).ForUpdate().SQL()
+	_, _, err := Users.With(db).Where(Users.ID.Equals(1)).ForUpdate().SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the dialect's refusal")
 	}
@@ -212,7 +212,7 @@ func TestLock_WaitWithoutAMode(t *testing.T) {
 // Two rows that collapsed into one have no single row to lock, and Postgres
 // rejects the pair outright.
 func TestLock_WithDistinct(t *testing.T) {
-	_, _, err := Users.With(pg()).Where(Users.ID.Eq(1)).Distinct().ForUpdate().SQL()
+	_, _, err := Users.With(pg()).Where(Users.ID.Equals(1)).Distinct().ForUpdate().SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the pair rejected")
 	}
@@ -252,7 +252,7 @@ func TestLock_RejectedWhereThereIsNothingToLock(t *testing.T) {
 	}
 	for name, run := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := run(Users.With(pg()).Where(Users.ID.Eq(1)).ForUpdate())
+			err := run(Users.With(pg()).Where(Users.ID.Equals(1)).ForUpdate())
 			if err == nil {
 				t.Fatal("error = nil, want the lock rejected")
 			}
@@ -267,7 +267,7 @@ func TestLock_RejectedWhereThereIsNothingToLock(t *testing.T) {
 // the clause on an UPDATE or a DELETE.
 func TestLock_RejectedOnASetOperation(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-	locked := Users.With(db).Where(Users.ID.Eq(1)).ForUpdate()
+	locked := Users.With(db).Where(Users.ID.Equals(1)).ForUpdate()
 
 	if _, err := locked.DeleteAll(context.Background()); err == nil {
 		t.Error("DeleteAll() error = nil, want the lock rejected")

@@ -156,7 +156,7 @@ func BenchmarkUpdateAll(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := Users.With(db).
-			Where(Users.Age.Lt(18), Users.Email.IsNotNull()).
+			Where(Users.Age.LessThan(18), Users.Email.IsNotNull()).
 			UpdateAll(ctx, Users.Username.Set("minor"), Users.Email.SetNull())
 		if err != nil {
 			b.Fatal(err)
@@ -170,7 +170,7 @@ func BenchmarkDeleteAll(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := Users.With(db).Where(Users.Age.Lt(18)).DeleteAll(ctx); err != nil {
+		if _, err := Users.With(db).Where(Users.Age.LessThan(18)).DeleteAll(ctx); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -200,7 +200,7 @@ func TestBulk_AgainstPostgres(t *testing.T) {
 
 	t.Run("UpdateAll writes every matching row", func(t *testing.T) {
 		matching := countBulk(t, conn, "slot < 100")
-		n, err := bulkRows.With(db).Where(bulkRows.Slot.Lt(100)).
+		n, err := bulkRows.With(db).Where(bulkRows.Slot.LessThan(100)).
 			UpdateAll(ctx, bulkRows.Extra.Set("touched"), bulkRows.Tag.SetNull())
 		if err != nil {
 			t.Fatalf("UpdateAll() error = %v", err)
@@ -214,7 +214,7 @@ func TestBulk_AgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("UpdateMany writes a different value to each row", func(t *testing.T) {
-		rows, err := bulkRows.With(db).Where(bulkRows.Slot.Lt(5)).OrderBy(bulkRows.Slot.Asc()).All(ctx)
+		rows, err := bulkRows.With(db).Where(bulkRows.Slot.LessThan(5)).OrderBy(bulkRows.Slot.Asc()).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}
@@ -237,7 +237,7 @@ func TestBulk_AgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("DeleteMany removes exactly the rows it was given", func(t *testing.T) {
-		rows, err := bulkRows.With(db).Where(bulkRows.Slot.Lt(10)).All(ctx)
+		rows, err := bulkRows.With(db).Where(bulkRows.Slot.LessThan(10)).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}
@@ -259,7 +259,7 @@ func TestBulk_AgainstPostgres(t *testing.T) {
 		if matching == 0 {
 			t.Fatal("the fixture no longer has rows past slot 11000")
 		}
-		n, err := bulkRows.With(db).Where(bulkRows.Slot.Gte(11000)).DeleteAll(ctx)
+		n, err := bulkRows.With(db).Where(bulkRows.Slot.GreaterOrEqual(11000)).DeleteAll(ctx)
 		if err != nil {
 			t.Fatalf("DeleteAll() error = %v", err)
 		}

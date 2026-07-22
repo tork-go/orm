@@ -102,7 +102,7 @@ func TestSelectAs_Having(t *testing.T) {
 		Authors.With(pg()).LeftJoin(Authors.Books),
 		Authors.Name,
 		bookCount,
-	).GroupBy(Authors.Name).Having(bookCount, orm.OpGte, 3).SQL()
+	).GroupBy(Authors.Name).Having(bookCount, orm.OpGreaterOrEqual, 3).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -122,7 +122,7 @@ func TestSelectAs_Having(t *testing.T) {
 func TestSelectAs_HavingAggregateNotInSelectList(t *testing.T) {
 	type report struct{ Name string }
 	sql, _, err := orm.SelectAs[report](Authors.With(pg()).LeftJoin(Authors.Books), Authors.Name).
-		GroupBy(Authors.Name).Having(orm.CountAll(), orm.OpGt, 0).SQL()
+		GroupBy(Authors.Name).Having(orm.CountAll(), orm.OpGreaterThan, 0).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -157,7 +157,7 @@ func TestSelectAs_NegativeLimit(t *testing.T) {
 func TestSelectAs_CarriesTheQuery(t *testing.T) {
 	type report struct{ Username string }
 	sql, args, err := orm.SelectAs[report](
-		Users.With(pg()).Where(Users.Age.Gt(18)), Users.Username,
+		Users.With(pg()).Where(Users.Age.GreaterThan(18)), Users.Username,
 	).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -244,7 +244,7 @@ func TestSelectAs_UnknownExpression(t *testing.T) {
 
 func TestSelectAs_LockRejected(t *testing.T) {
 	type report struct{ Username string }
-	_, _, err := orm.SelectAs[report](Users.With(pg()).Where(Users.ID.Gt(0)).ForUpdate(), Users.Username).SQL()
+	_, _, err := orm.SelectAs[report](Users.With(pg()).Where(Users.ID.GreaterThan(0)).ForUpdate(), Users.Username).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the lock rejected")
 	}
@@ -299,7 +299,7 @@ func TestSelectAs_JoinRejected(t *testing.T) {
 func TestSelectAs_WhereForeignColumnRejected(t *testing.T) {
 	type report struct{ Name string }
 	_, _, err := orm.SelectAs[report](
-		Authors.With(pg()).Where(Books.Title.Eq("x")), Authors.Name,
+		Authors.With(pg()).Where(Books.Title.Equals("x")), Authors.Name,
 	).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the foreign condition rejected")
@@ -336,7 +336,7 @@ func TestSelectAs_GroupByForeignColumnRejected(t *testing.T) {
 func TestSelectAs_HavingForeignAggregateRejected(t *testing.T) {
 	type report struct{ Name string }
 	_, _, err := orm.SelectAs[report](Authors.With(pg()), Authors.Name).
-		GroupBy(Authors.Name).Having(orm.CountOf(Books.ID), orm.OpGt, 0).SQL()
+		GroupBy(Authors.Name).Having(orm.CountOf(Books.ID), orm.OpGreaterThan, 0).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the foreign column in Having rejected")
 	}

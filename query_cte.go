@@ -17,7 +17,7 @@ type cteSpec struct {
 // With attaches a named CTE to the query, defined by source and read back
 // elsewhere in the same query with CTE.
 //
-//	recent := orm.Select(Posts.With(db).Where(Posts.CreatedAt.Gt(cutoff)), Posts.AuthorID)
+//	recent := orm.Select(Posts.With(db).Where(Posts.CreatedAt.GreaterThan(cutoff)), Posts.AuthorID)
 //	users, err := Users.With(db).
 //	    With("recent_authors", recent).
 //	    Where(Users.ID.InQuery(orm.CTE[int]("recent_authors"))).

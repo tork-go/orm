@@ -9,7 +9,7 @@ import (
 // operation on its table by default, unless the query calls Unscoped().
 //
 //	func (m *PostModel) DefaultScope() orm.Predicate {
-//	    return m.Published.Eq(true)
+//	    return m.Published.Equals(true)
 //	}
 //
 // It is asserted in DefineTable and the model itself is stashed on the

@@ -200,12 +200,12 @@ func TestComparisonOps(t *testing.T) {
 		op   orm.Operator
 		val  any
 	}{
-		{"Eq", id.Eq(1), orm.OpEq, 1},
-		{"NotEq", id.NotEq(2), orm.OpNotEq, 2},
-		{"Gt", id.Gt(3), orm.OpGt, 3},
-		{"Gte", id.Gte(4), orm.OpGte, 4},
-		{"Lt", id.Lt(5), orm.OpLt, 5},
-		{"Lte", id.Lte(6), orm.OpLte, 6},
+		{"Equals", id.Equals(1), orm.OpEquals, 1},
+		{"NotEquals", id.NotEquals(2), orm.OpNotEquals, 2},
+		{"GreaterThan", id.GreaterThan(3), orm.OpGreaterThan, 3},
+		{"GreaterOrEqual", id.GreaterOrEqual(4), orm.OpGreaterOrEqual, 4},
+		{"LessThan", id.LessThan(5), orm.OpLessThan, 5},
+		{"LessOrEqual", id.LessOrEqual(6), orm.OpLessOrEqual, 6},
 	}
 
 	for _, tt := range tests {
@@ -305,12 +305,12 @@ func TestNullableOps_TakeUnderlyingType(t *testing.T) {
 	email := orm.NewNullableStringColumn("email")
 
 	// The point of nullEquatable: a plain string, not a *string.
-	c, ok := email.Eq("alice@example.com").(orm.Comparison)
+	c, ok := email.Equals("alice@example.com").(orm.Comparison)
 	if !ok {
-		t.Fatalf("Eq() returned %T, want orm.Comparison", email.Eq("x"))
+		t.Fatalf("Equals() returned %T, want orm.Comparison", email.Equals("x"))
 	}
 	if c.Value != "alice@example.com" {
-		t.Errorf("Eq().Value = %v, want %q", c.Value, "alice@example.com")
+		t.Errorf("Equals().Value = %v, want %q", c.Value, "alice@example.com")
 	}
 
 	n, ok := email.IsNull().(orm.Nullness)
@@ -335,11 +335,11 @@ func TestNullableOps_FullSurface(t *testing.T) {
 		op   orm.Operator
 		val  any
 	}{
-		{"NotEq", age.NotEq(1), orm.OpNotEq, 1},
-		{"Gt", age.Gt(2), orm.OpGt, 2},
-		{"Gte", age.Gte(3), orm.OpGte, 3},
-		{"Lt", age.Lt(4), orm.OpLt, 4},
-		{"Lte", age.Lte(5), orm.OpLte, 5},
+		{"NotEquals", age.NotEquals(1), orm.OpNotEquals, 1},
+		{"GreaterThan", age.GreaterThan(2), orm.OpGreaterThan, 2},
+		{"GreaterOrEqual", age.GreaterOrEqual(3), orm.OpGreaterOrEqual, 3},
+		{"LessThan", age.LessThan(4), orm.OpLessThan, 4},
+		{"LessOrEqual", age.LessOrEqual(5), orm.OpLessOrEqual, 5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -389,18 +389,18 @@ func TestEqPtr(t *testing.T) {
 	email := orm.NewNullableStringColumn("email")
 
 	v := "alice@example.com"
-	c, ok := email.EqPtr(&v).(orm.Comparison)
+	c, ok := email.EqualsPtr(&v).(orm.Comparison)
 	if !ok {
-		t.Fatalf("EqPtr(&v) returned %T, want orm.Comparison", email.EqPtr(&v))
+		t.Fatalf("EqualsPtr(&v) returned %T, want orm.Comparison", email.EqualsPtr(&v))
 	}
 	if c.Value != v {
-		t.Errorf("EqPtr(&v).Value = %v, want %q (the pointee, not the pointer)", c.Value, v)
+		t.Errorf("EqualsPtr(&v).Value = %v, want %q (the pointee, not the pointer)", c.Value, v)
 	}
 
 	// A nil pointer must become IS NULL. Compiling it as `col = NULL`
 	// would be valid SQL that silently matches no rows.
-	if _, ok := email.EqPtr(nil).(orm.Nullness); !ok {
-		t.Errorf("EqPtr(nil) = %T, want orm.Nullness", email.EqPtr(nil))
+	if _, ok := email.EqualsPtr(nil).(orm.Nullness); !ok {
+		t.Errorf("EqualsPtr(nil) = %T, want orm.Nullness", email.EqualsPtr(nil))
 	}
 }
 
@@ -438,7 +438,7 @@ func TestOrdering(t *testing.T) {
 
 func TestConjunctions(t *testing.T) {
 	id := orm.NewIntColumn("id")
-	a, b := id.Eq(1), id.Eq(2)
+	a, b := id.Equals(1), id.Equals(2)
 
 	g, ok := orm.Or(a, b).(orm.Group)
 	if !ok {
@@ -477,12 +477,12 @@ func TestOperator_String(t *testing.T) {
 		op   orm.Operator
 		want string
 	}{
-		{orm.OpEq, "="},
-		{orm.OpNotEq, "<>"},
-		{orm.OpGt, ">"},
-		{orm.OpGte, ">="},
-		{orm.OpLt, "<"},
-		{orm.OpLte, "<="},
+		{orm.OpEquals, "="},
+		{orm.OpNotEquals, "<>"},
+		{orm.OpGreaterThan, ">"},
+		{orm.OpGreaterOrEqual, ">="},
+		{orm.OpLessThan, "<"},
+		{orm.OpLessOrEqual, "<="},
 		// An operator outside the declared set has no SQL spelling. It
 		// degrades to a placeholder rather than panicking, so a malformed
 		// predicate surfaces as visibly wrong SQL at compile time rather
@@ -502,11 +502,11 @@ func TestComposedPredicate(t *testing.T) {
 	m := newAllKindsModel()
 
 	p := orm.And(
-		m.Int.Gt(100),
+		m.Int.GreaterThan(100),
 		m.String.StartsWith("a"),
 		orm.Or(
 			m.String.Contains("alice"),
-			m.NString.Eq("alice@example.com"),
+			m.NString.Equals("alice@example.com"),
 			m.NString.IsNull(),
 		),
 	)
@@ -534,7 +534,7 @@ func BenchmarkPredicateConstruction(b *testing.B) {
 	c := orm.NewStringColumn("username")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = orm.Or(c.Eq("alice"), c.Contains("bob"), c.StartsWith("c"))
+		_ = orm.Or(c.Equals("alice"), c.Contains("bob"), c.StartsWith("c"))
 	}
 }
 

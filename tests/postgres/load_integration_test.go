@@ -274,7 +274,7 @@ func TestRelationships_AgainstPostgres(t *testing.T) {
 
 	t.Run("nested", func(t *testing.T) {
 		got, err := lAuthors.With(db).
-			Where(lAuthors.ID.Eq(as[0].ID)).
+			Where(lAuthors.ID.Equals(as[0].ID)).
 			Load(lAuthors.Books.Load(lBooks.Tags)).
 			All(ctx)
 		if err != nil {
@@ -290,7 +290,7 @@ func TestRelationships_AgainstPostgres(t *testing.T) {
 
 	t.Run("narrowed and sorted", func(t *testing.T) {
 		got, err := lAuthors.With(db).
-			Where(lAuthors.ID.Eq(as[2].ID)).
+			Where(lAuthors.ID.Equals(as[2].ID)).
 			Load(lAuthors.Books.
 				Where(lBooks.Title.EndsWith("-1")).
 				OrderBy(lBooks.Title.Desc())).
@@ -391,7 +391,7 @@ func TestRelationships_AgainstPostgres(t *testing.T) {
 		}
 
 		byName, err := lBooks.With(db).
-			Where(orm.Has(lBooks.Tags, lTags.Name.Eq("sql"))).All(ctx)
+			Where(orm.Has(lBooks.Tags, lTags.Name.Equals("sql"))).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}

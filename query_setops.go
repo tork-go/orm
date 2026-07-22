@@ -78,7 +78,7 @@ func (q *Query[E]) ForceDeleteAllReturning(ctx context.Context) ([]*E, error) {
 // and returns how many rows it changed.
 //
 //	n, err := Users.With(db).
-//	    Where(Users.Age.Lt(18)).
+//	    Where(Users.Age.LessThan(18)).
 //	    UpdateAll(ctx, Users.Active.Set(false), Users.Note.SetNull())
 //
 //	UPDATE "users" SET "active" = $1, "note" = $2 WHERE "age" < $3
@@ -105,7 +105,7 @@ func (f *Filtered[E]) UpdateAll(ctx context.Context, sets ...Assignment) (int64,
 // counting them.
 //
 //	users, err := Users.With(db).
-//	    Where(Users.Age.Lt(18)).
+//	    Where(Users.Age.LessThan(18)).
 //	    UpdateAllReturning(ctx, Users.Active.Set(false))
 //
 //	UPDATE "users" SET "active" = $1 WHERE "age" < $2
@@ -160,7 +160,7 @@ func (f *Filtered[E]) compileUpdateAll(op string, sets []Assignment) (string, []
 // returns how many rows it removed.
 //
 //	n, err := Users.With(db).
-//	    Where(Users.Email.IsNull(), Users.CreatedAt.Lt(cutoff)).
+//	    Where(Users.Email.IsNull(), Users.CreatedAt.LessThan(cutoff)).
 //	    DeleteAll(ctx)
 //
 //	DELETE FROM "users" WHERE ("email" IS NULL AND "created_at" < $1)
@@ -198,7 +198,7 @@ func (f *Filtered[E]) deleteAll(ctx context.Context, op string, force bool) (int
 // DeleteAllReturning is DeleteAll, handing back the rows it removed rather
 // than counting them.
 //
-//	gone, err := Users.With(db).Where(Users.Draft.Eq(true)).DeleteAllReturning(ctx)
+//	gone, err := Users.With(db).Where(Users.Draft.Equals(true)).DeleteAllReturning(ctx)
 //
 //	DELETE FROM "users" WHERE "draft" = $1
 //	    RETURNING "id", "username", "email", "age"

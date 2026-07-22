@@ -70,7 +70,7 @@ func TestFullText_QueryIsAParameter(t *testing.T) {
 func TestFullText_Composes(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 	sql, args, err := Users.With(db).Where(
-		Users.Age.Gt(18),
+		Users.Age.GreaterThan(18),
 		orm.Or(Users.Username.Matches("go"), Users.Email.Matches("go")),
 	).SQL()
 	if err != nil {

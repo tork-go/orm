@@ -126,7 +126,7 @@ func TestJSON_AgainstPostgres(t *testing.T) {
 
 	// The ->> extraction, compared as text.
 	t.Run("key equals", func(t *testing.T) {
-		got, err := jUsers.With(db).Where(jUsers.Prefs.Key("theme").Eq("light")).All(ctx)
+		got, err := jUsers.With(db).Where(jUsers.Prefs.Key("theme").Equals("light")).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}
@@ -134,7 +134,7 @@ func TestJSON_AgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("key not equals", func(t *testing.T) {
-		got, err := jUsers.With(db).Where(jUsers.Prefs.Key("theme").NotEq("dark")).All(ctx)
+		got, err := jUsers.With(db).Where(jUsers.Prefs.Key("theme").NotEquals("dark")).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}
@@ -145,9 +145,9 @@ func TestJSON_AgainstPostgres(t *testing.T) {
 	// placeholders numbering in together.
 	t.Run("composed with a typed predicate", func(t *testing.T) {
 		got, err := jUsers.With(db).Where(
-			jUsers.Prefs.Key("theme").Eq("dark"),
+			jUsers.Prefs.Key("theme").Equals("dark"),
 			jUsers.Prefs.HasKey("nickname"),
-			jUsers.Name.NotEq("Carol"),
+			jUsers.Name.NotEquals("Carol"),
 		).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)

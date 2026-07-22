@@ -10,11 +10,11 @@ package orm
 //
 // It offers no equality or ordering. Postgres's json type has no equality
 // operator at all, so `json_col = json_col` is an error rather than a false,
-// and a JSONColumn may be either kind. Exposing Eq would hand out a method
+// and a JSONColumn may be either kind. Exposing Equals would hand out a method
 // that fails at query time for half its instantiations.
 //
 // What it does offer is the JSON tests jsonOps carries: HasKey, Contains, and
-// Key(...).Eq. These are the operations every JSON storing database can
+// Key(...).Equals. These are the operations every JSON storing database can
 // express in some spelling, so the dialect writes each one and a driver that
 // cannot returns an error naming it.
 type JSONColumn[T any] struct {

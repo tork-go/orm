@@ -100,7 +100,7 @@ func TestArray_HasAny(t *testing.T) {
 func TestArray_Len(t *testing.T) {
 	t.Run("postgres", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-		sql, args, err := arrRows.With(db).Where(arrRows.Tags.Len().Gt(3)).SQL()
+		sql, args, err := arrRows.With(db).Where(arrRows.Tags.Len().GreaterThan(3)).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -118,12 +118,12 @@ func TestArray_Len(t *testing.T) {
 			pred orm.Predicate
 			op   string
 		}{
-			"Eq":    {arrRows.Nums.Len().Eq(0), "="},
-			"NotEq": {arrRows.Nums.Len().NotEq(0), "<>"},
-			"Gt":    {arrRows.Nums.Len().Gt(1), ">"},
-			"Gte":   {arrRows.Nums.Len().Gte(1), ">="},
-			"Lt":    {arrRows.Nums.Len().Lt(9), "<"},
-			"Lte":   {arrRows.Nums.Len().Lte(9), "<="},
+			"Equals":         {arrRows.Nums.Len().Equals(0), "="},
+			"NotEquals":      {arrRows.Nums.Len().NotEquals(0), "<>"},
+			"GreaterThan":    {arrRows.Nums.Len().GreaterThan(1), ">"},
+			"GreaterOrEqual": {arrRows.Nums.Len().GreaterOrEqual(1), ">="},
+			"LessThan":       {arrRows.Nums.Len().LessThan(9), "<"},
+			"LessOrEqual":    {arrRows.Nums.Len().LessOrEqual(9), "<="},
 		}
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestArray_Len(t *testing.T) {
 
 	t.Run("fake", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), fakedriver.NewDialect())
-		sql, _, err := arrRows.With(db).Where(arrRows.Tags.Len().Gt(3)).SQL()
+		sql, _, err := arrRows.With(db).Where(arrRows.Tags.Len().GreaterThan(3)).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -200,7 +200,7 @@ func TestArray_NullableColumn(t *testing.T) {
 
 	sql, _, err := arrRows.With(db).Where(
 		arrRows.Opt.Has("go"),
-		arrRows.Opt.Len().Gte(1),
+		arrRows.Opt.Len().GreaterOrEqual(1),
 	).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -215,7 +215,7 @@ func TestArray_NumbersWithOtherPredicates(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	sql, args, err := arrRows.With(db).Where(
-		arrRows.ID.Gt(10),
+		arrRows.ID.GreaterThan(10),
 		arrRows.Tags.HasAny("go", "sql"),
 	).SQL()
 	if err != nil {
@@ -237,7 +237,7 @@ func TestArray_ForeignColumnRejected(t *testing.T) {
 	tests := map[string]orm.Predicate{
 		"Has":    arrRows.Tags.Has("go"),
 		"HasAny": arrRows.Tags.HasAny("go"),
-		"Len":    arrRows.Tags.Len().Gt(1),
+		"Len":    arrRows.Tags.Len().GreaterThan(1),
 	}
 	for name, pred := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -260,7 +260,7 @@ func TestArray_UnsupportedByTheDialect(t *testing.T) {
 		"Has":    arrRows.Tags.Has("go"),
 		"HasAll": arrRows.Tags.HasAll("go", "sql"),
 		"HasAny": arrRows.Tags.HasAny("go", "sql"),
-		"Len":    arrRows.Tags.Len().Gt(3),
+		"Len":    arrRows.Tags.Len().GreaterThan(3),
 	}
 	for name, pred := range tests {
 		t.Run(name, func(t *testing.T) {

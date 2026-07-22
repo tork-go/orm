@@ -26,7 +26,7 @@ func TestHas_Shapes(t *testing.T) {
 		},
 		{
 			name: "has many, filtered",
-			pred: orm.Has(Authors.Books, Books.Title.Eq("Mort")),
+			pred: orm.Has(Authors.Books, Books.Title.Equals("Mort")),
 			want: `EXISTS (SELECT 1 FROM "books" ` +
 				`WHERE "books"."author_id" = "authors"."id" AND "books"."title" = $1)`,
 		},
@@ -38,13 +38,13 @@ func TestHas_Shapes(t *testing.T) {
 		},
 		{
 			name: "has none, filtered",
-			pred: orm.HasNone(Authors.Books, Books.Title.Eq("Mort")),
+			pred: orm.HasNone(Authors.Books, Books.Title.Equals("Mort")),
 			want: `NOT EXISTS (SELECT 1 FROM "books" ` +
 				`WHERE "books"."author_id" = "authors"."id" AND "books"."title" = $1)`,
 		},
 		{
 			name: "has one",
-			pred: orm.Has(Authors.Desk, Desks.Colour.Eq("oak")),
+			pred: orm.Has(Authors.Desk, Desks.Colour.Equals("oak")),
 			want: `EXISTS (SELECT 1 FROM "desks" ` +
 				`WHERE "desks"."author_id" = "authors"."id" AND "desks"."colour" = $1)`,
 		},
@@ -52,7 +52,7 @@ func TestHas_Shapes(t *testing.T) {
 			// Several conditions on the related rows are joined with AND
 			// inside the one subquery, not spread over several.
 			name: "several conditions",
-			pred: orm.Has(Authors.Books, Books.Title.Eq("Mort"), Books.ID.Gt(5)),
+			pred: orm.Has(Authors.Books, Books.Title.Equals("Mort"), Books.ID.GreaterThan(5)),
 			want: `EXISTS (SELECT 1 FROM "books" ` +
 				`WHERE "books"."author_id" = "authors"."id" ` +
 				`AND "books"."title" = $1 AND "books"."id" > $2)`,
@@ -74,7 +74,7 @@ func TestHas_Shapes(t *testing.T) {
 
 // A BelongsTo holds the key locally, so the correlation is the other way round.
 func TestHas_BelongsTo(t *testing.T) {
-	sql, _, err := Books.With(pg()).Where(orm.Has(Books.Author, Authors.Name.Eq("Terry"))).SQL()
+	sql, _, err := Books.With(pg()).Where(orm.Has(Books.Author, Authors.Name.Equals("Terry"))).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestHas_ManyToMany(t *testing.T) {
 	})
 
 	t.Run("filtered reaches the far table", func(t *testing.T) {
-		sql, args, err := Books.With(pg()).Where(orm.Has(Books.Tags, Tags.Name.Eq("go"))).SQL()
+		sql, args, err := Books.With(pg()).Where(orm.Has(Books.Tags, Tags.Name.Equals("go"))).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -133,7 +133,7 @@ func TestHas_Composes(t *testing.T) {
 	t.Run("beside other conditions", func(t *testing.T) {
 		sql, args, err := Authors.With(pg()).Where(
 			Authors.Name.StartsWith("U"),
-			orm.Has(Authors.Books, Books.Title.Eq("Mort")),
+			orm.Has(Authors.Books, Books.Title.Equals("Mort")),
 		).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
@@ -172,7 +172,7 @@ func TestHas_Composes(t *testing.T) {
 		// Authors who have a book that itself has a tag: the inner Has is a
 		// condition on the related rows, and compiles against their table.
 		sql, _, err := Authors.With(pg()).Where(
-			orm.Has(Authors.Books, orm.Has(Books.Tags, Tags.Name.Eq("go"))),
+			orm.Has(Authors.Books, orm.Has(Books.Tags, Tags.Name.Equals("go"))),
 		).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
@@ -225,7 +225,7 @@ func TestHas_Composes(t *testing.T) {
 
 // Nothing about it may assume Postgres's spelling.
 func TestHas_AsksTheDialect(t *testing.T) {
-	sql, _, err := Authors.With(fake()).Where(orm.Has(Authors.Books, Books.Title.Eq("x"))).SQL()
+	sql, _, err := Authors.With(fake()).Where(orm.Has(Authors.Books, Books.Title.Equals("x"))).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -259,7 +259,7 @@ func TestHas_Rejected(t *testing.T) {
 			want: "no column on books references unjoinable",
 		},
 		"another table's column in the conditions": {
-			pred: orm.Has(Authors.Books, Tags.Name.Eq("go")),
+			pred: orm.Has(Authors.Books, Tags.Name.Equals("go")),
 			want: `table "tags"`,
 		},
 	}
@@ -279,7 +279,7 @@ func TestHas_Rejected(t *testing.T) {
 // The far side of a many to many is compiled against its own table, so a
 // condition naming another one is rejected there too.
 func TestHas_ManyToManyRejectsAForeignColumn(t *testing.T) {
-	_, _, err := Books.With(pg()).Where(orm.Has(Books.Tags, Authors.Name.Eq("x"))).SQL()
+	_, _, err := Books.With(pg()).Where(orm.Has(Books.Tags, Authors.Name.Equals("x"))).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the foreign column rejected")
 	}
@@ -309,10 +309,10 @@ func TestLoad_ProjectionCheckReportsAnUnresolvableRelationship(t *testing.T) {
 // The conditions are copied, so a slice the caller keeps changing does not
 // rewrite a predicate already built.
 func TestHas_DoesNotAliasTheCallersSlice(t *testing.T) {
-	preds := []orm.Predicate{Books.Title.Eq("first")}
+	preds := []orm.Predicate{Books.Title.Equals("first")}
 	pred := orm.Has(Authors.Books, preds...)
 
-	preds[0] = Books.Title.Eq("second")
+	preds[0] = Books.Title.Equals("second")
 	_, args, err := Authors.With(pg()).Where(pred).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)

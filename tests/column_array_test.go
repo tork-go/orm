@@ -112,12 +112,12 @@ func TestArrayColumns_ElementBuilders(t *testing.T) {
 // Array operations compare whole arrays.
 func TestArrayColumns_Operations(t *testing.T) {
 	c := orm.NewStringArrayColumn("tags")
-	p, ok := c.Eq([]string{"a", "b"}).(orm.Comparison)
+	p, ok := c.Equals([]string{"a", "b"}).(orm.Comparison)
 	if !ok {
-		t.Fatalf("Eq() returned %T, want orm.Comparison", c.Eq(nil))
+		t.Fatalf("Equals() returned %T, want orm.Comparison", c.Equals(nil))
 	}
 	if got, isSlice := p.Value.([]string); !isSlice || len(got) != 2 {
-		t.Errorf("Eq().Value = %v, want the whole slice", p.Value)
+		t.Errorf("Equals().Value = %v, want the whole slice", p.Value)
 	}
 	if o := c.Asc(); o.Desc {
 		t.Error("Asc().Desc = true")

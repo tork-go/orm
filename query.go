@@ -9,7 +9,7 @@ import (
 
 // With begins a query against this table on the given handle.
 //
-//	users, err := Users.With(db).Where(Users.ID.Gt(100)).All(ctx)
+//	users, err := Users.With(db).Where(Users.ID.GreaterThan(100)).All(ctx)
 func (t Table[E]) With(db *DB) *Query[E] {
 	return &Query[E]{st: t.st, db: db}
 }
@@ -41,9 +41,9 @@ type Query[E any] struct {
 // Every builder method returns a new Filtered rather than narrowing the
 // one it was called on, so a query is safe to hold and to branch from:
 //
-//	adults := Users.With(db).Where(Users.Age.Gte(18))
-//	alice := adults.Where(Users.Name.Eq("alice"))
-//	bob := adults.Where(Users.Name.Eq("bob"))
+//	adults := Users.With(db).Where(Users.Age.GreaterOrEqual(18))
+//	alice := adults.Where(Users.Name.Equals("alice"))
+//	bob := adults.Where(Users.Name.Equals("bob"))
 //
 // Were they to share state, each branch would silently carry the other's
 // conditions and both would match nothing.
@@ -676,5 +676,5 @@ func (q *Query[E]) Find(ctx context.Context, key any) (*E, error) {
 		return nil, fmt.Errorf("orm: table %q: Find was given a %s but %q is %s",
 			q.st.name, kt, pk[0].Name(), pk[0].GoType())
 	}
-	return q.Where(Comparison{Col: pk[0], Op: OpEq, Value: key}).First(ctx)
+	return q.Where(Comparison{Col: pk[0], Op: OpEquals, Value: key}).First(ctx)
 }

@@ -652,7 +652,7 @@ func TestBulk_JoinsAnOpenTransaction(t *testing.T) {
 		if err := Memberships.With(tx).InsertMany(ctx, rows...); err != nil {
 			return err
 		}
-		_, err := Memberships.With(tx).Where(Memberships.OrgID.Eq(1)).DeleteAll(ctx)
+		_, err := Memberships.With(tx).Where(Memberships.OrgID.Equals(1)).DeleteAll(ctx)
 		return err
 	})
 	if err != nil {

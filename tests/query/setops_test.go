@@ -22,7 +22,7 @@ func TestUpdateAll_Statement(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	n, err := Users.With(db).
-		Where(Users.Age.Lt(18)).
+		Where(Users.Age.LessThan(18)).
 		UpdateAll(context.Background(), Users.Username.Set("minor"), Users.Email.SetNull())
 	if err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
@@ -50,7 +50,7 @@ func TestDeleteAll_Statement(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	n, err := Users.With(db).
-		Where(Users.Email.IsNull(), Users.Age.Gt(90)).
+		Where(Users.Email.IsNull(), Users.Age.GreaterThan(90)).
 		DeleteAll(context.Background())
 	if err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
@@ -71,7 +71,7 @@ func TestSetOps_AskTheDialect(t *testing.T) {
 	c := fakedriver.NewConn()
 	db := orm.NewDB(c, fakedriver.NewDialect())
 
-	if _, err := Users.With(db).Where(Users.Age.Lt(18)).
+	if _, err := Users.With(db).Where(Users.Age.LessThan(18)).
 		UpdateAll(context.Background(), Users.Username.Set("x")); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -80,7 +80,7 @@ func TestSetOps_AskTheDialect(t *testing.T) {
 		t.Errorf("UpdateAll ran  %s\nwant           %s", got, want)
 	}
 
-	if _, err := Users.With(db).Where(Users.Age.Lt(18)).DeleteAll(context.Background()); err != nil {
+	if _, err := Users.With(db).Where(Users.Age.LessThan(18)).DeleteAll(context.Background()); err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
 	want = `DELETE FROM [users] WHERE [age] < ?`
@@ -193,7 +193,7 @@ func TestSetOps_AFilterThatMatchesNoRowsIsNotAnError(t *testing.T) {
 
 func TestUpdateAll_NoAssignments(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-	_, err := Users.With(db).Where(Users.ID.Eq(1)).UpdateAll(context.Background())
+	_, err := Users.With(db).Where(Users.ID.Equals(1)).UpdateAll(context.Background())
 	if err == nil {
 		t.Fatal("UpdateAll() error = nil, want it to report having nothing to write")
 	}
@@ -207,7 +207,7 @@ func TestUpdateAll_NoAssignments(t *testing.T) {
 // every matching row when the caller wrote one that appeared to touch ten.
 func TestSetOps_RejectOrderingAndPaging(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-	base := func() *orm.Filtered[User] { return Users.With(db).Where(Users.Age.Gt(1)) }
+	base := func() *orm.Filtered[User] { return Users.With(db).Where(Users.Age.GreaterThan(1)) }
 
 	tests := []struct {
 		name   string
@@ -241,7 +241,7 @@ func TestUpdateAll_EncodesDocumentColumns(t *testing.T) {
 	c := fakedriver.NewConn()
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	_, err := Users.With(db).Where(Users.ID.Eq(1)).
+	_, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), Users.Prefs.Set(Prefs{Theme: "dark"}))
 	if err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
@@ -258,7 +258,7 @@ func TestUpdateAll_EncodesDocumentColumns(t *testing.T) {
 
 func TestUpdateAll_EncodeFailureIsReported(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-	_, err := BadDoc.With(db).Where(BadDoc.ID.Eq(1)).
+	_, err := BadDoc.With(db).Where(BadDoc.ID.Equals(1)).
 		UpdateAll(context.Background(), BadDoc.Prefs.Set(Prefs{Theme: "dark"}))
 	if !errors.Is(err, errCannotEncode) {
 		t.Errorf("UpdateAll() error = %v, want it to wrap the codec's own error", err)
@@ -271,7 +271,7 @@ func TestSetOps_ForeignColumnRejected(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	t.Run("in an assignment", func(t *testing.T) {
-		_, err := Users.With(db).Where(Users.ID.Eq(1)).
+		_, err := Users.With(db).Where(Users.ID.Equals(1)).
 			UpdateAll(context.Background(), Posts.Title.Set("x"))
 		if err == nil {
 			t.Fatal("UpdateAll() error = nil, want the foreign column rejected")
@@ -284,14 +284,14 @@ func TestSetOps_ForeignColumnRejected(t *testing.T) {
 	})
 
 	t.Run("in a condition, deleting", func(t *testing.T) {
-		_, err := Users.With(db).Where(Posts.Title.Eq("x")).DeleteAll(context.Background())
+		_, err := Users.With(db).Where(Posts.Title.Equals("x")).DeleteAll(context.Background())
 		if err == nil {
 			t.Fatal("DeleteAll() error = nil, want the foreign column rejected")
 		}
 	})
 
 	t.Run("in a condition, updating", func(t *testing.T) {
-		_, err := Users.With(db).Where(Posts.Title.Eq("x")).
+		_, err := Users.With(db).Where(Posts.Title.Equals("x")).
 			UpdateAll(context.Background(), Users.Age.Set(1))
 		if err == nil {
 			t.Fatal("UpdateAll() error = nil, want the foreign column rejected")
@@ -303,7 +303,7 @@ func TestSetOps_ForeignColumnRejected(t *testing.T) {
 // must report itself rather than render a bare "= $1".
 func TestUpdateAll_AssignmentWithNoColumn(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-	_, err := Users.With(db).Where(Users.ID.Eq(1)).
+	_, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), orm.Assignment{Value: 1})
 	if err == nil {
 		t.Fatal("UpdateAll() error = nil, want the empty assignment rejected")
@@ -349,7 +349,7 @@ func TestSetOps_ExecFailure(t *testing.T) {
 		c.FailOn(`UPDATE "users" SET "age" = $1 WHERE "id" = $2`)
 		db := orm.NewDB(c, postgres.Dialect{})
 
-		_, err := Users.With(db).Where(Users.ID.Eq(1)).UpdateAll(context.Background(), Users.Age.Set(1))
+		_, err := Users.With(db).Where(Users.ID.Equals(1)).UpdateAll(context.Background(), Users.Age.Set(1))
 		if err == nil {
 			t.Fatal("UpdateAll() error = nil, want the driver failure")
 		}
@@ -363,7 +363,7 @@ func TestSetOps_ExecFailure(t *testing.T) {
 		c.FailOn(`DELETE FROM "users" WHERE "id" = $1`)
 		db := orm.NewDB(c, postgres.Dialect{})
 
-		_, err := Users.With(db).Where(Users.ID.Eq(1)).DeleteAll(context.Background())
+		_, err := Users.With(db).Where(Users.ID.Equals(1)).DeleteAll(context.Background())
 		if err == nil {
 			t.Fatal("DeleteAll() error = nil, want the driver failure")
 		}
@@ -379,7 +379,7 @@ func TestSetOps_LeaveTheQueryAlone(t *testing.T) {
 	c := fakedriver.NewConn()
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	q := Users.With(db).Where(Users.Age.Lt(18))
+	q := Users.With(db).Where(Users.Age.LessThan(18))
 	if _, err := q.DeleteAll(context.Background()); err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
@@ -400,7 +400,7 @@ func TestSetOps_AssignmentForms(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 	email := "alice@example.com"
 
-	_, err := Users.With(db).Where(Users.ID.Eq(1)).UpdateAll(context.Background(),
+	_, err := Users.With(db).Where(Users.ID.Equals(1)).UpdateAll(context.Background(),
 		Users.Email.Set("plain"),
 		Users.Email.SetPtr(&email),
 		Users.Email.SetPtr(nil),

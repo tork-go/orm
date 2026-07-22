@@ -93,7 +93,7 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 
 	t.Run("all with filter, ordering and paging", func(t *testing.T) {
 		got, err := qUsers.With(db).
-			Where(qUsers.Age.Gt(20), qUsers.Username.Contains("a")).
+			Where(qUsers.Age.GreaterThan(20), qUsers.Username.Contains("a")).
 			OrderBy(qUsers.Age.Desc()).
 			Limit(2).
 			All(ctx)
@@ -109,7 +109,7 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("nullable and document columns survive the trip", func(t *testing.T) {
-		alice, err := qUsers.With(db).Where(qUsers.Username.Eq("alice")).First(ctx)
+		alice, err := qUsers.With(db).Where(qUsers.Username.Equals("alice")).First(ctx)
 		if err != nil {
 			t.Fatalf("First() error = %v", err)
 		}
@@ -123,7 +123,7 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 			t.Errorf("Joined = %v, want %v", alice.Joined, joined)
 		}
 
-		bob, err := qUsers.With(db).Where(qUsers.Username.Eq("bob")).First(ctx)
+		bob, err := qUsers.With(db).Where(qUsers.Username.Equals("bob")).First(ctx)
 		if err != nil {
 			t.Fatalf("First() error = %v", err)
 		}
@@ -154,7 +154,7 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("find by primary key", func(t *testing.T) {
-		alice, err := qUsers.With(db).Where(qUsers.Username.Eq("alice")).First(ctx)
+		alice, err := qUsers.With(db).Where(qUsers.Username.Equals("alice")).First(ctx)
 		if err != nil {
 			t.Fatalf("First() error = %v", err)
 		}
@@ -168,7 +168,7 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("no rows", func(t *testing.T) {
-		_, err := qUsers.With(db).Where(qUsers.Username.Eq("nobody")).First(ctx)
+		_, err := qUsers.With(db).Where(qUsers.Username.Equals("nobody")).First(ctx)
 		if !errors.Is(err, orm.ErrNoRows) {
 			t.Errorf("First() error = %v, want ErrNoRows", err)
 		}
@@ -193,13 +193,13 @@ func TestQuery_ReadsAgainstPostgres(t *testing.T) {
 	// condition and both matched nothing, which is the kind of wrong that
 	// returns an answer rather than an error.
 	t.Run("branching a held query", func(t *testing.T) {
-		adults := qUsers.With(db).Where(qUsers.Age.Gte(25))
+		adults := qUsers.With(db).Where(qUsers.Age.GreaterOrEqual(25))
 
-		alice, err := adults.Where(qUsers.Username.Eq("alice")).All(ctx)
+		alice, err := adults.Where(qUsers.Username.Equals("alice")).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}
-		carol, err := adults.Where(qUsers.Username.Eq("carol")).All(ctx)
+		carol, err := adults.Where(qUsers.Username.Equals("carol")).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}

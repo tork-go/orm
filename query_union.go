@@ -73,8 +73,8 @@ type Combined[E any] struct {
 
 // Union reads every row either query matches, dropping duplicates.
 //
-//	admins     := Users.With(db).Where(Users.Role.Eq("admin"))
-//	moderators := Users.With(db).Where(Users.Role.Eq("moderator"))
+//	admins     := Users.With(db).Where(Users.Role.Equals("admin"))
+//	moderators := Users.With(db).Where(Users.Role.Equals("moderator"))
 //	staff, err := orm.Union(admins, moderators).All(ctx)
 //	// (SELECT ... FROM "users" WHERE "role" = $1) UNION (SELECT ... FROM "users" WHERE "role" = $2)
 //

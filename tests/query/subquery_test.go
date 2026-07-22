@@ -13,7 +13,7 @@ import (
 // authorIDs is the subquery every shape test embeds: the author of every
 // published book, which is the question a caller would actually ask.
 func authorIDs(db *orm.DB) *orm.Scalars[int] {
-	return orm.Select(Books.With(db).Where(Books.Title.Eq("Mort")), Books.AuthorID)
+	return orm.Select(Books.With(db).Where(Books.Title.Equals("Mort")), Books.AuthorID)
 }
 
 func TestInQuery_Shapes(t *testing.T) {
@@ -80,7 +80,7 @@ func TestInQuery_Shapes(t *testing.T) {
 func TestInQuery_QualifiesOnlyInside(t *testing.T) {
 	db := pg()
 	sql, _, err := Authors.With(db).Where(
-		Authors.Name.Eq("Terry"),
+		Authors.Name.Equals("Terry"),
 		Authors.ID.InQuery(authorIDs(db)),
 	).SQL()
 	if err != nil {
@@ -99,10 +99,10 @@ func TestInQuery_QualifiesOnlyInside(t *testing.T) {
 func TestInQuery_NumbersArgumentsAcrossTheBoundary(t *testing.T) {
 	db := pg()
 	sql, args, err := Authors.With(db).Where(
-		Authors.Name.Eq("first"),
+		Authors.Name.Equals("first"),
 		Authors.ID.InQuery(orm.Select(
-			Books.With(db).Where(Books.Title.Eq("second")), Books.AuthorID)),
-		Authors.Name.NotEq("third"),
+			Books.With(db).Where(Books.Title.Equals("second")), Books.AuthorID)),
+		Authors.Name.NotEquals("third"),
 	).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -123,7 +123,7 @@ func TestInQuery_Composes(t *testing.T) {
 		db := pg()
 		sql, _, err := Authors.With(db).Where(orm.Or(
 			Authors.ID.InQuery(authorIDs(db)),
-			Authors.Name.Eq("Terry"),
+			Authors.Name.Equals("Terry"),
 		)).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
@@ -200,7 +200,7 @@ func TestInQuery_Composes(t *testing.T) {
 // A subquery is a query, so one can embed another.
 func TestInQuery_Nested(t *testing.T) {
 	db := pg()
-	inner := orm.Select(BookTags.With(db).Where(BookTags.TagID.Eq(7)), BookTags.BookID)
+	inner := orm.Select(BookTags.With(db).Where(BookTags.TagID.Equals(7)), BookTags.BookID)
 	outer := orm.Select(Books.With(db).Where(Books.ID.InQuery(inner)), Books.AuthorID)
 
 	sql, args, err := Authors.With(db).Where(Authors.ID.InQuery(outer)).SQL()
@@ -247,7 +247,7 @@ func TestInQuery_SubqueryIsReusable(t *testing.T) {
 }
 
 // A nullable outer column takes a subquery of the underlying type, exactly as
-// its Eq takes one.
+// its Equals takes one.
 func TestInQuery_NullableColumn(t *testing.T) {
 	db := pg()
 	ids := orm.Select(Books.With(db), Books.ID)
@@ -290,7 +290,7 @@ func TestNonNull(t *testing.T) {
 
 	t.Run("keeps the subquery's own conditions", func(t *testing.T) {
 		db := pg()
-		sub := orm.Select(Reviews.With(db).Where(Reviews.Text.Eq("good")), Reviews.BookID)
+		sub := orm.Select(Reviews.With(db).Where(Reviews.Text.Equals("good")), Reviews.BookID)
 
 		sql, args, err := Books.With(db).Where(Books.ID.InQuery(orm.NonNull(sub))).SQL()
 		if err != nil {
@@ -425,7 +425,7 @@ func TestInQuery_Rejected(t *testing.T) {
 		"a subquery filtered on another table's column": {
 			pred: func(db *orm.DB) orm.Predicate {
 				return Authors.ID.InQuery(orm.Select(
-					Books.With(db).Where(Tags.Name.Eq("go")), Books.AuthorID))
+					Books.With(db).Where(Tags.Name.Equals("go")), Books.AuthorID))
 			},
 			want: `belongs to table "tags"`,
 		},

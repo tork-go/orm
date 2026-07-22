@@ -110,7 +110,7 @@ func (q *Query[E]) UpdateOnly(ctx context.Context, e *E, cols ...ColumnMeta) err
 
 // UpdateIf is Update, but only if the row still matches the conditions.
 //
-//	err := Users.With(db).UpdateIf(ctx, user, Users.Version.Eq(seen))
+//	err := Users.With(db).UpdateIf(ctx, user, Users.Version.Equals(seen))
 //
 //	UPDATE "users" SET ... WHERE "id" = $9 AND "version" = $10
 //
@@ -126,7 +126,7 @@ func (q *Query[E]) UpdateOnly(ctx context.Context, e *E, cols ...ColumnMeta) err
 //	seen := user.Version
 //	user.Version++
 //	user.Name = newName
-//	err := Users.With(db).UpdateIf(ctx, user, Users.Version.Eq(seen))
+//	err := Users.With(db).UpdateIf(ctx, user, Users.Version.Equals(seen))
 //
 // It returns ErrNoRows when nothing was written, which means either that the
 // row is gone or that the conditions no longer hold. Those are not
@@ -188,7 +188,7 @@ func (q *Query[E]) delete(ctx context.Context, e *E, force bool) error {
 
 // DeleteIf is Delete, but only if the row still matches the conditions.
 //
-//	err := Posts.With(db).DeleteIf(ctx, post, Posts.Draft.Eq(true))
+//	err := Posts.With(db).DeleteIf(ctx, post, Posts.Draft.Equals(true))
 //
 // It is UpdateIf's other half, and for the same situation: removing a row on
 // the strength of something read a moment ago, without holding a lock in
@@ -499,7 +499,7 @@ func (w *writer[E]) keyFilter(c *compiler, conds []Predicate) (string, error) {
 	}
 	preds := make([]Predicate, 0, len(w.st.pk)+len(conds))
 	for _, col := range w.st.pk {
-		preds = append(preds, Comparison{Col: col, Op: OpEq, Value: w.field(col).Interface()})
+		preds = append(preds, Comparison{Col: col, Op: OpEquals, Value: w.field(col).Interface()})
 	}
 	return c.where(append(preds, conds...))
 }

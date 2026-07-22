@@ -150,7 +150,7 @@ func TestStreaming_AgainstPostgres(t *testing.T) {
 
 		drain := func(tx *orm.DB) ([]int, error) {
 			var ids []int
-			for r, err := range sRows.With(tx).Where(sRows.N.Gt(0)).
+			for r, err := range sRows.With(tx).Where(sRows.N.GreaterThan(0)).
 				OrderBy(sRows.ID.Asc()).ForUpdate().SkipLocked().Limit(2).Each(ctx) {
 				if err != nil {
 					return nil, err

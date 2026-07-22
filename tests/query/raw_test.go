@@ -50,7 +50,7 @@ func TestRaw_NumbersOnFromTypedPredicates(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	sql, args, err := Users.With(db).Where(
-		Users.Age.Gt(18),
+		Users.Age.GreaterThan(18),
 		orm.Raw("lower(username) = ?", "alice"),
 	).SQL()
 	if err != nil {
@@ -159,7 +159,7 @@ func TestRaw_ComposesWithOrAndNot(t *testing.T) {
 
 	t.Run("inside Or", func(t *testing.T) {
 		sql, _, err := Users.With(db).Where(
-			orm.Or(Users.Age.Lt(18), orm.Raw("lower(username) = ?", "alice")),
+			orm.Or(Users.Age.LessThan(18), orm.Raw("lower(username) = ?", "alice")),
 		).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)

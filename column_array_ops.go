@@ -38,24 +38,35 @@ func (m arrayOps[Elem]) Len() arrayLength { return arrayLength{c: m.c} }
 // arrayLength is an array column's element count, waiting for the number to
 // compare it against.
 //
-// It is what Len returns, so Tags.Len().Gt(3) reads as one thought. The count
-// is of elements, zero for an empty array, so Len().Eq(0) means "empty".
+// It is what Len returns, so Tags.Len().GreaterThan(3) reads as one
+// thought. The count is of elements, zero for an empty array, so
+// Len().Equals(0) means "empty".
 type arrayLength struct{ c ColumnMeta }
 
-// Eq is `len(col) = n`.
-func (l arrayLength) Eq(n int) Predicate { return ArrayLength{Col: l.c, Op: OpEq, Value: n} }
+// Equals is `len(col) = n`.
+func (l arrayLength) Equals(n int) Predicate { return ArrayLength{Col: l.c, Op: OpEquals, Value: n} }
 
-// NotEq is `len(col) <> n`.
-func (l arrayLength) NotEq(n int) Predicate { return ArrayLength{Col: l.c, Op: OpNotEq, Value: n} }
+// NotEquals is `len(col) <> n`.
+func (l arrayLength) NotEquals(n int) Predicate {
+	return ArrayLength{Col: l.c, Op: OpNotEquals, Value: n}
+}
 
-// Gt is `len(col) > n`.
-func (l arrayLength) Gt(n int) Predicate { return ArrayLength{Col: l.c, Op: OpGt, Value: n} }
+// GreaterThan is `len(col) > n`.
+func (l arrayLength) GreaterThan(n int) Predicate {
+	return ArrayLength{Col: l.c, Op: OpGreaterThan, Value: n}
+}
 
-// Gte is `len(col) >= n`.
-func (l arrayLength) Gte(n int) Predicate { return ArrayLength{Col: l.c, Op: OpGte, Value: n} }
+// GreaterOrEqual is `len(col) >= n`.
+func (l arrayLength) GreaterOrEqual(n int) Predicate {
+	return ArrayLength{Col: l.c, Op: OpGreaterOrEqual, Value: n}
+}
 
-// Lt is `len(col) < n`.
-func (l arrayLength) Lt(n int) Predicate { return ArrayLength{Col: l.c, Op: OpLt, Value: n} }
+// LessThan is `len(col) < n`.
+func (l arrayLength) LessThan(n int) Predicate {
+	return ArrayLength{Col: l.c, Op: OpLessThan, Value: n}
+}
 
-// Lte is `len(col) <= n`.
-func (l arrayLength) Lte(n int) Predicate { return ArrayLength{Col: l.c, Op: OpLte, Value: n} }
+// LessOrEqual is `len(col) <= n`.
+func (l arrayLength) LessOrEqual(n int) Predicate {
+	return ArrayLength{Col: l.c, Op: OpLessOrEqual, Value: n}
+}

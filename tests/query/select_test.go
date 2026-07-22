@@ -124,7 +124,7 @@ func TestCount_Distinct(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	n, err := Users.With(db).Select(Users.Username).Distinct().
-		Where(Users.Age.Gt(18)).Count(context.Background())
+		Where(Users.Age.GreaterThan(18)).Count(context.Background())
 	if err != nil {
 		t.Fatalf("Count() error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestCount_PlainIsUnchanged(t *testing.T) {
 	c.QueueRows([]any{int64(9)})
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.Age.Gt(18)).Count(context.Background()); err != nil {
+	if _, err := Users.With(db).Where(Users.Age.GreaterThan(18)).Count(context.Background()); err != nil {
 		t.Fatalf("Count() error = %v", err)
 	}
 	if want := `SELECT COUNT(*) FROM "users" WHERE "age" > $1`; c.QueryCalls()[0] != want {
@@ -167,7 +167,7 @@ func TestSetOps_RejectProjectionAndDistinct(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := tt.query().Where(Users.ID.Eq(1)).DeleteAll(ctx); err == nil {
+			if _, err := tt.query().Where(Users.ID.Equals(1)).DeleteAll(ctx); err == nil {
 				t.Error("DeleteAll() error = nil, want the clause rejected")
 			} else if !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error %q does not name %s", err, tt.want)
@@ -224,7 +224,7 @@ func TestScalars_NullableGivesPointers(t *testing.T) {
 // The whole query still applies: conditions, ordering and paging.
 func TestScalars_CarriesTheQuery(t *testing.T) {
 	sql, args, err := orm.Select(
-		Users.With(pg()).Where(Users.Age.Gt(18)).OrderBy(Users.Username.Asc()).Limit(5),
+		Users.With(pg()).Where(Users.Age.GreaterThan(18)).OrderBy(Users.Username.Asc()).Limit(5),
 		Users.Username,
 	).SQL()
 	if err != nil {
@@ -458,14 +458,14 @@ func TestScalars_Rejected(t *testing.T) {
 	})
 
 	t.Run("count with a foreign column in the filter", func(t *testing.T) {
-		_, err := orm.Select(Users.With(db).Where(Posts.Title.Eq("x")), Users.Username).Count(ctx)
+		_, err := orm.Select(Users.With(db).Where(Posts.Title.Equals("x")), Users.Username).Count(ctx)
 		if err == nil {
 			t.Fatal("Count() error = nil, want the foreign column rejected")
 		}
 	})
 
 	t.Run("a foreign column in the filter", func(t *testing.T) {
-		_, _, err := orm.Select(Users.With(db).Where(Posts.Title.Eq("x")), Users.Username).SQL()
+		_, _, err := orm.Select(Users.With(db).Where(Posts.Title.Equals("x")), Users.Username).SQL()
 		if err == nil {
 			t.Fatal("SQL() error = nil, want the foreign column rejected")
 		}

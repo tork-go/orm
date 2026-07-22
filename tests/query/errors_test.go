@@ -49,7 +49,7 @@ func TestCompile_ForeignColumnInEveryClause(t *testing.T) {
 			return err
 		}},
 		{"negation", func() error {
-			_, _, err := Users.With(pg()).Where(orm.Not(Posts.ID.Eq(1))).SQL()
+			_, _, err := Users.With(pg()).Where(orm.Not(Posts.ID.Equals(1))).SQL()
 			return err
 		}},
 		{"order by", func() error {
@@ -78,7 +78,7 @@ type docNoCodec struct{ orm.ColumnMeta }
 func TestCompile_DocumentColumnWithoutCodec(t *testing.T) {
 	col := docNoCodec{orm.NewJSONColumn[Prefs]("prefs")}
 	_, _, err := Users.With(pg()).Where(orm.Comparison{
-		Col: col, Op: orm.OpEq, Value: Prefs{},
+		Col: col, Op: orm.OpEquals, Value: Prefs{},
 	}).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want a missing codec error")
@@ -211,7 +211,7 @@ func TestCount_ReportsFailures(t *testing.T) {
 
 	t.Run("foreign column", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-		if _, err := Users.With(db).Where(Posts.ID.Eq(1)).Count(context.Background()); err == nil {
+		if _, err := Users.With(db).Where(Posts.ID.Equals(1)).Count(context.Background()); err == nil {
 			t.Error("Count() produced no error")
 		}
 	})

@@ -52,7 +52,7 @@ func TestJoin_LeftRenders(t *testing.T) {
 // Filtering on the joined table's own column, referenced through its own
 // model var, is what makes Join useful for anything beyond existence.
 func TestJoin_WhereOnJoinedColumn(t *testing.T) {
-	sql, args, err := Books.With(pg()).Join(Books.Author).Where(Authors.Name.Eq("Le Guin")).SQL()
+	sql, args, err := Books.With(pg()).Join(Books.Author).Where(Authors.Name.Equals("Le Guin")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func TestJoin_OrderByJoinedColumn(t *testing.T) {
 
 // JoinOn's extra conditions land in the ON clause, not the WHERE clause.
 func TestJoinOn_ExtraConditionsLandOnON(t *testing.T) {
-	sql, args, err := Books.With(pg()).JoinOn(Books.Author, Authors.Name.Eq("Le Guin")).SQL()
+	sql, args, err := Books.With(pg()).JoinOn(Books.Author, Authors.Name.Equals("Le Guin")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -97,7 +97,7 @@ func TestJoinOn_ExtraConditionsLandOnON(t *testing.T) {
 // with no matching related row still comes back rather than being dropped
 // the way a WHERE condition would drop it.
 func TestLeftJoinOn_ExtraConditionsLandOnON(t *testing.T) {
-	sql, args, err := Authors.With(pg()).LeftJoinOn(Authors.Desk, Desks.Colour.Eq("red")).SQL()
+	sql, args, err := Authors.With(pg()).LeftJoinOn(Authors.Desk, Desks.Colour.Equals("red")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -114,7 +114,7 @@ func TestLeftJoinOn_ExtraConditionsLandOnON(t *testing.T) {
 // LeftJoinOn off an unfiltered query goes through the same Query forwarder
 // every other join call does.
 func TestLeftJoinOn_FromQuery(t *testing.T) {
-	sql, _, err := Authors.With(pg()).LeftJoinOn(Authors.Desk, Desks.Colour.Eq("red")).SQL()
+	sql, _, err := Authors.With(pg()).LeftJoinOn(Authors.Desk, Desks.Colour.Equals("red")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestJoin_UnresolvableRelationshipRejected(t *testing.T) {
 // JoinOn's extra conditions are ordinary predicates, checked the same way
 // any other predicate over this statement's tables is.
 func TestJoinOn_ExtraConditionForeignColumnRejected(t *testing.T) {
-	_, _, err := Books.With(pg()).JoinOn(Books.Author, Users.Username.Eq("x")).SQL()
+	_, _, err := Books.With(pg()).JoinOn(Books.Author, Users.Username.Equals("x")).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want the foreign condition rejected")
 	}
@@ -178,7 +178,7 @@ func TestJoinOn_ExtraConditionForeignColumnRejected(t *testing.T) {
 func TestJoin_UnboundColumnStillRenders(t *testing.T) {
 	unbound := orm.NewColumn[string]("nickname")
 	sql, _, err := Books.With(pg()).Join(Books.Author).
-		Where(orm.Comparison{Col: unbound, Op: orm.OpEq, Value: "x"}).SQL()
+		Where(orm.Comparison{Col: unbound, Op: orm.OpEquals, Value: "x"}).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -362,7 +362,7 @@ func TestLeftJoin_FromQuery(t *testing.T) {
 }
 
 func TestJoinOn_FromQuery(t *testing.T) {
-	sql, _, err := Books.With(pg()).JoinOn(Books.Author, Authors.Name.Eq("x")).SQL()
+	sql, _, err := Books.With(pg()).JoinOn(Books.Author, Authors.Name.Equals("x")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}

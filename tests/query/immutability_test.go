@@ -19,13 +19,13 @@ import (
 // When it did not, both branches below carried both names and each matched
 // nothing, with no error anywhere to say why.
 func TestQuery_BranchesDoNotContaminateEachOther(t *testing.T) {
-	adults := Users.With(pg()).Where(Users.Age.Gte(18))
+	adults := Users.With(pg()).Where(Users.Age.GreaterOrEqual(18))
 
-	alice, _, err := adults.Where(Users.Username.Eq("alice")).SQL()
+	alice, _, err := adults.Where(Users.Username.Equals("alice")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	bob, _, err := adults.Where(Users.Username.Eq("bob")).SQL()
+	bob, _, err := adults.Where(Users.Username.Equals("bob")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -52,14 +52,14 @@ func TestQuery_BranchesDoNotContaminateEachOther(t *testing.T) {
 
 // The same, for every builder method rather than only Where.
 func TestQuery_EveryBuilderLeavesTheOriginalAlone(t *testing.T) {
-	base := Users.With(pg()).Where(Users.Age.Gt(18))
+	base := Users.With(pg()).Where(Users.Age.GreaterThan(18))
 	want, _, err := base.SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
 
 	branches := map[string]func() *orm.Filtered[User]{
-		"Where":   func() *orm.Filtered[User] { return base.Where(Users.ID.Eq(1)) },
+		"Where":   func() *orm.Filtered[User] { return base.Where(Users.ID.Equals(1)) },
 		"OrderBy": func() *orm.Filtered[User] { return base.OrderBy(Users.ID.Desc()) },
 		"Limit":   func() *orm.Filtered[User] { return base.Limit(5) },
 		"Offset":  func() *orm.Filtered[User] { return base.Offset(5) },
@@ -89,10 +89,10 @@ func TestQuery_EveryBuilderLeavesTheOriginalAlone(t *testing.T) {
 // up only at the lengths where an append happens to have room. Building a
 // base with several conditions and branching twice reaches exactly that.
 func TestQuery_BranchesDoNotShareBackingArrays(t *testing.T) {
-	base := Users.With(pg()).Where(Users.Age.Gt(1), Users.Age.Lt(99), Users.ID.Gt(0))
+	base := Users.With(pg()).Where(Users.Age.GreaterThan(1), Users.Age.LessThan(99), Users.ID.GreaterThan(0))
 
-	first := base.Where(Users.Username.Eq("first"))
-	second := base.Where(Users.Username.Eq("second"))
+	first := base.Where(Users.Username.Equals("first"))
+	second := base.Where(Users.Username.Equals("second"))
 
 	_, firstArgs, err := first.SQL()
 	if err != nil {
@@ -133,7 +133,7 @@ func TestFirst_LeavesTheQueryAlone(t *testing.T) {
 // A terminal can run more than once, and must mean the same thing each
 // time rather than accumulating state.
 func TestQuery_TerminalsAreRepeatable(t *testing.T) {
-	q := Users.With(pg()).Where(Users.Age.Gt(18)).OrderBy(Users.ID.Desc()).Limit(5)
+	q := Users.With(pg()).Where(Users.Age.GreaterThan(18)).OrderBy(Users.ID.Desc()).Limit(5)
 
 	first, firstArgs, err := q.SQL()
 	if err != nil {
@@ -154,8 +154,8 @@ func TestQuery_TerminalsAreRepeatable(t *testing.T) {
 // A query built from a table is independent of every other query from the
 // same table.
 func TestQuery_TablesAreNotStateful(t *testing.T) {
-	one := Users.With(pg()).Where(Users.ID.Eq(1))
-	two := Users.With(pg()).Where(Users.ID.Eq(2))
+	one := Users.With(pg()).Where(Users.ID.Equals(1))
+	two := Users.With(pg()).Where(Users.ID.Equals(2))
 
 	s1, a1, _ := one.SQL()
 	s2, a2, _ := two.SQL()
@@ -185,7 +185,7 @@ func whereOf(sql string) string {
 // This is worth running under -race, where it is the difference between a
 // detected data race and a test that happens to pass.
 func TestQuery_ConcurrentBuildersAreIndependent(t *testing.T) {
-	base := Users.With(pg()).Where(Users.Age.Gte(18))
+	base := Users.With(pg()).Where(Users.Age.GreaterOrEqual(18))
 
 	const n = 32
 	results := make([]string, n)
@@ -195,7 +195,7 @@ func TestQuery_ConcurrentBuildersAreIndependent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			name := fmt.Sprintf("user%02d", i)
-			sql, args, err := base.Where(Users.Username.Eq(name)).Limit(i).SQL()
+			sql, args, err := base.Where(Users.Username.Equals(name)).Limit(i).SQL()
 			if err != nil {
 				results[i] = "error: " + err.Error()
 				return

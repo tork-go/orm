@@ -26,7 +26,7 @@ type ScopeCountingModel struct {
 
 func (m *ScopeCountingModel) DefaultScope() orm.Predicate {
 	scopeCalls++
-	return m.ID.Gt(0)
+	return m.ID.GreaterThan(0)
 }
 
 var ScopeCountingTable = orm.DefineTable[ScopeCounting]("scope_counting",
@@ -115,7 +115,7 @@ func TestScoper_AppliesToExists(t *testing.T) {
 }
 
 func TestScoper_AppliesToUserFilterToo(t *testing.T) {
-	sql, args, err := ScopedPosts.With(pg()).Where(ScopedPosts.Title.Eq("hello")).SQL()
+	sql, args, err := ScopedPosts.With(pg()).Where(ScopedPosts.Title.Equals("hello")).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestScoper_Unscoped(t *testing.T) {
 }
 
 func TestScoper_UnscopedKeepsUserFilter(t *testing.T) {
-	sql, args, err := ScopedPosts.With(pg()).Where(ScopedPosts.Title.Eq("hi")).Unscoped().SQL()
+	sql, args, err := ScopedPosts.With(pg()).Where(ScopedPosts.Title.Equals("hi")).Unscoped().SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestScoper_UpdateAllRespectsScope(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := ScopedPosts.With(db).Where(ScopedPosts.Title.Eq("x")).
+	if _, err := ScopedPosts.With(db).Where(ScopedPosts.Title.Equals("x")).
 		UpdateAll(context.Background(), ScopedPosts.Title.Set("y")); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -182,7 +182,7 @@ func TestScoper_DeleteAllRespectsScope(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := ScopedPosts.With(db).Where(ScopedPosts.Title.Eq("x")).
+	if _, err := ScopedPosts.With(db).Where(ScopedPosts.Title.Equals("x")).
 		DeleteAll(context.Background()); err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
@@ -197,7 +197,7 @@ func TestScoper_UnscopedSetOps(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := ScopedPosts.With(db).Where(ScopedPosts.Title.Eq("x")).Unscoped().
+	if _, err := ScopedPosts.With(db).Where(ScopedPosts.Title.Equals("x")).Unscoped().
 		DeleteAll(context.Background()); err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
@@ -266,7 +266,7 @@ func TestScoper_RequireFilterIgnoresImplicitScope(t *testing.T) {
 // pins that down the same way immutability_test.go does for every other
 // builder, on a fixture where the change is actually observable in SQL.
 func TestScoper_UnscopedLeavesOriginalAlone(t *testing.T) {
-	base := ScopedPosts.With(pg()).Where(ScopedPosts.Title.Eq("x"))
+	base := ScopedPosts.With(pg()).Where(ScopedPosts.Title.Equals("x"))
 	want, _, err := base.SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)

@@ -57,7 +57,7 @@ type ScopedPostModel struct {
 // DefaultScope keeps only published posts visible by default, ANDed with
 // the implicit soft-delete filter DeletedAt.SoftDelete() adds.
 func (m *ScopedPostModel) DefaultScope() orm.Predicate {
-	return m.Published.Eq(true)
+	return m.Published.Equals(true)
 }
 
 // The join table is named here rather than inferred, the same as BookModel
@@ -96,7 +96,7 @@ type ScopedTagModel struct {
 }
 
 func (m *ScopedTagModel) DefaultScope() orm.Predicate {
-	return m.Active.Eq(true)
+	return m.Active.Equals(true)
 }
 
 var ScopedTags = orm.DefineTable[ScopedTag]("scoped_tags", func(t *orm.TableBuilder[ScopedTag]) *ScopedTagModel {

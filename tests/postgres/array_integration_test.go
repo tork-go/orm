@@ -118,10 +118,10 @@ func TestArray_AgainstPostgres(t *testing.T) {
 		eq(t, all(t, aRows.Tags.HasAny("rust", "java")), []string{"b"})
 	})
 	t.Run("length greater than", func(t *testing.T) {
-		eq(t, all(t, aRows.Tags.Len().Gt(2)), []string{"a"})
+		eq(t, all(t, aRows.Tags.Len().GreaterThan(2)), []string{"a"})
 	})
 	t.Run("length zero is empty", func(t *testing.T) {
-		eq(t, all(t, aRows.Tags.Len().Eq(0)), []string{"c"})
+		eq(t, all(t, aRows.Tags.Len().Equals(0)), []string{"c"})
 	})
 	t.Run("int elements", func(t *testing.T) {
 		eq(t, all(t, aRows.Nums.Has(3)), []string{"a", "b"})

@@ -17,7 +17,7 @@ func TestUpdateIf_Statement(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	u := &User{ID: 7, Username: "alice", Age: 31}
-	err := Users.With(db).UpdateIf(context.Background(), u, Users.Age.Eq(30))
+	err := Users.With(db).UpdateIf(context.Background(), u, Users.Age.Equals(30))
 	if err != nil {
 		t.Fatalf("UpdateIf() error = %v", err)
 	}
@@ -41,7 +41,7 @@ func TestDeleteIf_Statement(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	p := &Post{ID: 3, Title: "draft"}
-	if err := Posts.With(db).DeleteIf(context.Background(), p, Posts.Slug.Eq("draft")); err != nil {
+	if err := Posts.With(db).DeleteIf(context.Background(), p, Posts.Slug.Equals("draft")); err != nil {
 		t.Fatalf("DeleteIf() error = %v", err)
 	}
 	want := `DELETE FROM "posts" WHERE ("id" = $1 AND "slug" = $2)`
@@ -57,7 +57,7 @@ func TestUpdateIf_SeveralConditions(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	err := Users.With(db).UpdateIf(context.Background(), &User{ID: 1},
-		Users.Age.Eq(30), Users.Username.Eq("alice"))
+		Users.Age.Equals(30), Users.Username.Equals("alice"))
 	if err != nil {
 		t.Fatalf("UpdateIf() error = %v", err)
 	}
@@ -74,7 +74,7 @@ func TestUpdateIf_TakesAnyPredicate(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	err := Users.With(db).UpdateIf(context.Background(), &User{ID: 1},
-		orm.Or(Users.Age.Lt(18), Users.Email.IsNull()))
+		orm.Or(Users.Age.LessThan(18), Users.Email.IsNull()))
 	if err != nil {
 		t.Fatalf("UpdateIf() error = %v", err)
 	}
@@ -93,14 +93,14 @@ func TestConditional_NoRowIsErrNoRows(t *testing.T) {
 		"UpdateIf": {
 			run: func(db *orm.DB) error {
 				return Users.With(db).UpdateIf(context.Background(),
-					&User{ID: 1}, Users.Age.Eq(30))
+					&User{ID: 1}, Users.Age.Equals(30))
 			},
 			want: "UpdateIf written no row",
 		},
 		"DeleteIf": {
 			run: func(db *orm.DB) error {
 				return Users.With(db).DeleteIf(context.Background(),
-					&User{ID: 1}, Users.Age.Eq(30))
+					&User{ID: 1}, Users.Age.Equals(30))
 			},
 			want: "DeleteIf removed no row",
 		},
@@ -133,7 +133,7 @@ func TestConditional_RunsTheWriteHooks(t *testing.T) {
 
 		p := &Post{ID: 1, Title: "Hello There"}
 		if err := Posts.With(db).UpdateIf(context.Background(), p,
-			Posts.Slug.Eq("old")); err != nil {
+			Posts.Slug.Equals("old")); err != nil {
 			t.Fatalf("UpdateIf() error = %v", err)
 		}
 		if p.Slug != "hello-there" {
@@ -151,7 +151,7 @@ func TestConditional_RunsTheWriteHooks(t *testing.T) {
 
 		p := &Post{ID: 1}
 		if err := Posts.With(db).DeleteIf(context.Background(), p,
-			Posts.Slug.Eq("x")); err != nil {
+			Posts.Slug.Equals("x")); err != nil {
 			t.Fatalf("DeleteIf() error = %v", err)
 		}
 		if strings.Join(p.fired, ",") != "BeforeDelete,AfterDelete" {
@@ -166,11 +166,11 @@ func TestConditional_ARefusingHookStopsTheWrite(t *testing.T) {
 	tests := map[string]func(*orm.DB) error{
 		"update": func(db *orm.DB) error {
 			return Refusing.With(db).UpdateIf(context.Background(),
-				&refusing{ID: 1, Name: "refuse"}, Refusing.Name.Eq("x"))
+				&refusing{ID: 1, Name: "refuse"}, Refusing.Name.Equals("x"))
 		},
 		"delete": func(db *orm.DB) error {
 			return Refusing.With(db).DeleteIf(context.Background(),
-				&refusing{ID: 1, Name: "refuse"}, Refusing.Name.Eq("x"))
+				&refusing{ID: 1, Name: "refuse"}, Refusing.Name.Equals("x"))
 		},
 	}
 	for name, run := range tests {
@@ -210,7 +210,7 @@ func TestConditional_Rejected(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	t.Run("a nil row", func(t *testing.T) {
-		err := Users.With(db).UpdateIf(context.Background(), nil, Users.Age.Eq(1))
+		err := Users.With(db).UpdateIf(context.Background(), nil, Users.Age.Equals(1))
 		if err == nil || !strings.Contains(err.Error(), "nil row") {
 			t.Errorf("error = %v, want the nil row reported", err)
 		}
@@ -218,7 +218,7 @@ func TestConditional_Rejected(t *testing.T) {
 
 	t.Run("a table with no primary key", func(t *testing.T) {
 		err := Events.With(db).UpdateIf(context.Background(), &Event{Name: "x"},
-			Events.Name.Eq("x"))
+			Events.Name.Equals("x"))
 		if err == nil || !strings.Contains(err.Error(), "needs a primary key") {
 			t.Errorf("error = %v, want the missing key reported", err)
 		}
@@ -226,13 +226,13 @@ func TestConditional_Rejected(t *testing.T) {
 
 	t.Run("another table's column in the condition", func(t *testing.T) {
 		err := Users.With(db).UpdateIf(context.Background(), &User{ID: 1},
-			Posts.Title.Eq("x"))
+			Posts.Title.Equals("x"))
 		if err == nil || !strings.Contains(err.Error(), `belongs to table "posts"`) {
 			t.Errorf("UpdateIf() error = %v, want the foreign column rejected", err)
 		}
 
 		err = Users.With(db).DeleteIf(context.Background(), &User{ID: 1},
-			Posts.Title.Eq("x"))
+			Posts.Title.Equals("x"))
 		if err == nil || !strings.Contains(err.Error(), `belongs to table "posts"`) {
 			t.Errorf("DeleteIf() error = %v, want the foreign column rejected", err)
 		}
@@ -240,7 +240,7 @@ func TestConditional_Rejected(t *testing.T) {
 
 	t.Run("no database handle", func(t *testing.T) {
 		var none *orm.DB
-		err := Users.With(none).DeleteIf(context.Background(), &User{ID: 1}, Users.Age.Eq(1))
+		err := Users.With(none).DeleteIf(context.Background(), &User{ID: 1}, Users.Age.Equals(1))
 		if err == nil || !strings.Contains(err.Error(), "no database handle") {
 			t.Errorf("error = %v, want the missing handle reported", err)
 		}
@@ -254,7 +254,7 @@ func TestConditional_AsksTheDialect(t *testing.T) {
 	db := orm.NewDB(c, fakedriver.NewDialect())
 
 	if err := Memberships.With(db).DeleteIf(context.Background(),
-		&Membership{OrgID: 1, UserID: 2}, Memberships.UserID.Gt(0)); err != nil {
+		&Membership{OrgID: 1, UserID: 2}, Memberships.UserID.GreaterThan(0)); err != nil {
 		t.Fatalf("DeleteIf() error = %v", err)
 	}
 	want := `DELETE FROM [memberships] WHERE ([org_id] = ? AND [user_id] = ? AND [user_id] > ?)`

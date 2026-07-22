@@ -129,7 +129,7 @@ func TestLoad_ChildQueryFailures(t *testing.T) {
 		"a foreign column in the load's filter": {
 			setup: func(c *fakedriver.Conn) { c.QueueRows(author(1, "alice")) },
 			load: func(db *orm.DB) error {
-				_, err := Authors.With(db).Load(Authors.Books.Where(Tags.Name.Eq("go"))).All(ctx)
+				_, err := Authors.With(db).Load(Authors.Books.Where(Tags.Name.Equals("go"))).All(ctx)
 				return err
 			},
 			want: `table "tags"`,
@@ -341,7 +341,7 @@ func TestLoad_ManyToManyFailures(t *testing.T) {
 		c.QueueRows([]any{100, "go"}) // 101 was filtered out
 		db := orm.NewDB(c, postgres.Dialect{})
 
-		books, err := Books.With(db).Load(Books.Tags.Where(Tags.Name.Eq("go"))).All(ctx)
+		books, err := Books.With(db).Load(Books.Tags.Where(Tags.Name.Equals("go"))).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}

@@ -19,7 +19,7 @@ import (
 
 // Sum returns the total of a column over the rows the query matches.
 //
-//	total, err := orm.Sum(ctx, Users.With(db).Where(Users.Active.Eq(true)), Users.Age)
+//	total, err := orm.Sum(ctx, Users.With(db).Where(Users.Active.Equals(true)), Users.Age)
 //
 // Over no rows it is the zero value, which is what a total of nothing is.
 // SQL answers NULL there, which is the same statement about an empty set made

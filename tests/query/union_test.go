@@ -13,8 +13,8 @@ import (
 
 func TestUnion_Renders(t *testing.T) {
 	db := pg()
-	a := Users.With(db).Select(Users.ID, Users.Username).Where(Users.Age.Gt(18))
-	b := Users.With(db).Select(Users.ID, Users.Username).Where(Users.Age.Lt(13))
+	a := Users.With(db).Select(Users.ID, Users.Username).Where(Users.Age.GreaterThan(18))
+	b := Users.With(db).Select(Users.ID, Users.Username).Where(Users.Age.LessThan(13))
 
 	sql, args, err := orm.Union(a, b).SQL()
 	if err != nil {
@@ -78,8 +78,8 @@ func TestExcept_Renders(t *testing.T) {
 // operand's $1 actually means the first operand's placeholder.
 func TestUnion_PlaceholderNumberingContinuesAcrossOperands(t *testing.T) {
 	db := pg()
-	a := Users.With(db).Where(Users.Age.Gt(18))
-	b := Users.With(db).Where(Users.Username.Eq("bob"))
+	a := Users.With(db).Where(Users.Age.GreaterThan(18))
+	b := Users.With(db).Where(Users.Username.Equals("bob"))
 
 	sql, args, err := orm.Union(a, b).SQL()
 	if err != nil {
@@ -217,7 +217,7 @@ func TestUnion_RightMissingEntityMappingRejected(t *testing.T) {
 
 func TestUnion_LockRejected(t *testing.T) {
 	db := pg()
-	a := Users.With(db).Where(Users.ID.Gt(0)).ForUpdate()
+	a := Users.With(db).Where(Users.ID.GreaterThan(0)).ForUpdate()
 	b := Users.With(db).Where()
 	_, _, err := orm.Union(a, b).SQL()
 	if err == nil {

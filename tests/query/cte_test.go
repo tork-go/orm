@@ -36,7 +36,7 @@ func TestWith_PlaceholderNumberingCTEFirst(t *testing.T) {
 	db := pg()
 	sql, args, err := Authors.With(db).
 		With("book_authors", authorIDs(db)).
-		Where(Authors.Name.Eq("Pratchett"), Authors.ID.InQuery(orm.CTE[int]("book_authors"))).
+		Where(Authors.Name.Equals("Pratchett"), Authors.ID.InQuery(orm.CTE[int]("book_authors"))).
 		SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -55,7 +55,7 @@ func TestWith_PlaceholderNumberingCTEFirst(t *testing.T) {
 // Calls accumulate, each rendered in the order With was called.
 func TestWith_MultipleCTEsAccumulate(t *testing.T) {
 	db := pg()
-	other := orm.Select(Books.With(db).Where(Books.Title.Eq("Sourcery")), Books.AuthorID)
+	other := orm.Select(Books.With(db).Where(Books.Title.Equals("Sourcery")), Books.AuthorID)
 	sql, _, err := Authors.With(db).
 		With("a", authorIDs(db)).
 		With("b", other).

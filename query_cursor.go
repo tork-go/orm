@@ -228,11 +228,11 @@ func seekPredicate(ords []Ordering, values []any) Predicate {
 	for k := range ords {
 		conj := make([]Predicate, 0, k+1)
 		for j := 0; j < k; j++ {
-			conj = append(conj, Comparison{Col: ords[j].Col, Op: OpEq, Value: values[j]})
+			conj = append(conj, Comparison{Col: ords[j].Col, Op: OpEquals, Value: values[j]})
 		}
-		op := OpGt
+		op := OpGreaterThan
 		if ords[k].Desc {
-			op = OpLt
+			op = OpLessThan
 		}
 		conj = append(conj, Comparison{Col: ords[k].Col, Op: op, Value: values[k]})
 		terms[k] = And(conj...)

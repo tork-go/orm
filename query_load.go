@@ -38,7 +38,7 @@ type loadSpec struct {
 // Preload is a relationship narrowed by what to fetch for it.
 //
 //	Users.With(db).Load(
-//	    Users.Posts.Where(Posts.Published.Eq(true)).
+//	    Users.Posts.Where(Posts.Published.Equals(true)).
 //	        OrderBy(Posts.CreatedAt.Desc()).
 //	        Limit(5),
 //	)

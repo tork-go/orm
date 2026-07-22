@@ -158,7 +158,7 @@ func TestSubqueries_AgainstPostgres(t *testing.T) {
 
 	t.Run("a narrowed subquery", func(t *testing.T) {
 		got, err := qAuthors.With(db).Where(qAuthors.ID.InQuery(orm.Select(
-			qBooks.With(db).Where(qBooks.Title.Eq("third")), qBooks.AuthorID))).All(ctx)
+			qBooks.With(db).Where(qBooks.Title.Equals("third")), qBooks.AuthorID))).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
 		}
@@ -241,7 +241,7 @@ func TestSubqueries_AgainstPostgres(t *testing.T) {
 
 	t.Run("a nullable column matched against a subquery", func(t *testing.T) {
 		got, err := qBooks.With(db).Where(qBooks.EditorID.InQuery(
-			orm.Select(qAuthors.With(db).Where(qAuthors.Name.Eq("bob")), qAuthors.ID))).
+			orm.Select(qAuthors.With(db).Where(qAuthors.Name.Equals("bob")), qAuthors.ID))).
 			All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
@@ -253,7 +253,7 @@ func TestSubqueries_AgainstPostgres(t *testing.T) {
 
 	t.Run("nested subqueries", func(t *testing.T) {
 		// The books of the authors who wrote something titled "third".
-		inner := orm.Select(qBooks.With(db).Where(qBooks.Title.Eq("third")), qBooks.AuthorID)
+		inner := orm.Select(qBooks.With(db).Where(qBooks.Title.Equals("third")), qBooks.AuthorID)
 		got, err := qBooks.With(db).Where(qBooks.AuthorID.InQuery(
 			orm.Select(qAuthors.With(db).Where(qAuthors.ID.InQuery(inner)), qAuthors.ID))).
 			All(ctx)
@@ -267,9 +267,9 @@ func TestSubqueries_AgainstPostgres(t *testing.T) {
 
 	t.Run("beside other conditions, with the arguments in order", func(t *testing.T) {
 		got, err := qAuthors.With(db).Where(
-			qAuthors.Name.NotEq("bob"),
+			qAuthors.Name.NotEquals("bob"),
 			qAuthors.ID.InQuery(orm.Select(
-				qBooks.With(db).Where(qBooks.Title.NotEq("nothing")), qBooks.AuthorID)),
+				qBooks.With(db).Where(qBooks.Title.NotEquals("nothing")), qBooks.AuthorID)),
 		).All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)

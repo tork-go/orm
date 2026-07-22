@@ -15,7 +15,7 @@ func TestIncrement_Renders(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), Users.Age.Increment(1)); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -33,7 +33,7 @@ func TestDecrement_Renders(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), Users.Age.Decrement(2)); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestSetExpr_ColumnAndLiteral(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), Users.Age.SetExpr(orm.Mul(Users.Age, 2))); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func TestSetExpr_Div(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), Users.Age.SetExpr(orm.Div(Users.Age, 2))); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -82,7 +82,7 @@ func TestSetExpr_ColumnMinusColumn(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(), Users.Age.SetExpr(orm.Sub(Users.Age, Users.ID))); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -105,7 +105,7 @@ func TestIncrement_SingleRowUpdate(t *testing.T) {
 	c.RowsAffected = 1
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	if _, err := Users.With(db).Where(Users.ID.Eq(1)).
+	if _, err := Users.With(db).Where(Users.ID.Equals(1)).
 		UpdateAll(context.Background(),
 			Users.Age.Increment(1),
 			Users.Username.Set("renamed"),
@@ -128,7 +128,7 @@ func TestSetExpr_ForeignColumnRejected(t *testing.T) {
 	}{
 		"left side": {
 			build: func() (int64, error) {
-				return Posts.With(db).Where(Posts.ID.Eq(1)).
+				return Posts.With(db).Where(Posts.ID.Equals(1)).
 					UpdateAll(context.Background(), orm.Assignment{
 						Col: Posts.ID, Expr: exprPtr(orm.Add(Users.Age, 1)),
 					})
@@ -136,7 +136,7 @@ func TestSetExpr_ForeignColumnRejected(t *testing.T) {
 		},
 		"right side": {
 			build: func() (int64, error) {
-				return Users.With(db).Where(Users.ID.Eq(1)).
+				return Users.With(db).Where(Users.ID.Equals(1)).
 					UpdateAll(context.Background(), Users.Age.SetExpr(orm.Add(Users.Age, Posts.ID)))
 			},
 		},

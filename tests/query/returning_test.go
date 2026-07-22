@@ -22,7 +22,7 @@ func TestUpdateAllReturning_Statement(t *testing.T) {
 	c.QueueRows(userRow(1, "minor"), userRow(2, "minor"))
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	got, err := Users.With(db).Where(Users.Age.Lt(18)).
+	got, err := Users.With(db).Where(Users.Age.LessThan(18)).
 		UpdateAllReturning(context.Background(), Users.Username.Set("minor"))
 	if err != nil {
 		t.Fatalf("UpdateAllReturning() error = %v", err)
@@ -45,7 +45,7 @@ func TestDeleteAllReturning_Statement(t *testing.T) {
 	c.QueueRows(userRow(7, "gone"))
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	got, err := Users.With(db).Where(Users.Age.Lt(18)).DeleteAllReturning(context.Background())
+	got, err := Users.With(db).Where(Users.Age.LessThan(18)).DeleteAllReturning(context.Background())
 	if err != nil {
 		t.Fatalf("DeleteAllReturning() error = %v", err)
 	}
@@ -99,7 +99,7 @@ func TestReturning_NoRowsIsNotAnError(t *testing.T) {
 	c := fakedriver.NewConn()
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	got, err := Users.With(db).Where(Users.Age.Lt(0)).DeleteAllReturning(context.Background())
+	got, err := Users.With(db).Where(Users.Age.LessThan(0)).DeleteAllReturning(context.Background())
 	if err != nil {
 		t.Fatalf("DeleteAllReturning() error = %v", err)
 	}
@@ -115,7 +115,7 @@ func TestReturning_RunsAfterLoad(t *testing.T) {
 	c.QueueRows([]any{1, 1, "  MORT  "})
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	got, err := Books.With(db).Where(Books.ID.Eq(1)).
+	got, err := Books.With(db).Where(Books.ID.Equals(1)).
 		UpdateAllReturning(context.Background(), Books.Title.Set("  MORT  "))
 	if err != nil {
 		t.Fatalf("UpdateAllReturning() error = %v", err)
@@ -134,7 +134,7 @@ func TestReturning_UnsupportedByTheDriver(t *testing.T) {
 	}{
 		"update": {
 			run: func(db *orm.DB) error {
-				_, err := Users.With(db).Where(Users.Age.Lt(18)).
+				_, err := Users.With(db).Where(Users.Age.LessThan(18)).
 					UpdateAllReturning(context.Background(), Users.Username.Set("x"))
 				return err
 			},
@@ -142,7 +142,7 @@ func TestReturning_UnsupportedByTheDriver(t *testing.T) {
 		},
 		"delete": {
 			run: func(db *orm.DB) error {
-				_, err := Users.With(db).Where(Users.Age.Lt(18)).
+				_, err := Users.With(db).Where(Users.Age.LessThan(18)).
 					DeleteAllReturning(context.Background())
 				return err
 			},
@@ -171,7 +171,7 @@ func TestReturning_AsksTheDialect(t *testing.T) {
 	d.CanReturn = true
 	db := orm.NewDB(c, d)
 
-	if _, err := Events.With(db).Where(Events.Name.Eq("x")).
+	if _, err := Events.With(db).Where(Events.Name.Equals("x")).
 		DeleteAllReturning(context.Background()); err != nil {
 		t.Fatalf("DeleteAllReturning() error = %v", err)
 	}
@@ -190,19 +190,19 @@ func TestReturning_RefusesWhatASetOperationCannotCarry(t *testing.T) {
 	}{
 		"an OrderBy": {
 			narrow: func(q *orm.Query[User]) *orm.Filtered[User] {
-				return q.Where(Users.Age.Lt(18)).OrderBy(Users.ID.Asc())
+				return q.Where(Users.Age.LessThan(18)).OrderBy(Users.ID.Asc())
 			},
 			want: "an OrderBy",
 		},
 		"a Limit": {
 			narrow: func(q *orm.Query[User]) *orm.Filtered[User] {
-				return q.Where(Users.Age.Lt(18)).Limit(5)
+				return q.Where(Users.Age.LessThan(18)).Limit(5)
 			},
 			want: "a Limit",
 		},
 		"a Select": {
 			narrow: func(q *orm.Query[User]) *orm.Filtered[User] {
-				return q.Where(Users.Age.Lt(18)).Select(Users.ID)
+				return q.Where(Users.Age.LessThan(18)).Select(Users.ID)
 			},
 			want: "a Select",
 		},
@@ -251,7 +251,7 @@ func TestReturning_RefusesAFilterThatNarrowedNothing(t *testing.T) {
 func TestUpdateAllReturning_NeedsAnAssignment(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
-	_, err := Users.With(db).Where(Users.Age.Lt(18)).
+	_, err := Users.With(db).Where(Users.Age.LessThan(18)).
 		UpdateAllReturning(context.Background())
 	if err == nil {
 		t.Fatal("UpdateAllReturning() error = nil, want the empty SET rejected")

@@ -88,7 +88,7 @@ func TestConditionalWrites_AgainstPostgres(t *testing.T) {
 
 		doc.Title = "edited"
 		doc.Version = 2
-		if err := cDocs.With(db).UpdateIf(ctx, doc, cDocs.Version.Eq(1)); err != nil {
+		if err := cDocs.With(db).UpdateIf(ctx, doc, cDocs.Version.Equals(1)); err != nil {
 			t.Fatalf("UpdateIf() error = %v", err)
 		}
 		got, err := cDocs.With(db).Find(ctx, doc.ID)
@@ -104,7 +104,7 @@ func TestConditionalWrites_AgainstPostgres(t *testing.T) {
 		doc := seed(t)
 
 		doc.Title = "should not land"
-		err := cDocs.With(db).UpdateIf(ctx, doc, cDocs.Version.Eq(99))
+		err := cDocs.With(db).UpdateIf(ctx, doc, cDocs.Version.Equals(99))
 		if !errors.Is(err, orm.ErrNoRows) {
 			t.Fatalf("UpdateIf() error = %v, want ErrNoRows", err)
 		}
@@ -133,12 +133,12 @@ func TestConditionalWrites_AgainstPostgres(t *testing.T) {
 		}
 
 		first.Title, first.Version = "first wins", first.Version+1
-		if err := cDocs.With(db).UpdateIf(ctx, first, cDocs.Version.Eq(1)); err != nil {
+		if err := cDocs.With(db).UpdateIf(ctx, first, cDocs.Version.Equals(1)); err != nil {
 			t.Fatalf("the first writer failed: %v", err)
 		}
 
 		second.Title, second.Version = "second wins", second.Version+1
-		err = cDocs.With(db).UpdateIf(ctx, second, cDocs.Version.Eq(1))
+		err = cDocs.With(db).UpdateIf(ctx, second, cDocs.Version.Equals(1))
 		if !errors.Is(err, orm.ErrNoRows) {
 			t.Fatalf("the second writer got %v, want ErrNoRows", err)
 		}
@@ -155,13 +155,13 @@ func TestConditionalWrites_AgainstPostgres(t *testing.T) {
 	t.Run("a conditional delete", func(t *testing.T) {
 		doc := seed(t)
 
-		if err := cDocs.With(db).DeleteIf(ctx, doc, cDocs.Version.Eq(99)); !errors.Is(err, orm.ErrNoRows) {
+		if err := cDocs.With(db).DeleteIf(ctx, doc, cDocs.Version.Equals(99)); !errors.Is(err, orm.ErrNoRows) {
 			t.Fatalf("DeleteIf() error = %v, want ErrNoRows", err)
 		}
 		if n, err := cDocs.With(db).Count(ctx); err != nil || n != 1 {
 			t.Fatalf("Count() = %d, %v; want the row still there", n, err)
 		}
-		if err := cDocs.With(db).DeleteIf(ctx, doc, cDocs.Version.Eq(1)); err != nil {
+		if err := cDocs.With(db).DeleteIf(ctx, doc, cDocs.Version.Equals(1)); err != nil {
 			t.Fatalf("DeleteIf() error = %v", err)
 		}
 		if n, err := cDocs.With(db).Count(ctx); err != nil || n != 0 {
@@ -187,7 +187,7 @@ func TestConditionalWrites_AgainstPostgres(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				mine := &cDoc{ID: doc.ID, Title: "writer", Version: 2}
-				err := cDocs.With(db).UpdateIf(ctx, mine, cDocs.Version.Eq(1))
+				err := cDocs.With(db).UpdateIf(ctx, mine, cDocs.Version.Equals(1))
 
 				mu.Lock()
 				defer mu.Unlock()

@@ -35,7 +35,7 @@ func TestSelect_Simple(t *testing.T) {
 
 func TestSelect_WhereOrderLimitOffset(t *testing.T) {
 	sql, args, err := Users.With(pg()).
-		Where(Users.Age.Gt(18), Users.Username.Eq("alice")).
+		Where(Users.Age.GreaterThan(18), Users.Username.Equals("alice")).
 		OrderBy(Users.ID.Desc(), Users.Username.Asc()).
 		Limit(20).
 		Offset(40).
@@ -58,7 +58,7 @@ func TestSelect_WhereOrderLimitOffset(t *testing.T) {
 // Nothing about the compiler may assume Postgres.
 func TestSelect_AsksTheDialect(t *testing.T) {
 	sql, args, err := Users.With(fake()).
-		Where(Users.Age.Gt(18), Users.Username.Eq("alice")).
+		Where(Users.Age.GreaterThan(18), Users.Username.Equals("alice")).
 		Limit(5).
 		SQL()
 	if err != nil {
@@ -81,12 +81,12 @@ func TestSelect_PredicateShapes(t *testing.T) {
 		want string
 		args []any
 	}{
-		{"Eq", Users.ID.Eq(1), `"id" = $1`, []any{1}},
-		{"NotEq", Users.ID.NotEq(1), `"id" <> $1`, []any{1}},
-		{"Gt", Users.ID.Gt(1), `"id" > $1`, []any{1}},
-		{"Gte", Users.ID.Gte(1), `"id" >= $1`, []any{1}},
-		{"Lt", Users.ID.Lt(1), `"id" < $1`, []any{1}},
-		{"Lte", Users.ID.Lte(1), `"id" <= $1`, []any{1}},
+		{"Equals", Users.ID.Equals(1), `"id" = $1`, []any{1}},
+		{"NotEquals", Users.ID.NotEquals(1), `"id" <> $1`, []any{1}},
+		{"GreaterThan", Users.ID.GreaterThan(1), `"id" > $1`, []any{1}},
+		{"GreaterOrEqual", Users.ID.GreaterOrEqual(1), `"id" >= $1`, []any{1}},
+		{"LessThan", Users.ID.LessThan(1), `"id" < $1`, []any{1}},
+		{"LessOrEqual", Users.ID.LessOrEqual(1), `"id" <= $1`, []any{1}},
 		{"In", Users.ID.In(1, 2), `"id" IN ($1, $2)`, []any{1, 2}},
 		{"NotIn", Users.ID.NotIn(1), `"id" NOT IN ($1)`, []any{1}},
 		{"Between", Users.Age.Between(18, 65), `"age" BETWEEN $1 AND $2`, []any{18, 65}},
@@ -94,16 +94,16 @@ func TestSelect_PredicateShapes(t *testing.T) {
 		{"IsNotNull", Users.Email.IsNotNull(), `"email" IS NOT NULL`, nil},
 		{"Contains", Users.Username.Contains("ali"), `"username" LIKE $1 ESCAPE '\'`, []any{"%ali%"}},
 		{"ILike", Users.Username.ILike("A%"), `"username" ILIKE $1 ESCAPE '\'`, []any{"A%"}},
-		{"Not", orm.Not(Users.ID.Eq(1)), `NOT ("id" = $1)`, []any{1}},
+		{"Not", orm.Not(Users.ID.Equals(1)), `NOT ("id" = $1)`, []any{1}},
 		{
 			"Or",
-			orm.Or(Users.ID.Eq(1), Users.ID.Eq(2)),
+			orm.Or(Users.ID.Equals(1), Users.ID.Equals(2)),
 			`("id" = $1 OR "id" = $2)`,
 			[]any{1, 2},
 		},
 		{
 			"nested",
-			orm.Or(Users.ID.Eq(1), orm.And(Users.Age.Gt(18), Users.Email.IsNotNull())),
+			orm.Or(Users.ID.Equals(1), orm.And(Users.Age.GreaterThan(18), Users.Email.IsNotNull())),
 			`("id" = $1 OR ("age" > $2 AND "email" IS NOT NULL))`,
 			[]any{1, 18},
 		},
@@ -180,7 +180,7 @@ func TestSelect_EmptyGroup(t *testing.T) {
 func TestSelect_DocumentColumnValueIsEncoded(t *testing.T) {
 	_, args, err := Users.With(pg()).Where(orm.Comparison{
 		Col:   Users.Prefs,
-		Op:    orm.OpEq,
+		Op:    orm.OpEquals,
 		Value: Prefs{Theme: "dark"},
 	}).SQL()
 	if err != nil {
@@ -203,7 +203,7 @@ func TestSelect_DocumentColumnValueIsEncoded(t *testing.T) {
 func TestSelect_DocumentColumnWrongType(t *testing.T) {
 	_, _, err := Users.With(pg()).Where(orm.Comparison{
 		Col:   Users.Prefs,
-		Op:    orm.OpEq,
+		Op:    orm.OpEquals,
 		Value: "not a Prefs",
 	}).SQL()
 	if err == nil {
@@ -218,7 +218,7 @@ func TestSelect_DocumentColumnWrongType(t *testing.T) {
 // has to, or the database reports it in terms of SQL the caller never
 // wrote.
 func TestSelect_ForeignColumnRejected(t *testing.T) {
-	_, _, err := Users.With(pg()).Where(Posts.Title.Eq("x")).SQL()
+	_, _, err := Users.With(pg()).Where(Posts.Title.Equals("x")).SQL()
 	if err == nil {
 		t.Fatal("SQL() error = nil, want a foreign column error")
 	}
@@ -253,8 +253,8 @@ func TestSelect_ZeroLimit(t *testing.T) {
 // branches means what it reads as.
 func TestSelect_WhereAccumulates(t *testing.T) {
 	sql, args, err := Users.With(pg()).
-		Where(Users.Age.Gt(18)).
-		Where(Users.Username.Eq("alice")).
+		Where(Users.Age.GreaterThan(18)).
+		Where(Users.Username.Equals("alice")).
 		SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)

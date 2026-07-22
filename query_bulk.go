@@ -435,7 +435,7 @@ func deleteBatch[E any](ctx context.Context, db *DB, st *tableState, ws []*write
 		for i, w := range ws {
 			terms := make([]Predicate, len(pk))
 			for j, col := range pk {
-				terms[j] = Comparison{Col: col, Op: OpEq, Value: w.field(col).Interface()}
+				terms[j] = Comparison{Col: col, Op: OpEquals, Value: w.field(col).Interface()}
 			}
 			preds[i] = Group{Conj: ConjAnd, Preds: terms}
 		}

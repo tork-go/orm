@@ -113,7 +113,7 @@ func TestReturning_AgainstPostgres(t *testing.T) {
 
 	t.Run("an update hands back exactly the rows it wrote", func(t *testing.T) {
 		reseed(t)
-		got, err := rTasks.With(db).Where(rTasks.State.Eq("queued")).
+		got, err := rTasks.With(db).Where(rTasks.State.Equals("queued")).
 			UpdateAllReturning(ctx, rTasks.State.Set("running"))
 		if err != nil {
 			t.Fatalf("UpdateAllReturning() error = %v", err)
@@ -148,7 +148,7 @@ func TestReturning_AgainstPostgres(t *testing.T) {
 			_, _ = conn.Exec(context.Background(), `DROP FUNCTION IF EXISTS r_bump()`)
 		})
 
-		got, err := rTasks.With(db).Where(rTasks.Name.Eq("a")).
+		got, err := rTasks.With(db).Where(rTasks.Name.Equals("a")).
 			UpdateAllReturning(ctx, rTasks.State.Set("running"))
 		if err != nil {
 			t.Fatalf("UpdateAllReturning() error = %v", err)
@@ -160,7 +160,7 @@ func TestReturning_AgainstPostgres(t *testing.T) {
 
 	t.Run("a delete hands back the rows it removed", func(t *testing.T) {
 		reseed(t)
-		got, err := rTasks.With(db).Where(rTasks.State.Eq("queued")).DeleteAllReturning(ctx)
+		got, err := rTasks.With(db).Where(rTasks.State.Equals("queued")).DeleteAllReturning(ctx)
 		if err != nil {
 			t.Fatalf("DeleteAllReturning() error = %v", err)
 		}
@@ -178,7 +178,7 @@ func TestReturning_AgainstPostgres(t *testing.T) {
 
 	t.Run("matching nothing returns nothing, not an error", func(t *testing.T) {
 		reseed(t)
-		got, err := rTasks.With(db).Where(rTasks.State.Eq("nowhere")).DeleteAllReturning(ctx)
+		got, err := rTasks.With(db).Where(rTasks.State.Equals("nowhere")).DeleteAllReturning(ctx)
 		if err != nil {
 			t.Fatalf("DeleteAllReturning() error = %v", err)
 		}
@@ -191,11 +191,11 @@ func TestReturning_AgainstPostgres(t *testing.T) {
 	// and handed over in one statement, so two workers cannot both take one.
 	t.Run("a returning delete claims rows in one statement", func(t *testing.T) {
 		reseed(t)
-		claimed, err := rTasks.With(db).Where(rTasks.State.Eq("queued")).DeleteAllReturning(ctx)
+		claimed, err := rTasks.With(db).Where(rTasks.State.Equals("queued")).DeleteAllReturning(ctx)
 		if err != nil {
 			t.Fatalf("DeleteAllReturning() error = %v", err)
 		}
-		again, err := rTasks.With(db).Where(rTasks.State.Eq("queued")).DeleteAllReturning(ctx)
+		again, err := rTasks.With(db).Where(rTasks.State.Equals("queued")).DeleteAllReturning(ctx)
 		if err != nil {
 			t.Fatalf("DeleteAllReturning() error = %v", err)
 		}
@@ -215,7 +215,7 @@ func TestReturning_AgainstPostgres(t *testing.T) {
 		if err := rTasks.With(db).InsertMany(ctx, rows...); err != nil {
 			t.Fatalf("InsertMany failed: %v", err)
 		}
-		got, err := rTasks.With(db).Where(rTasks.State.Eq("bulk")).
+		got, err := rTasks.With(db).Where(rTasks.State.Equals("bulk")).
 			UpdateAllReturning(ctx, rTasks.State.Set("swept"))
 		if err != nil {
 			t.Fatalf("UpdateAllReturning() error = %v", err)

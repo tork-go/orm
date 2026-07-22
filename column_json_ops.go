@@ -25,7 +25,8 @@ func (m jsonOps[T]) HasKey(key string) Predicate { return JSONHasKey{Col: m.c, K
 // Serialize pair applies here too.
 func (m jsonOps[T]) Contains(v T) Predicate { return JSONContains{Col: m.c, Value: v} }
 
-// Key names a top-level key, whose text can then be compared with Eq or NotEq.
+// Key names a top-level key, whose text can then be compared with Equals
+// or NotEquals.
 func (m jsonOps[T]) Key(key string) jsonPath { return jsonPath{c: m.c, key: key} }
 
 // nullJSONOps is jsonOps for a nullable document column.
@@ -43,26 +44,27 @@ func (m nullJSONOps[T]) HasKey(key string) Predicate { return JSONHasKey{Col: m.
 // Contains is "the document contains v, as a subtree".
 func (m nullJSONOps[T]) Contains(v T) Predicate { return JSONContains{Col: m.c, Value: &v} }
 
-// Key names a top-level key, whose text can then be compared with Eq or NotEq.
+// Key names a top-level key, whose text can then be compared with Equals
+// or NotEquals.
 func (m nullJSONOps[T]) Key(key string) jsonPath { return jsonPath{c: m.c, key: key} }
 
 // jsonPath is a top-level key of a JSON column, extracted as text, waiting for
 // the value to compare it against.
 //
-// It is what Key returns, so Users.Prefs.Key("theme").Eq("dark") reads as one
-// thought. The comparison is on text because ->> yields text; a number or a
-// nested value is what Contains and orm.Raw are for.
+// It is what Key returns, so Users.Prefs.Key("theme").Equals("dark") reads
+// as one thought. The comparison is on text because ->> yields text; a
+// number or a nested value is what Contains and orm.Raw are for.
 type jsonPath struct {
 	c   ColumnMeta
 	key string
 }
 
-// Eq is `(col ->> key) = v`.
-func (p jsonPath) Eq(v string) Predicate {
-	return JSONKey{Col: p.c, Key: p.key, Op: OpEq, Value: v}
+// Equals is `(col ->> key) = v`.
+func (p jsonPath) Equals(v string) Predicate {
+	return JSONKey{Col: p.c, Key: p.key, Op: OpEquals, Value: v}
 }
 
-// NotEq is `(col ->> key) <> v`.
-func (p jsonPath) NotEq(v string) Predicate {
-	return JSONKey{Col: p.c, Key: p.key, Op: OpNotEq, Value: v}
+// NotEquals is `(col ->> key) <> v`.
+func (p jsonPath) NotEquals(v string) Predicate {
+	return JSONKey{Col: p.c, Key: p.key, Op: OpNotEquals, Value: v}
 }

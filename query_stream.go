@@ -10,7 +10,7 @@ import (
 // Each streams the matching rows one at a time, instead of returning them
 // all at once the way All does.
 //
-//	for user, err := range Users.With(db).Where(Users.Active.Eq(true)).Each(ctx) {
+//	for user, err := range Users.With(db).Where(Users.Active.Equals(true)).Each(ctx) {
 //	    if err != nil {
 //	        return err
 //	    }

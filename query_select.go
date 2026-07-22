@@ -10,7 +10,7 @@ import (
 //	names, err := orm.Select(Users.With(db), Users.Username).All(ctx)      // []string
 //	emails, err := orm.Select(Users.With(db), Users.Email).All(ctx)        // []*string
 //
-//	countries, err := orm.Select(Users.With(db).Where(Users.Active.Eq(true)),
+//	countries, err := orm.Select(Users.With(db).Where(Users.Active.Equals(true)),
 //	    Users.Country).Distinct().All(ctx)
 //
 // It is a function rather than a method because the result's type is the
@@ -180,7 +180,7 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 // SubqueryOf is a query yielding one column of T, for use inside another
 // query's condition rather than being run on its own.
 //
-//	authors := orm.Select(Posts.With(db).Where(Posts.Published.Eq(true)), Posts.AuthorID)
+//	authors := orm.Select(Posts.With(db).Where(Posts.Published.Equals(true)), Posts.AuthorID)
 //	Users.With(db).Where(Users.ID.InQuery(authors)).All(ctx)
 //
 // It is what InQuery and NotInQuery accept, and only this package's own query

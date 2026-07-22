@@ -15,7 +15,7 @@ func BenchmarkCompileSelect(b *testing.B) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	b.Run("every column", func(b *testing.B) {
-		q := Users.With(db).Where(Users.Age.Gt(18)).OrderBy(Users.ID.Desc()).Limit(20)
+		q := Users.With(db).Where(Users.Age.GreaterThan(18)).OrderBy(Users.ID.Desc()).Limit(20)
 		b.ReportAllocs()
 		for b.Loop() {
 			if _, _, err := q.SQL(); err != nil {
@@ -26,7 +26,7 @@ func BenchmarkCompileSelect(b *testing.B) {
 
 	b.Run("two columns", func(b *testing.B) {
 		q := Users.With(db).Select(Users.ID, Users.Username).
-			Where(Users.Age.Gt(18)).OrderBy(Users.ID.Desc()).Limit(20)
+			Where(Users.Age.GreaterThan(18)).OrderBy(Users.ID.Desc()).Limit(20)
 		b.ReportAllocs()
 		for b.Loop() {
 			if _, _, err := q.SQL(); err != nil {
@@ -37,7 +37,7 @@ func BenchmarkCompileSelect(b *testing.B) {
 
 	b.Run("one column, typed", func(b *testing.B) {
 		s := orm.Select(
-			Users.With(db).Where(Users.Age.Gt(18)).OrderBy(Users.ID.Desc()).Limit(20),
+			Users.With(db).Where(Users.Age.GreaterThan(18)).OrderBy(Users.ID.Desc()).Limit(20),
 			Users.Username,
 		)
 		b.ReportAllocs()

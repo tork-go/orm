@@ -97,7 +97,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 	t.Run("a projection reads only what it asked for", func(t *testing.T) {
 		got, err := sUsers.With(db).
 			Select(sUsers.ID, sUsers.Name).
-			Where(sUsers.Name.Eq("alice")).
+			Where(sUsers.Name.Equals("alice")).
 			All(ctx)
 		if err != nil {
 			t.Fatalf("All() error = %v", err)
@@ -250,7 +250,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("aggregates carry the filter and honour distinct", func(t *testing.T) {
-		total, err := orm.Sum(ctx, sUsers.With(db).Where(sUsers.Country.Eq("DE")), sUsers.Age)
+		total, err := orm.Sum(ctx, sUsers.With(db).Where(sUsers.Country.Equals("DE")), sUsers.Age)
 		if err != nil {
 			t.Fatalf("Sum() error = %v", err)
 		}
@@ -260,7 +260,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 
 		// Both German users are 25, so summing each distinct age once halves it.
 		distinct, err := orm.Sum(ctx,
-			sUsers.With(db).Where(sUsers.Country.Eq("DE")).Distinct(), sUsers.Age)
+			sUsers.With(db).Where(sUsers.Country.Equals("DE")).Distinct(), sUsers.Age)
 		if err != nil {
 			t.Fatalf("Sum() error = %v", err)
 		}
@@ -270,7 +270,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("aggregates over no rows", func(t *testing.T) {
-		none := sUsers.With(db).Where(sUsers.Name.Eq("nobody"))
+		none := sUsers.With(db).Where(sUsers.Name.Equals("nobody"))
 
 		total, err := orm.Sum(ctx, none, sUsers.Age)
 		if err != nil {
@@ -303,7 +303,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 		}
 
 		nothing, err := orm.Max(ctx,
-			sUsers.With(db).Where(sUsers.Name.Eq("bob")), sUsers.Email)
+			sUsers.With(db).Where(sUsers.Name.Equals("bob")), sUsers.Email)
 		if err != nil {
 			t.Fatalf("Max() error = %v", err)
 		}
@@ -357,7 +357,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 	t.Run("having, which the database applies after grouping", func(t *testing.T) {
 		// Both countries have two users, so a threshold of three excludes
 		// everything and one of two keeps both.
-		none, err := orm.CountBy(sUsers.With(db), sUsers.Country).Having(orm.OpGte, 3).All(ctx)
+		none, err := orm.CountBy(sUsers.With(db), sUsers.Country).Having(orm.OpGreaterOrEqual, 3).All(ctx)
 		if err != nil {
 			t.Fatalf("CountBy() error = %v", err)
 		}
@@ -365,7 +365,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 			t.Errorf("got %+v, want no country with three users", none)
 		}
 
-		both, err := orm.CountBy(sUsers.With(db), sUsers.Country).Having(orm.OpGte, 2).All(ctx)
+		both, err := orm.CountBy(sUsers.With(db), sUsers.Country).Having(orm.OpGreaterOrEqual, 2).All(ctx)
 		if err != nil {
 			t.Fatalf("CountBy() error = %v", err)
 		}
@@ -375,7 +375,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 
 		// Two conditions bracket the count from both sides.
 		between, err := orm.CountBy(sUsers.With(db), sUsers.Country).
-			Having(orm.OpGte, 2).Having(orm.OpLt, 3).All(ctx)
+			Having(orm.OpGreaterOrEqual, 2).Having(orm.OpLessThan, 3).All(ctx)
 		if err != nil {
 			t.Fatalf("CountBy() error = %v", err)
 		}
@@ -385,8 +385,8 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("having with a filter, ordering and a cap together", func(t *testing.T) {
-		got, err := orm.SumBy(sUsers.With(db).Where(sUsers.Age.Gte(25)), sUsers.Country, sUsers.Age).
-			Having(orm.OpGt, 10).
+		got, err := orm.SumBy(sUsers.With(db).Where(sUsers.Age.GreaterOrEqual(25)), sUsers.Country, sUsers.Age).
+			Having(orm.OpGreaterThan, 10).
 			OrderByValueDesc().
 			Limit(1).
 			All(ctx)
@@ -418,7 +418,7 @@ func TestSelect_AgainstPostgres(t *testing.T) {
 
 	t.Run("keys alone", func(t *testing.T) {
 		keys, err := orm.CountBy(sUsers.With(db), sUsers.Country).
-			Having(orm.OpGte, 2).OrderBy(sUsers.Country.Asc()).Keys(ctx)
+			Having(orm.OpGreaterOrEqual, 2).OrderBy(sUsers.Country.Asc()).Keys(ctx)
 		if err != nil {
 			t.Fatalf("Keys() error = %v", err)
 		}

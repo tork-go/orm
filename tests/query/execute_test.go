@@ -95,7 +95,7 @@ func TestFirst_LimitsToOne(t *testing.T) {
 	c.QueueRows(row(7, "alice", nil, 30, nil, time.Time{}))
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	u, err := Users.With(db).Where(Users.Age.Gt(18)).First(context.Background())
+	u, err := Users.With(db).Where(Users.Age.GreaterThan(18)).First(context.Background())
 	if err != nil {
 		t.Fatalf("First() error = %v", err)
 	}
@@ -122,7 +122,7 @@ func TestFirst_DoesNotMutateTheQuery(t *testing.T) {
 	c.QueueRows(row(1, "a", nil, 1, nil, time.Time{}))
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	q := Users.With(db).Where(Users.Age.Gt(18)).Limit(50)
+	q := Users.With(db).Where(Users.Age.GreaterThan(18)).Limit(50)
 	if _, err := q.First(context.Background()); err != nil {
 		t.Fatalf("First() error = %v", err)
 	}
@@ -140,7 +140,7 @@ func TestCount(t *testing.T) {
 	c.QueueRows([]any{int64(42)})
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	n, err := Users.With(db).Where(Users.Age.Gt(18)).Count(context.Background())
+	n, err := Users.With(db).Where(Users.Age.GreaterThan(18)).Count(context.Background())
 	if err != nil {
 		t.Fatalf("Count() error = %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 // BoolColumn is a non-nullable bool column.
 //
 // It embeds no ordered mixin: `active > false` is legal SQL but never
-// something a caller means, so Gt and friends are left off.
+// something a caller means, so GreaterThan and friends are left off.
 type BoolColumn struct {
 	chain[bool, *BoolColumn]
 	equatable[bool]

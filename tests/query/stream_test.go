@@ -253,7 +253,7 @@ func TestEach_OnQueryAndFiltered(t *testing.T) {
 		db := orm.NewDB(c, postgres.Dialect{})
 
 		n := 0
-		for _, err := range Posts.With(db).Where(Posts.ID.Gt(0)).Each(context.Background()) {
+		for _, err := range Posts.With(db).Where(Posts.ID.GreaterThan(0)).Each(context.Background()) {
 			if err != nil {
 				t.Fatalf("Each error = %v", err)
 			}
@@ -275,7 +275,7 @@ func TestEach_ComposesWithALock(t *testing.T) {
 	c.QueueRows([]any{1, "a", "a"})
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	for _, err := range Posts.With(db).Where(Posts.ID.Gt(0)).
+	for _, err := range Posts.With(db).Where(Posts.ID.GreaterThan(0)).
 		ForUpdate().SkipLocked().Each(context.Background()) {
 		if err != nil {
 			t.Fatalf("Each error = %v", err)
@@ -417,7 +417,7 @@ func TestEach_AsksTheDialect(t *testing.T) {
 	c.QueueRows([]any{1, "a", "a"})
 	db := orm.NewDB(c, fakedriver.NewDialect())
 
-	for _, err := range Posts.With(db).Where(Posts.ID.Gt(0)).Each(context.Background()) {
+	for _, err := range Posts.With(db).Where(Posts.ID.GreaterThan(0)).Each(context.Background()) {
 		if err != nil {
 			t.Fatalf("Each error = %v", err)
 		}

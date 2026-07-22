@@ -129,7 +129,7 @@ func TestSoftDelete_DeleteIfBecomesUpdate(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	row := &SoftDeletable{ID: 3}
-	if err := SoftDeletables.With(db).DeleteIf(context.Background(), row, SoftDeletables.Name.Eq("x")); err != nil {
+	if err := SoftDeletables.With(db).DeleteIf(context.Background(), row, SoftDeletables.Name.Equals("x")); err != nil {
 		t.Fatalf("DeleteIf() error = %v", err)
 	}
 	want := `UPDATE "soft_deletables" SET "deleted_at" = $1 WHERE ("id" = $2 AND "name" = $3)`
@@ -175,7 +175,7 @@ func TestSoftDelete_DeleteAllBecomesUpdate(t *testing.T) {
 	c.RowsAffected = 2
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	n, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Eq("x")).DeleteAll(context.Background())
+	n, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Equals("x")).DeleteAll(context.Background())
 	if err != nil {
 		t.Fatalf("DeleteAll() error = %v", err)
 	}
@@ -193,7 +193,7 @@ func TestSoftDelete_DeleteAllReturningBecomesUpdate(t *testing.T) {
 	c.QueueRows([]any{1, "x", nil})
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	rows, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Eq("x")).DeleteAllReturning(context.Background())
+	rows, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Equals("x")).DeleteAllReturning(context.Background())
 	if err != nil {
 		t.Fatalf("DeleteAllReturning() error = %v", err)
 	}
@@ -218,7 +218,7 @@ func TestSoftDelete_ForceDeleteAll_IsHardDelete(t *testing.T) {
 	c.RowsAffected = 2
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	n, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Eq("x")).ForceDeleteAll(context.Background())
+	n, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Equals("x")).ForceDeleteAll(context.Background())
 	if err != nil {
 		t.Fatalf("ForceDeleteAll() error = %v", err)
 	}
@@ -236,7 +236,7 @@ func TestSoftDelete_ForceDeleteAllReturning_IsHardDelete(t *testing.T) {
 	c.QueueRows([]any{1, "x", nil})
 	db := orm.NewDB(c, postgres.Dialect{})
 
-	rows, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Eq("x")).
+	rows, err := SoftDeletables.With(db).Where(SoftDeletables.Name.Equals("x")).
 		ForceDeleteAllReturning(context.Background())
 	if err != nil {
 		t.Fatalf("ForceDeleteAllReturning() error = %v", err)

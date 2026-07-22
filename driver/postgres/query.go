@@ -139,9 +139,9 @@ func (Dialect) RenderArrayOverlaps(quotedColumn, placeholder string) (string, er
 // RenderArrayLength returns the comparison of an array's element count,
 // counted with cardinality rather than array_length.
 //
-// cardinality is 0 for an empty array where array_length(col, 1) is NULL, so
-// Len().Eq(0) means what it says and Len().Gt(0) is "non-empty" rather than a
-// three-valued unknown.
+// cardinality is 0 for an empty array where array_length(col, 1) is NULL,
+// so Len().Equals(0) means what it says and Len().GreaterThan(0) is
+// "non-empty" rather than a three-valued unknown.
 func (Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placeholder string) (string, error) {
 	return "cardinality(" + quotedColumn + ") " + op.String() + " " + placeholder, nil
 }

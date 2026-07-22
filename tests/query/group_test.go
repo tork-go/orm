@@ -54,7 +54,7 @@ func TestGroup_Statements(t *testing.T) {
 		{
 			name: "carries the filter",
 			sql: func() (string, []any, error) {
-				return orm.CountBy(Users.With(pg()).Where(Users.Age.Gt(18)), Users.Username).SQL()
+				return orm.CountBy(Users.With(pg()).Where(Users.Age.GreaterThan(18)), Users.Username).SQL()
 			},
 			want: `SELECT "username", COUNT(*) FROM "users" WHERE "age" > $1 GROUP BY "username"`,
 			args: []any{18},
@@ -62,7 +62,7 @@ func TestGroup_Statements(t *testing.T) {
 		{
 			name: "having",
 			sql: func() (string, []any, error) {
-				return orm.CountBy(Users.With(pg()), Users.Username).Having(orm.OpGte, 5).SQL()
+				return orm.CountBy(Users.With(pg()), Users.Username).Having(orm.OpGreaterOrEqual, 5).SQL()
 			},
 			want: `SELECT "username", COUNT(*) FROM "users" GROUP BY "username" ` +
 				`HAVING COUNT(*) >= $1`,
@@ -72,7 +72,7 @@ func TestGroup_Statements(t *testing.T) {
 			name: "having accumulates",
 			sql: func() (string, []any, error) {
 				return orm.CountBy(Users.With(pg()), Users.Username).
-					Having(orm.OpGte, 5).Having(orm.OpLt, 100).SQL()
+					Having(orm.OpGreaterOrEqual, 5).Having(orm.OpLessThan, 100).SQL()
 			},
 			want: `SELECT "username", COUNT(*) FROM "users" GROUP BY "username" ` +
 				`HAVING COUNT(*) >= $1 AND COUNT(*) < $2`,
@@ -146,8 +146,8 @@ func TestGroup_Statements(t *testing.T) {
 // The filter's arguments bind before the aggregate's, matching where each
 // appears in the statement.
 func TestGroup_ArgumentOrder(t *testing.T) {
-	_, args, err := orm.CountBy(Users.With(pg()).Where(Users.Age.Gt(18)), Users.Username).
-		Having(orm.OpGte, 5).SQL()
+	_, args, err := orm.CountBy(Users.With(pg()).Where(Users.Age.GreaterThan(18)), Users.Username).
+		Having(orm.OpGreaterOrEqual, 5).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
@@ -255,7 +255,7 @@ func TestGroup_Keys(t *testing.T) {
 	db := orm.NewDB(c, postgres.Dialect{})
 
 	keys, err := orm.CountBy(Users.With(db), Users.Username).
-		Having(orm.OpGte, 5).Keys(context.Background())
+		Having(orm.OpGreaterOrEqual, 5).Keys(context.Background())
 	if err != nil {
 		t.Fatalf("Keys() error = %v", err)
 	}
@@ -275,7 +275,7 @@ func TestGroup_BuildersLeaveTheOriginalAlone(t *testing.T) {
 	}
 
 	branches := map[string]func() (string, []any, error){
-		"Having":           func() (string, []any, error) { return base.Having(orm.OpGt, 1).SQL() },
+		"Having":           func() (string, []any, error) { return base.Having(orm.OpGreaterThan, 1).SQL() },
 		"OrderBy":          func() (string, []any, error) { return base.OrderBy(Users.Username.Asc()).SQL() },
 		"OrderByValue":     func() (string, []any, error) { return base.OrderByValue().SQL() },
 		"OrderByValueDesc": func() (string, []any, error) { return base.OrderByValueDesc().SQL() },
@@ -350,7 +350,7 @@ func TestGroup_Rejected(t *testing.T) {
 		},
 		"another table's column in the filter": {
 			sql: func() (string, []any, error) {
-				return orm.CountBy(Users.With(db).Where(Posts.Title.Eq("x")), Users.Username).SQL()
+				return orm.CountBy(Users.With(db).Where(Posts.Title.Equals("x")), Users.Username).SQL()
 			},
 			want: `table "posts"`,
 		},

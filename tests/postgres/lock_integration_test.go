@@ -102,14 +102,14 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 
 		var first, second []*kJob
 		err := db.Transaction(ctx, func(tx *orm.DB) error {
-			first, err = kJobs.With(tx).Where(kJobs.State.Eq("queued")).
+			first, err = kJobs.With(tx).Where(kJobs.State.Equals("queued")).
 				OrderBy(kJobs.ID.Asc()).ForUpdate().SkipLocked().Limit(2).All(ctx)
 			if err != nil {
 				return err
 			}
 			// Still inside the first transaction, so its two rows are locked.
 			return otherDB.Transaction(ctx, func(tx2 *orm.DB) error {
-				second, err = kJobs.With(tx2).Where(kJobs.State.Eq("queued")).
+				second, err = kJobs.With(tx2).Where(kJobs.State.Equals("queued")).
 					OrderBy(kJobs.ID.Asc()).ForUpdate().SkipLocked().Limit(2).All(ctx)
 				return err
 			})
@@ -139,12 +139,12 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 
 		var second []*kJob
 		err := db.Transaction(ctx, func(tx *orm.DB) error {
-			if _, err := kJobs.With(tx).Where(kJobs.State.Eq("queued")).
+			if _, err := kJobs.With(tx).Where(kJobs.State.Equals("queued")).
 				ForUpdate().SkipLocked().All(ctx); err != nil {
 				return err
 			}
 			return otherDB.Transaction(ctx, func(tx2 *orm.DB) error {
-				second, err = kJobs.With(tx2).Where(kJobs.State.Eq("queued")).
+				second, err = kJobs.With(tx2).Where(kJobs.State.Equals("queued")).
 					ForUpdate().SkipLocked().All(ctx)
 				return err
 			})
@@ -161,12 +161,12 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 		seed(t, 1)
 
 		err := db.Transaction(ctx, func(tx *orm.DB) error {
-			if _, err := kJobs.With(tx).Where(kJobs.State.Eq("queued")).
+			if _, err := kJobs.With(tx).Where(kJobs.State.Equals("queued")).
 				ForUpdate().All(ctx); err != nil {
 				return err
 			}
 			inner := otherDB.Transaction(ctx, func(tx2 *orm.DB) error {
-				_, err := kJobs.With(tx2).Where(kJobs.State.Eq("queued")).
+				_, err := kJobs.With(tx2).Where(kJobs.State.Equals("queued")).
 					ForUpdate().NoWait().All(ctx)
 				return err
 			})
@@ -186,7 +186,7 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 		seed(t, 1)
 
 		err := db.Transaction(ctx, func(tx *orm.DB) error {
-			if _, err := kJobs.With(tx).Where(kJobs.State.Eq("queued")).
+			if _, err := kJobs.With(tx).Where(kJobs.State.Equals("queued")).
 				ForUpdate().All(ctx); err != nil {
 				return err
 			}
@@ -194,7 +194,7 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 			defer cancel()
 
 			inner := otherDB.Transaction(waiting, func(tx2 *orm.DB) error {
-				_, err := kJobs.With(tx2).Where(kJobs.State.Eq("queued")).
+				_, err := kJobs.With(tx2).Where(kJobs.State.Equals("queued")).
 					ForUpdate().All(waiting)
 				return err
 			})
@@ -216,12 +216,12 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 
 		var second []*kJob
 		err := db.Transaction(ctx, func(tx *orm.DB) error {
-			if _, err := kJobs.With(tx).Where(kJobs.State.Eq("queued")).
+			if _, err := kJobs.With(tx).Where(kJobs.State.Equals("queued")).
 				ForShare().All(ctx); err != nil {
 				return err
 			}
 			return otherDB.Transaction(ctx, func(tx2 *orm.DB) error {
-				second, err = kJobs.With(tx2).Where(kJobs.State.Eq("queued")).
+				second, err = kJobs.With(tx2).Where(kJobs.State.Equals("queued")).
 					ForShare().All(ctx)
 				return err
 			})
@@ -256,7 +256,7 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 				defer wg.Done()
 				name := fmt.Sprintf("worker-%d", w)
 				err := db.Transaction(ctx, func(tx *orm.DB) error {
-					mine, err := kJobs.With(tx).Where(kJobs.State.Eq("queued")).
+					mine, err := kJobs.With(tx).Where(kJobs.State.Equals("queued")).
 						ForUpdate().SkipLocked().Limit(batch).All(ctx)
 					if err != nil {
 						return err
@@ -300,7 +300,7 @@ func TestLocking_AgainstPostgres(t *testing.T) {
 			t.Errorf("claimed %d of %d jobs, want every one taken exactly once",
 				len(claimed), jobs)
 		}
-		left, err := kJobs.With(db).Where(kJobs.State.Eq("queued")).Count(ctx)
+		left, err := kJobs.With(db).Where(kJobs.State.Equals("queued")).Count(ctx)
 		if err != nil {
 			t.Fatalf("Count() error = %v", err)
 		}

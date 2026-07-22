@@ -16,9 +16,9 @@ import "strings"
 // cannot be handed a value that only an InList would read.
 //
 // Predicates are built by the operation mixins on the column types, never
-// by hand, so Users.ID.Gt(100) rather than Comparison{...}. The fields are
-// exported so tests and compilers can read them, not so callers construct
-// them.
+// by hand, so Users.ID.GreaterThan(100) rather than Comparison{...}. The
+// fields are exported so tests and compilers can read them, not so callers
+// construct them.
 type Predicate interface {
 	predicate()
 }
@@ -27,12 +27,12 @@ type Predicate interface {
 type Operator int
 
 const (
-	OpEq Operator = iota
-	OpNotEq
-	OpGt
-	OpGte
-	OpLt
-	OpLte
+	OpEquals Operator = iota
+	OpNotEquals
+	OpGreaterThan
+	OpGreaterOrEqual
+	OpLessThan
+	OpLessOrEqual
 )
 
 // String returns the SQL spelling of the operator. Every dialect Tork
@@ -40,17 +40,17 @@ const (
 // the dialect.
 func (o Operator) String() string {
 	switch o {
-	case OpEq:
+	case OpEquals:
 		return "="
-	case OpNotEq:
+	case OpNotEquals:
 		return "<>"
-	case OpGt:
+	case OpGreaterThan:
 		return ">"
-	case OpGte:
+	case OpGreaterOrEqual:
 		return ">="
-	case OpLt:
+	case OpLessThan:
 		return "<"
-	case OpLte:
+	case OpLessOrEqual:
 		return "<="
 	}
 	return "?"
@@ -151,9 +151,9 @@ type JSONContains struct {
 }
 
 // JSONKey is `(col ->> key) <op> value`: the text at a top-level key compared
-// against a value. Build one with a JSON column's Key(...).Eq or .NotEq. The
-// value is text because ->> extracts text; a number or a nested object is what
-// Contains and Raw are for.
+// against a value. Build one with a JSON column's Key(...).Equals or
+// .NotEquals. The value is text because ->> extracts text; a number or a
+// nested object is what Contains and Raw are for.
 type JSONKey struct {
 	Col   ColumnMeta
 	Key   string
@@ -183,7 +183,8 @@ type ArrayOverlaps struct {
 }
 
 // ArrayLength is `len(col) <op> value`: the number of elements compared
-// against a count. Build one with an array column's Len().Gt and the rest.
+// against a count. Build one with an array column's Len().GreaterThan and
+// the rest.
 type ArrayLength struct {
 	Col   ColumnMeta
 	Op    Operator
@@ -217,7 +218,7 @@ type Relationship interface {
 // conditions on it.
 //
 //	Users.With(db).Where(orm.Has(Users.Posts)).All(ctx)
-//	Users.With(db).Where(orm.Has(Users.Posts, Posts.Published.Eq(true))).All(ctx)
+//	Users.With(db).Where(orm.Has(Users.Posts, Posts.Published.Equals(true))).All(ctx)
 //
 // It compiles to an EXISTS over the related table, correlated on the columns
 // the relationship joins:
@@ -243,14 +244,14 @@ func Has(rel Relationship, preds ...Predicate) Predicate {
 // conditions given.
 //
 //	Users.With(db).Where(orm.HasNone(Users.Posts)).All(ctx)
-//	Users.With(db).Where(orm.HasNone(Users.Posts, Posts.Published.Eq(true))).All(ctx)
+//	Users.With(db).Where(orm.HasNone(Users.Posts, Posts.Published.Equals(true))).All(ctx)
 //
 // The second says the user has no published post, which is not the same as
 // having no posts: a user with only drafts matches it.
 //
 // Coming from Prisma, Has is some and this is none. There is no every, which
 // would be this with the condition negated: HasNone(Users.Posts,
-// orm.Not(Posts.Published.Eq(true))) matches users all of whose posts are
+// orm.Not(Posts.Published.Equals(true))) matches users all of whose posts are
 // published, and, like Prisma's every, also those with no posts at all.
 func HasNone(rel Relationship, preds ...Predicate) Predicate {
 	return existence(rel, preds, true)
@@ -267,15 +268,15 @@ func existence(rel Relationship, preds []Predicate, not bool) Predicate {
 	return e
 }
 
-func (Comparison) predicate() {}
-func (InList) predicate()     {}
-func (Range) predicate()      {}
-func (Pattern) predicate()    {}
-func (Nullness) predicate()   {}
-func (Group) predicate()      {}
-func (Negation) predicate()   {}
-func (Existence) predicate()   {}
-func (InSubquery) predicate()  {}
+func (Comparison) predicate()    {}
+func (InList) predicate()        {}
+func (Range) predicate()         {}
+func (Pattern) predicate()       {}
+func (Nullness) predicate()      {}
+func (Group) predicate()         {}
+func (Negation) predicate()      {}
+func (Existence) predicate()     {}
+func (InSubquery) predicate()    {}
 func (JSONHasKey) predicate()    {}
 func (JSONContains) predicate()  {}
 func (JSONKey) predicate()       {}

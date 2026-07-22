@@ -101,7 +101,7 @@ func TestRaw_AgainstPostgres(t *testing.T) {
 	// Numbered in with a typed predicate beside it.
 	t.Run("beside a typed predicate", func(t *testing.T) {
 		got, err := rUsers.With(db).Where(
-			rUsers.Age.Gte(18),
+			rUsers.Age.GreaterOrEqual(18),
 			orm.Raw("lower(name) LIKE ?", "%o%"),
 		).All(ctx)
 		if err != nil {

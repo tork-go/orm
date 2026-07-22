@@ -113,7 +113,7 @@ func (g *Grouped[K, V]) clone() *Grouped[K, V] {
 
 // Having keeps only the groups whose aggregate compares as given.
 //
-//	orm.CountBy(Users.With(db), Users.Country).Having(orm.OpGte, 10)
+//	orm.CountBy(Users.With(db), Users.Country).Having(orm.OpGreaterOrEqual, 10)
 //	// HAVING COUNT(*) >= $1
 //
 // It takes the same Operator a column comparison does, rather than a

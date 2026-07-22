@@ -48,7 +48,7 @@ func TestAggregate_Statements(t *testing.T) {
 		{
 			name: "carries the filter",
 			run: func(db *orm.DB) error {
-				_, err := orm.Sum(ctx, Users.With(db).Where(Users.Age.Gt(18)), Users.Age)
+				_, err := orm.Sum(ctx, Users.With(db).Where(Users.Age.GreaterThan(18)), Users.Age)
 				return err
 			},
 			row:  []any{100},
@@ -234,7 +234,7 @@ func TestAggregate_AsksTheDialect(t *testing.T) {
 	db := orm.NewDB(c, fakedriver.NewDialect())
 
 	if _, err := orm.Sum(context.Background(),
-		Users.With(db).Where(Users.Age.Gt(1)), Users.Age); err != nil {
+		Users.With(db).Where(Users.Age.GreaterThan(1)), Users.Age); err != nil {
 		t.Fatalf("Sum() error = %v", err)
 	}
 	if want := `SELECT SUM([age]) FROM [users] WHERE [age] > ?`; c.QueryCalls()[0] != want {
@@ -264,7 +264,7 @@ func TestAggregate_Rejected(t *testing.T) {
 		},
 		"another table's column in the filter": {
 			run: func() error {
-				_, err := orm.Sum(ctx, Users.With(db).Where(Posts.Title.Eq("x")), Users.Age)
+				_, err := orm.Sum(ctx, Users.With(db).Where(Posts.Title.Equals("x")), Users.Age)
 				return err
 			},
 			want: `table "posts"`,

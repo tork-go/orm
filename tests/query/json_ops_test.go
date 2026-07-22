@@ -90,7 +90,7 @@ func TestJSON_Contains(t *testing.T) {
 func TestJSON_Key(t *testing.T) {
 	t.Run("postgres eq", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-		sql, args, err := Users.With(db).Where(Users.Prefs.Key("theme").Eq("dark")).SQL()
+		sql, args, err := Users.With(db).Where(Users.Prefs.Key("theme").Equals("dark")).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -104,7 +104,7 @@ func TestJSON_Key(t *testing.T) {
 
 	t.Run("postgres noteq", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-		sql, _, err := Users.With(db).Where(Users.Prefs.Key("theme").NotEq("dark")).SQL()
+		sql, _, err := Users.With(db).Where(Users.Prefs.Key("theme").NotEquals("dark")).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -115,7 +115,7 @@ func TestJSON_Key(t *testing.T) {
 
 	t.Run("fake", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), fakedriver.NewDialect())
-		sql, _, err := Users.With(db).Where(Users.Prefs.Key("theme").Eq("dark")).SQL()
+		sql, _, err := Users.With(db).Where(Users.Prefs.Key("theme").Equals("dark")).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -154,7 +154,7 @@ func TestJSON_NullableColumn(t *testing.T) {
 	})
 
 	t.Run("key", func(t *testing.T) {
-		sql, _, err := jsonRows.With(db).Where(jsonRows.Meta.Key("theme").Eq("dark")).SQL()
+		sql, _, err := jsonRows.With(db).Where(jsonRows.Meta.Key("theme").Equals("dark")).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
@@ -170,8 +170,8 @@ func TestJSON_NumbersWithOtherPredicates(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	sql, args, err := Users.With(db).Where(
-		Users.Age.Gt(18),
-		Users.Prefs.Key("theme").Eq("dark"),
+		Users.Age.GreaterThan(18),
+		Users.Prefs.Key("theme").Equals("dark"),
 	).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
@@ -193,7 +193,7 @@ func TestJSON_ForeignColumnIsRejected(t *testing.T) {
 	tests := map[string]orm.Predicate{
 		"HasKey":   jsonRows.Meta.HasKey("theme"),
 		"Contains": jsonRows.Meta.Contains(Prefs{Theme: "dark"}),
-		"Key":      jsonRows.Meta.Key("theme").Eq("dark"),
+		"Key":      jsonRows.Meta.Key("theme").Equals("dark"),
 	}
 	for name, pred := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -229,7 +229,7 @@ func TestJSON_UnsupportedByTheDialect(t *testing.T) {
 	tests := map[string]orm.Predicate{
 		"HasKey":   Users.Prefs.HasKey("theme"),
 		"Contains": Users.Prefs.Contains(Prefs{Theme: "dark"}),
-		"Key":      Users.Prefs.Key("theme").Eq("dark"),
+		"Key":      Users.Prefs.Key("theme").Equals("dark"),
 	}
 	for name, pred := range tests {
 		t.Run(name, func(t *testing.T) {

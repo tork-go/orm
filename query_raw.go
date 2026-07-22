@@ -11,7 +11,7 @@ import (
 // specific construct.
 //
 //	Users.With(db).Where(
-//	    Users.Active.Eq(true),
+//	    Users.Active.Equals(true),
 //	    orm.Raw("lower(username) = ?", name),
 //	).All(ctx)
 //

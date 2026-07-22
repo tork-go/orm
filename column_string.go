@@ -45,8 +45,8 @@ func NewStringColumn(name string) *StringColumn {
 // Column[*string].
 //
 // Its comparison and assignment methods take string rather than *string,
-// so callers write Email.Eq("alice@example.com") and Email.Set("new@x")
-// directly; EqPtr, SetPtr, and SetNull cover the pointer and NULL cases.
+// so callers write Email.Equals("alice@example.com") and Email.Set("new@x")
+// directly; EqualsPtr, SetPtr, and SetNull cover the pointer and NULL cases.
 // See nullEquatable for why.
 type NullableStringColumn struct {
 	chain[*string, *NullableStringColumn]

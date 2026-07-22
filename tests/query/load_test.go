@@ -469,7 +469,7 @@ func TestLoad_Rejected(t *testing.T) {
 
 	t.Run("a set operation", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
-		_, err := Authors.With(db).Load(Authors.Books).Where(Authors.ID.Eq(1)).DeleteAll(ctx)
+		_, err := Authors.With(db).Load(Authors.Books).Where(Authors.ID.Equals(1)).DeleteAll(ctx)
 		if err == nil {
 			t.Fatal("DeleteAll() error = nil, want the load rejected")
 		}

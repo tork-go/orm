@@ -85,7 +85,7 @@ func TestUpsert_AgainstPostgres(t *testing.T) {
 
 	stored := func(t *testing.T, email string) *uUser {
 		t.Helper()
-		got, err := uUsers.With(db).Where(uUsers.Email.Eq(email)).First(ctx)
+		got, err := uUsers.With(db).Where(uUsers.Email.Equals(email)).First(ctx)
 		if err != nil {
 			t.Fatalf("First() error = %v", err)
 		}

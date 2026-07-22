@@ -514,7 +514,9 @@ func (c *compiler) conditionsWith(correlate string, preds []Predicate, rendered 
 //
 // Values go through c.value, so an assignment to a document column is
 // encoded exactly as one in a predicate is, and as the row itself is on the
-// way back out.
+// way back out. An assignment carrying an Expr instead — Increment,
+// Decrement, SetExpr — renders the right-hand side as an expression rather
+// than binding a single literal; see renderExpr.
 func (c *compiler) set(sets []Assignment) (string, error) {
 	parts := make([]string, len(sets))
 	for i, a := range sets {
@@ -525,6 +527,14 @@ func (c *compiler) set(sets []Assignment) (string, error) {
 		if _, err := c.column(a.Col); err != nil {
 			return "", err
 		}
+		if a.Expr != nil {
+			rendered, err := c.renderExpr(*a.Expr)
+			if err != nil {
+				return "", err
+			}
+			parts[i] = c.d.QuoteIdent(a.Col.Name()) + " = " + rendered
+			continue
+		}
 		v, err := c.value(a.Col, a.Value)
 		if err != nil {
 			return "", err
@@ -532,6 +542,39 @@ func (c *compiler) set(sets []Assignment) (string, error) {
 		parts[i] = c.d.QuoteIdent(a.Col.Name()) + " = " + c.args.bind(v)
 	}
 	return strings.Join(parts, ", "), nil
+}
+
+// renderExpr renders the right-hand side of an Increment, Decrement or
+// SetExpr assignment: a column combined with either another column or a
+// bound value.
+//
+// The left-hand column is rendered through c.column like any other
+// reference, so an Expr built from a column this statement does not select
+// from is reported the same way a predicate over one is. The right-hand
+// side is checked for a ColumnMeta first, since that is the only other
+// shape Add/Sub/Mul/Div accept; anything else is a value to bind.
+func (c *compiler) renderExpr(e Expr) (string, error) {
+	left, err := c.column(e.left)
+	if err != nil {
+		return "", err
+	}
+	if rc, ok := e.right.(ColumnMeta); ok {
+		right, err := c.column(rc)
+		if err != nil {
+			return "", err
+		}
+		return left + " " + e.op.String() + " " + right, nil
+	}
+	// c.value's error path is unreachable here: it only ever fails for a
+	// document column's value, and numericAssignable — the only source of
+	// an Expr — is embedded solely on numeric column types, none of which
+	// are ever JSON or JSONB. Checked anyway, since Expr's own fields carry
+	// no such guarantee for a caller reaching this some other way.
+	v, err := c.value(e.left, e.right)
+	if err != nil {
+		return "", err
+	}
+	return left + " " + e.op.String() + " " + c.args.bind(v), nil
 }
 
 // rowsPerStatement returns how many of total rows one statement may carry

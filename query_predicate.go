@@ -319,9 +319,15 @@ type Ordering struct {
 }
 
 // Assignment is one `col = value` term of an UPDATE's SET clause.
+//
+// Expr is set instead of Value by Increment, Decrement and SetExpr (see
+// query_expr.go), rendering `col = col <op> ...` rather than binding a
+// literal. It is nil for every assignment Set/SetPtr/SetNull produce,
+// which is the ordinary case and the only one that existed before Expr did.
 type Assignment struct {
 	Col   ColumnMeta
 	Value any
+	Expr  *Expr
 }
 
 // escapeLike neutralises the three characters LIKE treats specially, so a

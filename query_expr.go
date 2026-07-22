@@ -41,6 +41,7 @@ const (
 	exprArith                  // left <op> right
 	exprCase                   // CASE WHEN ... THEN ... ELSE ... END
 	exprCall                   // fn(args...), which an aggregate also is
+	exprLit                    // a value of the caller's, read back as a column
 )
 
 // exprNode is one expression, flattened into a non-generic shape.
@@ -158,6 +159,27 @@ func (e Expr[T]) LessOrEqual(other any) Predicate { return e.compare(OpLessOrEqu
 
 func (e Expr[T]) compare(op Operator, other any) Predicate {
 	return exprComparison{left: e, op: op, right: other}
+}
+
+// Lit is a value of yours read back as a column of the result.
+//
+//	orm.SelectAs[Row](Users.With(db), Users.Name, orm.Lit("user"))
+//	// SELECT "name", CAST($1 AS TEXT) FROM "users"
+//
+// Most values a statement carries are compared against something, which
+// settles what they are; this one stands alone in the SELECT list, so it is
+// sent with its type spelled out for the same reason a CASE arm's is.
+//
+// It is what a recursion's depth counter starts from — a literal 0 in the
+// anchor, that column plus one in the step — and what tags the rows of one
+// arm of a union apart from another's. T comes from the value, so nothing
+// has to be written twice.
+//
+// The value is bound, like every value this package sends. Lit is not a way
+// to write SQL: orm.Lit("1=1") reads back the five characters, not a
+// condition.
+func Lit[T any](v T) Expr[T] {
+	return Expr[T]{n: exprNode{kind: exprLit, goType: reflect.TypeFor[T](), left: v}}
 }
 
 // Fn calls a SQL function, which is what everything the database can compute

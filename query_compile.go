@@ -753,6 +753,11 @@ func (c *compiler) expression(e expression) (string, error) {
 		return c.caseExpr(n)
 	case exprCall:
 		return c.call(n)
+	case exprLit:
+		// Typed, for the reason a CASE arm's value is: a parameter standing
+		// on its own in a SELECT list has nothing beside it to say what it
+		// is, and a database that guesses guesses text.
+		return c.typedOperand(n.left, n.goType)
 	}
 	return "", fmt.Errorf("orm: table %q: unknown expression", c.table)
 }

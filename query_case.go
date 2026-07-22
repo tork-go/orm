@@ -35,10 +35,11 @@ type caseWhen struct {
 //	Users.With(db).OrderBy(
 //	    orm.Case[int]().When(Users.Role.Equals("admin"), 0).Else(1).Asc())
 //
-// Aggregating one — SUM over a CASE, which is how a conditional tally is
-// written in SQL — is not possible yet: CountOf, SumOf and the rest take a
-// column, not an expression. Group in Go after reading, or reach for
-// RawQuery, until an aggregate over an expression exists.
+// Aggregating one is what SumOfExpr and its siblings are for, since SQL has
+// no COUNT with a condition and writes a conditional tally as a SUM over a
+// CASE:
+//
+//	orm.SumOfExpr(orm.Case[int]().When(cond, 1).Else(0))
 func Case[T any]() CaseBuilder[T] { return CaseBuilder[T]{} }
 
 // CaseBuilder collects the arms of a Case until Else closes it.

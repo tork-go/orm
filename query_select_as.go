@@ -22,8 +22,12 @@ type SelectExpr interface {
 // GroupBy's aggregate slot: COUNT, SUM, AVG, MIN or MAX over a column, or
 // COUNT(*) for CountAll.
 type AggregateExpr struct {
-	fn     string     // COUNT, SUM, AVG, MIN, MAX
-	col    ColumnMeta // nil only for CountAll
+	fn  string     // COUNT, SUM, AVG, MIN, MAX
+	col ColumnMeta // nil for CountAll, and for the OfExpr forms
+
+	// expr is set instead of col by the OfExpr forms, which aggregate a
+	// computed value rather than a stored one. Both nil is CountAll.
+	expr   expression
 	goType reflect.Type
 }
 
@@ -61,6 +65,51 @@ func MinOf[T any](col Ref[T]) AggregateExpr {
 // MaxOf is MAX(col), typed by the column.
 func MaxOf[T any](col Ref[T]) AggregateExpr {
 	return AggregateExpr{fn: "MAX", col: col, goType: reflect.TypeFor[T]()}
+}
+
+// The OfExpr forms aggregate a value the database computes rather than a
+// stored column: arithmetic, a CASE, anything an expression can be.
+//
+// The conditional tally is what they are most often for, since SQL has no
+// COUNT with a condition and writes one as a SUM over a CASE:
+//
+//	orm.SelectAs[Report](Users.With(db), Users.Country,
+//	    orm.SumOfExpr(orm.Case[int]().
+//	        When(Users.Active.Equals(true), 1).
+//	        Else(0)),
+//	).GroupBy(Users.Country)
+//	// SELECT "country", SUM(CASE WHEN "active" = $1 THEN $2 ELSE $3 END) ...
+//
+// They are separate constructors rather than a widening of SumOf and its
+// siblings because an Expr[T] cannot satisfy Ref[T] — it has no column
+// behind it to return from Base — and a parameter general enough to accept
+// either would leave T with nothing to be inferred from. Taking Expr[T]
+// keeps T inferred from the expression, exactly as SumOf infers it from
+// the column.
+
+// CountOfExpr is COUNT(expr).
+func CountOfExpr[T any](e Expr[T]) AggregateExpr {
+	return AggregateExpr{fn: "COUNT", expr: e, goType: reflect.TypeFor[int64]()}
+}
+
+// SumOfExpr is SUM(expr), typed by the expression.
+func SumOfExpr[T any](e Expr[T]) AggregateExpr {
+	return AggregateExpr{fn: "SUM", expr: e, goType: reflect.TypeFor[T]()}
+}
+
+// AvgOfExpr is AVG(expr), always a float64 for the reason AvgOf gives.
+func AvgOfExpr[T any](e Expr[T]) AggregateExpr {
+	return AggregateExpr{fn: "AVG", expr: e, goType: reflect.TypeFor[float64]()}
+}
+
+// MinOfExpr is MIN(expr), typed by the expression.
+func MinOfExpr[T any](e Expr[T]) AggregateExpr {
+	return AggregateExpr{fn: "MIN", expr: e, goType: reflect.TypeFor[T]()}
+}
+
+// MaxOfExpr is MAX(expr), typed by the expression.
+func MaxOfExpr[T any](e Expr[T]) AggregateExpr {
+	return AggregateExpr{fn: "MAX", expr: e, goType: reflect.TypeFor[T]()}
 }
 
 // projectionHaving is one HAVING term of a Projection: which of its own

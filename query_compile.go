@@ -929,6 +929,13 @@ func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
 // aggregateExpr renders one AggregateExpr: an aggregate function applied to
 // a column, or COUNT(*) when col is nil, which only CountAll leaves it.
 func (c *compiler) aggregateExpr(a AggregateExpr) (string, error) {
+	if a.expr != nil {
+		s, err := c.expression(a.expr)
+		if err != nil {
+			return "", err
+		}
+		return a.fn + "(" + s + ")", nil
+	}
 	if a.col == nil {
 		return "COUNT(*)", nil
 	}

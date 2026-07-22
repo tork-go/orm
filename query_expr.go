@@ -105,6 +105,50 @@ func (e Expr[T]) Times(other any) Expr[T] { return e.arith(arithMul, other) }
 // DividedBy is `expr / other`.
 func (e Expr[T]) DividedBy(other any) Expr[T] { return e.arith(arithDiv, other) }
 
+// Equals is `expr = other`, where other is a column, another expression, or
+// a literal of T's own type.
+//
+//	Items.With(db).Where(Items.Price.Value().Equals(Items.Cost))
+//	Items.With(db).Where(Items.Price.Times(Items.Qty).Equals(100.0))
+//
+// The names are the ones a column already carries, so an expression's
+// comparisons are nothing new to learn; what differs is only that these
+// accept a column or an expression as well as a value.
+func (e Expr[T]) Equals(other any) Predicate { return e.compare(OpEquals, other) }
+
+// NotEquals is `expr <> other`.
+func (e Expr[T]) NotEquals(other any) Predicate { return e.compare(OpNotEquals, other) }
+
+// GreaterThan is `expr > other`.
+func (e Expr[T]) GreaterThan(other any) Predicate { return e.compare(OpGreaterThan, other) }
+
+// GreaterOrEqual is `expr >= other`.
+func (e Expr[T]) GreaterOrEqual(other any) Predicate { return e.compare(OpGreaterOrEqual, other) }
+
+// LessThan is `expr < other`.
+func (e Expr[T]) LessThan(other any) Predicate { return e.compare(OpLessThan, other) }
+
+// LessOrEqual is `expr <= other`.
+func (e Expr[T]) LessOrEqual(other any) Predicate { return e.compare(OpLessOrEqual, other) }
+
+func (e Expr[T]) compare(op Operator, other any) Predicate {
+	return exprComparison{left: e, op: op, right: other}
+}
+
+// exprComparison is `<expr> <op> <operand>`, what an expression's own
+// comparisons build.
+//
+// It is unexported, unlike Comparison, for the reason rawPredicate is: it
+// is only ever produced by the methods above, never assembled by hand, and
+// its left side holds the unexported expression interface regardless.
+type exprComparison struct {
+	left  expression
+	op    Operator
+	right any
+}
+
+func (exprComparison) predicate() {}
+
 func (e Expr[T]) arith(op arithOp, other any) Expr[T] {
 	return Expr[T]{n: exprNode{
 		kind:   exprArith,

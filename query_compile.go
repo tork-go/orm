@@ -302,6 +302,20 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 		}
 		return c.d.RenderFullText(col, c.args.bind(p.Query))
 
+	case exprComparison:
+		left, err := c.expression(p.left)
+		if err != nil {
+			return "", err
+		}
+		// The expression's own Go type is what the right-hand side is
+		// checked against, so comparing a computed int against a string is
+		// reported here rather than by the database.
+		right, err := c.operand(p.right, p.left.GoType())
+		if err != nil {
+			return "", err
+		}
+		return left + " " + p.op.String() + " " + right, nil
+
 	case rawPredicate:
 		return c.raw(p)
 	}

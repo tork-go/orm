@@ -135,6 +135,18 @@ func (e Expr[T]) compare(op Operator, other any) Predicate {
 	return exprComparison{left: e, op: op, right: other}
 }
 
+// Asc orders by the expression's value, smallest first.
+//
+//	Items.With(db).OrderBy(Items.Price.Times(Items.Qty).Desc()).All(ctx)
+//
+// Cursor paging cannot use one: it reads its ordering columns back out of
+// a row to seek from, and a computed value has no field to read. See
+// Filtered.Cursor.
+func (e Expr[T]) Asc() Ordering { return Ordering{expr: e} }
+
+// Desc orders by the expression's value, largest first.
+func (e Expr[T]) Desc() Ordering { return Ordering{expr: e, Desc: true} }
+
 // exprComparison is `<expr> <op> <operand>`, what an expression's own
 // comparisons build.
 //

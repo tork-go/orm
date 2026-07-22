@@ -69,6 +69,18 @@ func (f *Filtered[E]) Cursor(row *E) (Cursor[E], error) {
 	if row == nil {
 		return Cursor[E]{}, fmt.Errorf("orm: table %q: Cursor was given a nil row", f.st.name)
 	}
+	// A cursor seeks by comparing the ordering's own columns against the
+	// values it captured out of a row. A computed ordering has no field to
+	// read one from, so there is nothing to capture and nothing to compare
+	// against; saying so beats seeking from a zero value that would silently
+	// page from the wrong place.
+	for i, o := range f.ords {
+		if o.expr != nil {
+			return Cursor[E]{}, fmt.Errorf("orm: table %q: Cursor cannot page an ordering "+
+				"computed by the database, at position %d; order by a column, or page with "+
+				"Limit and Offset instead", f.st.name, i)
+		}
+	}
 	if f.sel != nil {
 		read := make(map[string]bool, len(f.sel))
 		for _, c := range f.sel {
@@ -194,6 +206,15 @@ func (f *Filtered[E]) After(cursor Cursor[E]) *Filtered[E] {
 	values := make([]any, len(out.ords))
 	for i, o := range out.ords {
 		term := cursor.terms[i]
+		// Cursor refuses to build one over a computed ordering, so a cursor
+		// in hand never names one; a query that grew an expression ordering
+		// since is what reaches here, and it has no column to match against.
+		if o.expr != nil {
+			out.fail(fmt.Errorf("orm: table %q: After cannot seek within an ordering "+
+				"computed by the database, at position %d; order by a column, or page "+
+				"with Limit and Offset instead", out.st.name, i))
+			return out
+		}
 		if term.Col != o.Col.Name() || term.Desc != o.Desc {
 			out.fail(fmt.Errorf("orm: table %q: After's cursor orders by %q at position %d, "+
 				"but this query orders by %q there", out.st.name, term.Col, i, o.Col.Name()))

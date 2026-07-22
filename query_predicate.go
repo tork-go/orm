@@ -313,10 +313,22 @@ func Not(p Predicate) Predicate {
 	return Negation{Pred: p}
 }
 
-// Ordering is one term of an ORDER BY clause.
+// Ordering is one term of an ORDER BY clause: a column, or a computed
+// expression, sorted one way or the other.
+//
+// expr is set instead of Col by an expression's own Asc and Desc, and is
+// nil for every ordering a column produces, which is the ordinary case and
+// the only one that existed before expressions did. It is unexported so
+// that Ordering{Col: ..., Desc: ...} keeps meaning exactly what it did.
+//
+// Not every consumer can take one. Cursor paging reads the ordering
+// columns back out of a row by name to build its seek predicate, and a
+// computed value has no field to read, so it rejects an expression
+// ordering rather than seeking on nothing; see Filtered.Cursor.
 type Ordering struct {
 	Col  ColumnMeta
 	Desc bool
+	expr expression
 }
 
 // Assignment is one `col = value` term of an UPDATE's SET clause.

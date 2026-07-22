@@ -746,18 +746,37 @@ func (c *compiler) orderBy(ords []Ordering) (string, error) {
 	}
 	parts := make([]string, len(ords))
 	for i, o := range ords {
-		col, err := c.column(o.Col)
+		term, err := c.orderTerm(o)
 		if err != nil {
 			return "", err
 		}
-		if o.Desc {
-			col += " DESC"
-		} else {
-			col += " ASC"
-		}
-		parts[i] = col
+		parts[i] = term
 	}
 	return " ORDER BY " + strings.Join(parts, ", "), nil
+}
+
+// orderTerm renders one ORDER BY term, naming either a column or a
+// computed expression, with its direction.
+//
+// It is shared by the statement's own ORDER BY and by a window function's,
+// so a window orders by the same vocabulary a read does.
+func (c *compiler) orderTerm(o Ordering) (string, error) {
+	var (
+		s   string
+		err error
+	)
+	if o.expr != nil {
+		s, err = c.expression(o.expr)
+	} else {
+		s, err = c.column(o.Col)
+	}
+	if err != nil {
+		return "", err
+	}
+	if o.Desc {
+		return s + " DESC", nil
+	}
+	return s + " ASC", nil
 }
 
 // limitOffset renders LIMIT and OFFSET.
@@ -876,16 +895,11 @@ func (c *compiler) windowExpr(w WindowExpr) (string, error) {
 	if len(w.order) > 0 {
 		parts := make([]string, len(w.order))
 		for i, o := range w.order {
-			name, err := c.column(o.Col)
+			term, err := c.orderTerm(o)
 			if err != nil {
 				return "", err
 			}
-			if o.Desc {
-				name += " DESC"
-			} else {
-				name += " ASC"
-			}
-			parts[i] = name
+			parts[i] = term
 		}
 		clauses = append(clauses, "ORDER BY "+strings.Join(parts, ", "))
 	}

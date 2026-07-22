@@ -53,7 +53,52 @@ func (q *Query[E]) Update(ctx context.Context, e *E) error {
 	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
 		return err
 	}
-	n, err := w.update(ctx, nil)
+	n, err := w.update(ctx, nil, nil)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNoRows
+	}
+	return runHook(ctx, w.st.name, "AfterUpdate", any(e), AfterUpdater.AfterUpdate)
+}
+
+// UpdateOnly writes only the named columns of e to the row its primary key
+// identifies, rather than every writable column the way Update does.
+//
+// This is not change tracking: Go cannot intercept a field assignment, so
+// nothing here knows which columns you actually changed, the same reason
+// Update's own doc comment gives for writing all of them. UpdateOnly asks
+// you to say instead, which solves the same problem — not overwriting a
+// column you never meant to touch — explicitly rather than by inference.
+//
+//	err := Users.With(db).UpdateOnly(ctx, user, Users.Name, Users.Email)
+//	// UPDATE "users" SET "name" = $1, "email" = $2 WHERE "id" = $3
+//
+// It fires the same hooks Update does, and returns ErrNoRows the same way.
+func (q *Query[E]) UpdateOnly(ctx context.Context, e *E, cols ...ColumnMeta) error {
+	w, err := q.writer(e)
+	if err != nil {
+		return err
+	}
+	if len(cols) == 0 {
+		return fmt.Errorf("orm: table %q: UpdateOnly has no columns to write; "+
+			"name at least one, or call Update to write every column", w.st.name)
+	}
+	for i, c := range cols {
+		if c == nil {
+			return fmt.Errorf("orm: table %q: UpdateOnly column %d is nil", w.st.name, i)
+		}
+		if c.IsPrimaryKey() || c == w.st.identity {
+			return fmt.Errorf("orm: table %q: UpdateOnly cannot write %q, the primary "+
+				"key; a write says which row to change, not what to change it to",
+				w.st.name, c.Name())
+		}
+	}
+	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
+		return err
+	}
+	n, err := w.update(ctx, nil, cols)
 	if err != nil {
 		return err
 	}
@@ -99,7 +144,7 @@ func (q *Query[E]) UpdateIf(ctx context.Context, e *E, conds ...Predicate) error
 	if err := runHook(ctx, w.st.name, "BeforeUpdate", any(e), BeforeUpdater.BeforeUpdate); err != nil {
 		return err
 	}
-	n, err := w.update(ctx, conds)
+	n, err := w.update(ctx, conds, nil)
 	if err != nil {
 		return err
 	}
@@ -465,11 +510,19 @@ func (w *writer[E]) keyFilter(c *compiler, conds []Predicate) (string, error) {
 // because a batch needs to add the counts up and report once. Update itself
 // maps a zero back to ErrNoRows, which is what a caller writing one row
 // wants.
-func (w *writer[E]) update(ctx context.Context, conds []Predicate) (int64, error) {
+//
+// only narrows which columns are written, nil meaning every one — the same
+// convention Filtered.sel uses for "every column" versus "these". UpdateOnly
+// is what passes a non-nil slice; Update and UpdateIf always pass nil.
+func (w *writer[E]) update(ctx context.Context, conds []Predicate, only []ColumnMeta) (int64, error) {
 	c := &compiler{d: w.db.d, args: &argBuilder{d: w.db.d}, table: w.st.name}
 
-	sets := make([]Assignment, 0, len(w.st.cols))
-	for _, col := range w.st.cols {
+	cols := w.st.cols
+	if only != nil {
+		cols = only
+	}
+	sets := make([]Assignment, 0, len(cols))
+	for _, col := range cols {
 		if col.IsPrimaryKey() || col == w.st.identity {
 			continue
 		}

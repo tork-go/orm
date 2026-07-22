@@ -83,6 +83,10 @@ type queryState struct {
 	// adding one JOIN or LEFT JOIN to the statement. See query_join.go.
 	joins []joinSpec
 
+	// ctes are the With calls this query carries, each a named CTE
+	// rendered ahead of the statement in a WITH clause. See query_cte.go.
+	ctes []cteSpec
+
 	// loads are the relationships to fetch alongside the rows, each in a
 	// statement of its own once the rows are in hand. See query_load.go.
 	loads []loadSpec
@@ -168,6 +172,7 @@ func (f *Filtered[E]) clone() *Filtered[E] {
 		out.sel = append([]ColumnMeta(nil), f.sel...)
 	}
 	out.joins = append([]joinSpec(nil), f.joins...)
+	out.ctes = append([]cteSpec(nil), f.ctes...)
 	out.loads = append([]loadSpec(nil), f.loads...)
 	return &out
 }
@@ -324,6 +329,15 @@ func (f *Filtered[E]) compileSelect() (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	// The WITH clause is rendered before anything else of the statement,
+	// against the same compiler and so the same argBuilder, so a CTE's own
+	// placeholders number first: they are textually first in the finished
+	// SQL, and a placeholder's number has to match its position there, not
+	// the order its clause was built in Go.
+	with, err := f.cteClause(c)
+	if err != nil {
+		return "", nil, err
+	}
 	// selectList's error is unreachable here: f.columns() is either f.sel,
 	// which Select already rejects a foreign column from at build time, or
 	// f.st.cols, this table's own columns, which always pass the ownership
@@ -337,7 +351,7 @@ func (f *Filtered[E]) compileSelect() (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	return sql, c.args.args, nil
+	return with + sql, c.args.args, nil
 }
 
 // compiler starts a compiler for this query's table.
@@ -565,11 +579,15 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	with, err := f.cteClause(c)
+	if err != nil {
+		return 0, err
+	}
 	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return 0, err
 	}
-	sql := "SELECT COUNT(*) FROM " + c.d.QuoteIdent(f.st.name) + c.joinsClause() + where
+	sql := with + "SELECT COUNT(*) FROM " + c.d.QuoteIdent(f.st.name) + c.joinsClause() + where
 
 	if f.distinct {
 		// Counting a distinct query means counting the rows that query
@@ -584,7 +602,7 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-		sql = "SELECT COUNT(*) FROM (SELECT DISTINCT " + list + " FROM " +
+		sql = with + "SELECT COUNT(*) FROM (SELECT DISTINCT " + list + " FROM " +
 			c.d.QuoteIdent(f.st.name) + c.joinsClause() + where + ") AS " + c.d.QuoteIdent("t")
 	}
 

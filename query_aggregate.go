@@ -97,6 +97,9 @@ func scalarAggregate[R any](ctx context.Context, src QuerySource, col ColumnMeta
 	if err := q.noJoins(fn); err != nil {
 		return zero, false, err
 	}
+	if err := q.noCTEs(fn); err != nil {
+		return zero, false, err
+	}
 
 	c := q.compiler()
 	name, err := c.column(col)

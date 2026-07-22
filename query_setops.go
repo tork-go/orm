@@ -321,6 +321,13 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 		// No dialect Tork targets writes a portable UPDATE or DELETE with a
 		// JOIN in it; SelectAs is how a joined statement's columns are read.
 		clause = "a Join or LeftJoin"
+	case len(f.ctes) > 0:
+		// A With is not rendered anywhere in an UPDATE or DELETE statement
+		// today, so silently accepting one here would drop the CTE's own
+		// definition while a WHERE naming it through CTE still referred to
+		// it, producing a statement the database rejects as naming an
+		// undefined relation instead of one Tork rejects by name.
+		clause = "a With"
 	default:
 		return nil
 	}

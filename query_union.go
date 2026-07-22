@@ -196,7 +196,9 @@ func (c *Combined[E]) compile() (string, []any, error) {
 // reason — it runs a query of its own once an operand's own rows are in
 // hand, and a Combined never has an operand's rows on their own, only the
 // combined statement's, so silently dropping it would report success while
-// never running the load the caller wrote.
+// never running the load the caller wrote. A With is rejected because this
+// renders only the operand's own SELECT, with nowhere to hang the WITH
+// clause its CTE's definition needs.
 func (f *Filtered[E]) compileWithinCombine(op string, args *argBuilder) (string, error) {
 	if f.lock != nil {
 		return "", fmt.Errorf("orm: table %q: %s cannot run over a query with a lock; "+
@@ -204,6 +206,9 @@ func (f *Filtered[E]) compileWithinCombine(op string, args *argBuilder) (string,
 			f.st.name, op)
 	}
 	if err := f.noJoins(op); err != nil {
+		return "", err
+	}
+	if err := f.noCTEs(op); err != nil {
 		return "", err
 	}
 	if len(f.loads) > 0 {

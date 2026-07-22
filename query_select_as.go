@@ -211,6 +211,9 @@ func (p *Projection[T]) compile() (string, []any, error) {
 	if err := p.q.noLock("SelectAs"); err != nil {
 		return "", nil, err
 	}
+	if err := p.q.noCTEs("SelectAs"); err != nil {
+		return "", nil, err
+	}
 	c, err := p.q.compilerJoined()
 	if err != nil {
 		return "", nil, err

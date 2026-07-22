@@ -106,6 +106,10 @@ func scalarAggregate[R any](ctx context.Context, src QuerySource, col ColumnMeta
 	if err != nil {
 		return zero, false, err
 	}
+	from, err := q.fromClause(c)
+	if err != nil {
+		return zero, false, err
+	}
 	where, err := c.where(q.effectivePreds())
 	if err != nil {
 		return zero, false, err
@@ -114,7 +118,7 @@ func scalarAggregate[R any](ctx context.Context, src QuerySource, col ColumnMeta
 	if q.distinct {
 		inner = "DISTINCT " + name
 	}
-	sql := "SELECT " + fn + "(" + inner + ") FROM " + c.d.QuoteIdent(q.st.name) + where
+	sql := "SELECT " + fn + "(" + inner + ") FROM " + from + where
 
 	rows, err := q.db.ex.Query(ctx, sql, c.args.args...)
 	if err != nil {

@@ -1,7 +1,9 @@
 package postgres_test
 
 import (
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/tork-go/orm"
 	"github.com/tork-go/orm/driver/postgres"
@@ -54,6 +56,42 @@ func TestRenderLike(t *testing.T) {
 	want = `"users"."name" ILIKE $1 ESCAPE '\'`
 	if got != want {
 		t.Errorf("RenderLike(insensitive) = %s, want %s", got, want)
+	}
+}
+
+// Postgres will not guess a bare parameter's type where nothing beside it
+// settles one, so a CASE arm has to say. A type with no column spelling is
+// left untyped rather than cast to a guess.
+func TestRenderTypedPlaceholder(t *testing.T) {
+	d := postgres.Dialect{}
+
+	tests := map[string]struct {
+		goType reflect.Type
+		want   string
+	}{
+		"int":     {reflect.TypeFor[int](), "CAST($1 AS INTEGER)"},
+		"int64":   {reflect.TypeFor[int64](), "CAST($1 AS BIGINT)"},
+		"float64": {reflect.TypeFor[float64](), "CAST($1 AS DOUBLE PRECISION)"},
+		"string":  {reflect.TypeFor[string](), "CAST($1 AS TEXT)"},
+		"bool":    {reflect.TypeFor[bool](), "CAST($1 AS BOOLEAN)"},
+		"time":    {reflect.TypeFor[time.Time](), "CAST($1 AS TIMESTAMP WITHOUT TIME ZONE)"},
+
+		// Nothing to say, so nothing is said.
+		"no type": {nil, "$1"},
+		// A kind this driver has no column type for: a struct is not a
+		// column, so it is sent untyped rather than wrapped in a guess.
+		"unmappable kind": {reflect.TypeFor[struct{ A int }](), "$1"},
+		// A slice is an array kind, but nothing here says of what, and an
+		// array type cannot be spelled without its element. Untyped again
+		// rather than a cast that would be wrong.
+		"array without an element type": {reflect.TypeFor[[]int](), "$1"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := d.RenderTypedPlaceholder("$1", tt.goType); got != tt.want {
+				t.Errorf("RenderTypedPlaceholder() = %s, want %s", got, tt.want)
+			}
+		})
 	}
 }
 

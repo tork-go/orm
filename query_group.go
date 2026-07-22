@@ -198,6 +198,10 @@ func (g *Grouped[K, V]) compile() (string, []any, error) {
 		return "", nil, err
 	}
 
+	from, err := g.q.fromClause(c)
+	if err != nil {
+		return "", nil, err
+	}
 	where, err := c.where(g.q.effectivePreds())
 	if err != nil {
 		return "", nil, err
@@ -211,7 +215,7 @@ func (g *Grouped[K, V]) compile() (string, []any, error) {
 		return "", nil, err
 	}
 
-	sql := "SELECT " + key + ", " + agg + " FROM " + c.d.QuoteIdent(g.q.st.name) +
+	sql := "SELECT " + key + ", " + agg + " FROM " + from +
 		where + " GROUP BY " + key + having + order + limitOffset(g.limit, nil)
 	return sql, c.args.args, nil
 }

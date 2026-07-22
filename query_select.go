@@ -165,6 +165,10 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	from, err := s.q.fromClause(c)
+	if err != nil {
+		return 0, err
+	}
 	where, err := c.where(s.q.effectivePreds())
 	if err != nil {
 		return 0, err
@@ -173,7 +177,7 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 	if s.q.distinct {
 		inner = "DISTINCT " + name
 	}
-	sql := "SELECT COUNT(" + inner + ") FROM " + c.d.QuoteIdent(s.q.st.name) + where
+	sql := "SELECT COUNT(" + inner + ") FROM " + from + where
 
 	return scanCount(ctx, s.q.db, s.q.st.name, sql, c.args.args)
 }

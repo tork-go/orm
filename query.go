@@ -87,6 +87,10 @@ type queryState struct {
 	// rendered ahead of the statement in a WITH clause. See query_cte.go.
 	ctes []cteSpec
 
+	// derived is where a derived table's rows come from, set by From and
+	// nil for every stored table. See query_derived.go.
+	derived DerivedSource
+
 	// loads are the relationships to fetch alongside the rows, each in a
 	// statement of its own once the rows are in hand. See query_load.go.
 	loads []loadSpec
@@ -394,6 +398,10 @@ func (q queryState) noJoins(op string) error {
 // never called Join, so this reads exactly as it did before Join existed
 // for them.
 func (q queryState) compileRead(c *compiler, list string) (string, error) {
+	from, err := q.fromClause(c)
+	if err != nil {
+		return "", err
+	}
 	where, err := c.where(q.effectivePreds())
 	if err != nil {
 		return "", err
@@ -412,7 +420,7 @@ func (q queryState) compileRead(c *compiler, list string) (string, error) {
 	if q.distinct {
 		keyword = "SELECT DISTINCT "
 	}
-	return keyword + list + " FROM " + c.d.QuoteIdent(q.st.name) + c.joinsClause() +
+	return keyword + list + " FROM " + from + c.joinsClause() +
 		where + order + limitOffset(q.limit, q.offset) + lock, nil
 }
 
@@ -583,11 +591,15 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	from, err := f.fromClause(c)
+	if err != nil {
+		return 0, err
+	}
 	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return 0, err
 	}
-	sql := with + "SELECT COUNT(*) FROM " + c.d.QuoteIdent(f.st.name) + c.joinsClause() + where
+	sql := with + "SELECT COUNT(*) FROM " + from + c.joinsClause() + where
 
 	if f.distinct {
 		// Counting a distinct query means counting the rows that query
@@ -603,7 +615,7 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 			return 0, err
 		}
 		sql = with + "SELECT COUNT(*) FROM (SELECT DISTINCT " + list + " FROM " +
-			c.d.QuoteIdent(f.st.name) + c.joinsClause() + where + ") AS " + c.d.QuoteIdent("t")
+			from + c.joinsClause() + where + ") AS " + c.d.QuoteIdent("t")
 	}
 
 	return scanCount(ctx, f.db, f.st.name, sql, c.args.args)

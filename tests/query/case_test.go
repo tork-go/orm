@@ -19,7 +19,7 @@ func TestCase_RendersInASelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT CASE WHEN "age" < $1 THEN $2 ELSE $3 END FROM "users"`
+	want := `SELECT CASE WHEN "age" < $1 THEN CAST($2 AS INTEGER) ELSE CAST($3 AS INTEGER) END FROM "users"`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -42,7 +42,7 @@ func TestCase_MultipleArms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT CASE WHEN "age" < $1 THEN $2 WHEN "age" < $3 THEN $4 ELSE $5 END FROM "users"`
+	want := `SELECT CASE WHEN "age" < $1 THEN CAST($2 AS INTEGER) WHEN "age" < $3 THEN CAST($4 AS INTEGER) ELSE CAST($5 AS INTEGER) END FROM "users"`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}
@@ -74,7 +74,7 @@ func TestCase_InAWhere(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if !strings.HasSuffix(sql, `WHERE CASE WHEN "age" < $1 THEN $2 ELSE $3 END = $4`) {
+	if !strings.HasSuffix(sql, `WHERE CASE WHEN "age" < $1 THEN CAST($2 AS INTEGER) ELSE CAST($3 AS INTEGER) END = $4`) {
 		t.Errorf("SQL() = %s", sql)
 	}
 }
@@ -86,7 +86,7 @@ func TestCase_InAnOrderBy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if !strings.HasSuffix(sql, `ORDER BY CASE WHEN "username" = $1 THEN $2 ELSE $3 END ASC`) {
+	if !strings.HasSuffix(sql, `ORDER BY CASE WHEN "username" = $1 THEN CAST($2 AS INTEGER) ELSE CAST($3 AS INTEGER) END ASC`) {
 		t.Errorf("SQL() = %s", sql)
 	}
 }
@@ -102,7 +102,10 @@ func TestCase_InAnAssignment(t *testing.T) {
 	); err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
-	want := `UPDATE "users" SET "age" = CASE WHEN "age" < $1 THEN $2 ELSE "age" END WHERE "id" = $3`
+	// The ELSE names a column, which carries its own type and so takes no
+	// cast; only the bound value needs one.
+	want := `UPDATE "users" SET "age" = CASE WHEN "age" < $1 THEN CAST($2 AS INTEGER) ` +
+		`ELSE "age" END WHERE "id" = $3`
 	if got := c.ExecCalls()[0]; got != want {
 		t.Errorf("UpdateAll ran  %s\nwant           %s", got, want)
 	}
@@ -119,7 +122,7 @@ func TestCase_InsideArithmetic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT (CASE WHEN "age" < $1 THEN $2 ELSE $3 END + $4) FROM "users"`
+	want := `SELECT (CASE WHEN "age" < $1 THEN CAST($2 AS INTEGER) ELSE CAST($3 AS INTEGER) END + $4) FROM "users"`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
 	}

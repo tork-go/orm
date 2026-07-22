@@ -1,5 +1,7 @@
 package orm
 
+import "reflect"
+
 // QueryDialect is the part of a database's SQL that a query compiler
 // cannot write for itself.
 //
@@ -111,6 +113,21 @@ type QueryDialect interface {
 	// facility spelled differently, and a driver with none returns an error
 	// naming the operation.
 	RenderFullText(quotedColumn, placeholder string) (string, error)
+
+	// RenderTypedPlaceholder returns an already-rendered placeholder with
+	// its type made explicit, for the few positions where the database
+	// cannot infer it from anything nearby.
+	//
+	// Almost every bound value sits beside a column that settles what it is:
+	// `"age" > $1` tells Postgres $1 is an integer. A CASE arm has no such
+	// neighbour — `SUM(CASE WHEN ... THEN $1 ELSE $2 END)` gives it nothing
+	// to go on, and Postgres guesses text, then fails to find a sum of it.
+	// Since this package binds every value rather than writing any of them
+	// literally, saying the type is the only way left.
+	//
+	// A dialect that infers well enough, or has no cast syntax, returns the
+	// placeholder unchanged; goType may be nil, which means the same.
+	RenderTypedPlaceholder(placeholder string, goType reflect.Type) string
 
 	// MaxBindParams reports how many parameters one statement may bind, or
 	// 0 when the database sets no practical limit.

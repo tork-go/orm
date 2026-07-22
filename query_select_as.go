@@ -254,45 +254,88 @@ func (p *Projection[T]) clone() *Projection[T] {
 func (p *Projection[T]) SQL() (string, []any, error) { return p.compile() }
 
 func (p *Projection[T]) compile() (string, []any, error) {
-	if err := p.q.readyToRead(); err != nil {
+	c, err := p.compiler()
+	if err != nil {
 		return "", nil, err
+	}
+	sql, err := p.render(c, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	return sql, c.args.args, nil
+}
+
+// compiler starts this projection's own compiler, after the checks that
+// decide whether it can be compiled at all.
+func (p *Projection[T]) compiler() (*compiler, error) {
+	if err := p.q.readyToRead(); err != nil {
+		return nil, err
 	}
 	if err := p.q.noLock("SelectAs"); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if err := p.q.noCTEs("SelectAs"); err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	c, err := p.q.compilerJoined()
-	if err != nil {
-		return "", nil, err
-	}
+	return p.q.compilerJoined()
+}
 
-	list, err := c.selectExprList(p.exprs)
+// render writes the statement against c. aliases, when given, names each
+// selected expression with AS, which is what a derived table needs so the
+// enclosing query can refer to the columns it declares.
+func (p *Projection[T]) render(c *compiler, aliases []string) (string, error) {
+	list, err := c.selectExprListAs(p.exprs, aliases)
 	if err != nil {
-		return "", nil, err
+		return "", err
+	}
+	// The FROM binds before the WHERE and after the SELECT list, which is
+	// where it sits in the finished statement; see queryState.fromClause.
+	from, err := p.q.fromClause(c)
+	if err != nil {
+		return "", err
 	}
 	where, err := c.where(p.q.effectivePreds())
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	groupBy, err := p.groupByClause(c)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	having, err := p.havingClause(c)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	order, err := c.orderBy(p.ords)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-
-	sql := "SELECT " + list + " FROM " + c.d.QuoteIdent(p.q.st.name) + c.joinsClause() +
-		where + groupBy + having + order + limitOffset(p.limit, nil)
-	return sql, c.args.args, nil
+	return "SELECT " + list + " FROM " + from + c.joinsClause() +
+		where + groupBy + having + order + limitOffset(p.limit, nil), nil
 }
+
+// derivedSource renders this projection as a derived table's rows, sharing
+// the enclosing statement's arguments so placeholders number continuously
+// across the boundary — the same technique compiler.sub uses.
+func (p *Projection[T]) derivedSource(outer *compiler, aliases []string) (string, error) {
+	c, err := p.compiler()
+	if err != nil {
+		return "", err
+	}
+	c.args = outer.args
+	return p.render(c, aliases)
+}
+
+// derivedShape is the Go type each selected expression yields.
+func (p *Projection[T]) derivedShape() []reflect.Type {
+	out := make([]reflect.Type, len(p.exprs))
+	for i, e := range p.exprs {
+		out[i] = e.GoType()
+	}
+	return out
+}
+
+func (p *Projection[T]) derivedDB() *DB { return p.q.db }
 
 // groupByClause renders GROUP BY, or "" when there is nothing to group by.
 func (p *Projection[T]) groupByClause(c *compiler) (string, error) {

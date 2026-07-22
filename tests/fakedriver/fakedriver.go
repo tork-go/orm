@@ -469,6 +469,15 @@ func (d *Dialect) RenderFullText(quotedColumn, placeholder string) (string, erro
 	return "SEARCH(" + quotedColumn + ", " + placeholder + ")", nil
 }
 
+// RenderTypedPlaceholder leaves the placeholder alone, standing for a
+// database that infers a parameter's type well enough not to need telling.
+// Asserting against this dialect therefore shows the untyped shape, which
+// is what makes the Postgres tests' casts visible as a dialect's choice
+// rather than something the compiler does everywhere.
+func (d *Dialect) RenderTypedPlaceholder(placeholder string, _ reflect.Type) string {
+	return placeholder
+}
+
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
 // functional, backed by an in-memory map, for testing migrate's runner.

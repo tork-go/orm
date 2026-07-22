@@ -3,10 +3,12 @@ package postgres
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/tork-go/orm"
+	"github.com/tork-go/orm/schema"
 )
 
 // The methods here are Postgres's answers to orm.QueryDialect, the pieces
@@ -157,6 +159,32 @@ func (Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placehold
 // here. For the full to_tsquery operator vocabulary, reach for orm.Raw.
 func (Dialect) RenderFullText(quotedColumn, placeholder string) (string, error) {
 	return "to_tsvector(" + quotedColumn + ") @@ websearch_to_tsquery(" + placeholder + ")", nil
+}
+
+// RenderTypedPlaceholder casts a placeholder to the Postgres type matching
+// goType.
+//
+// Postgres will not guess. A parameter with nothing beside it to settle its
+// type defaults to text, so `SUM(CASE WHEN ... THEN $1 ELSE $2 END)` is a
+// sum of text and the statement fails to plan at all. A cast on the arm is
+// what makes the CASE, and the aggregate over it, resolve.
+//
+// A type this driver has no column spelling for is left alone rather than
+// cast to a guess: an unrecognised value is better sent untyped, where
+// Postgres may still infer it, than wrapped in a cast that is wrong.
+func (Dialect) RenderTypedPlaceholder(placeholder string, goType reflect.Type) string {
+	if goType == nil {
+		return placeholder
+	}
+	kind, err := schema.KindForGoType(goType)
+	if err != nil {
+		return placeholder
+	}
+	sqlType, err := renderType(schema.ColumnType{Kind: kind})
+	if err != nil {
+		return placeholder
+	}
+	return "CAST(" + placeholder + " AS " + sqlType + ")"
 }
 
 // MaxBindParams reports Postgres's limit of 65535 parameters per

@@ -80,7 +80,7 @@ func TestAggregateOfExpr_ConditionalTally(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	want := `SELECT "username", SUM(CASE WHEN "age" >= $1 THEN $2 ELSE $3 END) ` +
+	want := `SELECT "username", SUM(CASE WHEN "age" >= $1 THEN CAST($2 AS INTEGER) ELSE CAST($3 AS INTEGER) END) ` +
 		`FROM "users" GROUP BY "username"`
 	if sql != want {
 		t.Errorf("SQL()  = %s\nwant   = %s", sql, want)
@@ -153,7 +153,7 @@ func TestAggregateOfExpr_InHaving(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if !strings.Contains(sql, `HAVING SUM(CASE WHEN "age" >= $1 THEN $2 ELSE $3 END) > $4`) {
+	if !strings.Contains(sql, `HAVING SUM(CASE WHEN "age" >= $1 THEN CAST($2 AS INTEGER) ELSE CAST($3 AS INTEGER) END) > $4`) {
 		t.Errorf("SQL() = %s", sql)
 	}
 }

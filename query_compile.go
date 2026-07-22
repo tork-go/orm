@@ -701,18 +701,39 @@ func (c *compiler) caseExpr(n exprNode) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		then, err := c.operand(w.then, n.goType)
+		then, err := c.typedOperand(w.then, n.goType)
 		if err != nil {
 			return "", err
 		}
 		b.WriteString(" WHEN " + cond + " THEN " + then)
 	}
-	els, err := c.operand(n.els, n.goType)
+	els, err := c.typedOperand(n.els, n.goType)
 	if err != nil {
 		return "", err
 	}
 	b.WriteString(" ELSE " + els + " END")
 	return b.String(), nil
+}
+
+// typedOperand is operand, telling the database what a bound value's type
+// is when nothing beside it would say.
+//
+// A CASE's arms are the one place that matters. Everywhere else an operand
+// sits next to a column, which settles it — `("age" * $1)` needs no help.
+// An arm sits beside only the other arms, so Postgres reads a bare
+// parameter as text and an aggregate over the CASE then has no function to
+// call. Only a value takes the cast: a column or a nested expression
+// already carries its own type.
+func (c *compiler) typedOperand(v any, want reflect.Type) (string, error) {
+	s, err := c.operand(v, want)
+	if err != nil {
+		return "", err
+	}
+	switch v.(type) {
+	case expression, ColumnMeta:
+		return s, nil
+	}
+	return c.d.RenderTypedPlaceholder(s, want), nil
 }
 
 // operand renders one side of an expression: a nested expression, a column,
@@ -882,6 +903,27 @@ func (c *compiler) selectList(cols []ColumnMeta) (string, error) {
 // default case below is reachable by a caller's own bogus SelectExpr, not
 // merely defensive.
 func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
+	return c.selectExprListAs(exprs, nil)
+}
+
+// selectExprListAs is selectExprList, naming each expression with AS when
+// aliases is given.
+//
+// Only a derived table asks for that, so that the statement wrapping this
+// one can refer to a computed column by the name its model declares. It
+// changes nothing about how rows are matched to fields, which stays
+// positional everywhere: the names are for the database, which has no other
+// way to be told what a computed column is called.
+// The count check is unreachable from the one caller that passes aliases:
+// they come from the derived table's own columns, and From has already
+// rejected a source whose expression count differs from that. It is checked
+// rather than assumed, since a renderer taking two parallel slices should
+// not trust that they line up.
+func (c *compiler) selectExprListAs(exprs []SelectExpr, aliases []string) (string, error) {
+	if aliases != nil && len(aliases) != len(exprs) {
+		return "", fmt.Errorf("orm: table %q: %d expression(s) to alias but %d name(s) given",
+			c.table, len(exprs), len(aliases))
+	}
 	parts := make([]string, len(exprs))
 	for i, e := range exprs {
 		switch v := e.(type) {
@@ -921,6 +963,9 @@ func (c *compiler) selectExprList(exprs []SelectExpr) (string, error) {
 			parts[i] = s
 		default:
 			return "", fmt.Errorf("orm: table %q: unknown select expression %T", c.table, e)
+		}
+		if aliases != nil {
+			parts[i] += " AS " + c.d.QuoteIdent(aliases[i])
 		}
 	}
 	return strings.Join(parts, ", "), nil

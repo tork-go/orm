@@ -294,6 +294,11 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 	if err := f.ready(); err != nil {
 		return err
 	}
+	// A derived table's rows are a query's output, which is not something
+	// a statement can write back to.
+	if err := f.noDerived(op); err != nil {
+		return err
+	}
 	var clause string
 	switch {
 	case len(f.ords) > 0:

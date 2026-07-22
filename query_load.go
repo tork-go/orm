@@ -125,6 +125,10 @@ func (q *Query[E]) Load(rels ...Loadable) *Filtered[E] { return q.filtered().Loa
 // not to Count or Exists, which return no rows to fill.
 func (f *Filtered[E]) Load(rels ...Loadable) *Filtered[E] {
 	out := f.clone()
+	if err := f.noDerived("Load"); err != nil {
+		out.fail(err)
+		return out
+	}
 	for i, r := range rels {
 		if r == nil {
 			out.fail(fmt.Errorf("orm: table %q: Load relationship %d is nil",

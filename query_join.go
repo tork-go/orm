@@ -70,6 +70,10 @@ func (f *Filtered[E]) LeftJoinOn(rel Relationship, preds ...Predicate) *Filtered
 
 func (f *Filtered[E]) join(rel Relationship, kind joinKind, extra []Predicate) *Filtered[E] {
 	out := f.clone()
+	if err := f.noDerived("Join"); err != nil {
+		out.fail(err)
+		return out
+	}
 	if rel == nil {
 		out.fail(fmt.Errorf("orm: table %q: Join was given no relationship", f.tableName()))
 		return out

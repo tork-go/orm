@@ -317,6 +317,10 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 		// nothing a ForUpdate could add, and no dialect accepts the clause on
 		// an UPDATE or a DELETE.
 		clause = "a ForUpdate or ForShare"
+	case len(f.joins) > 0:
+		// No dialect Tork targets writes a portable UPDATE or DELETE with a
+		// JOIN in it; SelectAs is how a joined statement's columns are read.
+		clause = "a Join or LeftJoin"
 	default:
 		return nil
 	}

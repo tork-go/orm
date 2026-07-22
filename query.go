@@ -79,6 +79,10 @@ type queryState struct {
 	// See Unscoped.
 	unscoped bool
 
+	// joins are the Join/LeftJoin/JoinOn calls this query carries, each
+	// adding one JOIN or LEFT JOIN to the statement. See query_join.go.
+	joins []joinSpec
+
 	// loads are the relationships to fetch alongside the rows, each in a
 	// statement of its own once the rows are in hand. See query_load.go.
 	loads []loadSpec
@@ -163,6 +167,7 @@ func (f *Filtered[E]) clone() *Filtered[E] {
 	if f.sel != nil {
 		out.sel = append([]ColumnMeta(nil), f.sel...)
 	}
+	out.joins = append([]joinSpec(nil), f.joins...)
 	out.loads = append([]loadSpec(nil), f.loads...)
 	return &out
 }
@@ -219,6 +224,12 @@ func (f *Filtered[E]) Offset(n int) *Filtered[E] {
 //
 // Selecting accumulates rather than replacing, so a projection assembled in
 // branches means what it reads as.
+//
+// Every column named here must belong to this query's own table, joined or
+// not: the rows this read scans into are still *E, and E's fields are
+// mapped from this table's own columns only. Reading a joined table's
+// columns needs SelectAs instead, which reads into a type of the caller's
+// own choosing rather than E.
 func (f *Filtered[E]) Select(cols ...ColumnMeta) *Filtered[E] {
 	out := f.clone()
 	if len(cols) == 0 {
@@ -229,6 +240,12 @@ func (f *Filtered[E]) Select(cols ...ColumnMeta) *Filtered[E] {
 	for i, c := range cols {
 		if c == nil {
 			out.fail(fmt.Errorf("orm: table %q: Select column %d is nil", f.tableName(), i))
+			return out
+		}
+		if owner := c.OwnerTable(); owner != "" && owner != f.tableName() {
+			out.fail(fmt.Errorf("orm: table %q: Select column %d belongs to table %q, "+
+				"which this statement does not select from; read a joined table's "+
+				"columns with SelectAs instead", f.tableName(), i, owner))
 			return out
 		}
 	}
@@ -303,7 +320,15 @@ func (f *Filtered[E]) compileSelect() (string, []any, error) {
 	if err := f.ready(); err != nil {
 		return "", nil, err
 	}
-	c := f.compiler()
+	c, err := f.compilerJoined()
+	if err != nil {
+		return "", nil, err
+	}
+	// selectList's error is unreachable here: f.columns() is either f.sel,
+	// which Select already rejects a foreign column from at build time, or
+	// f.st.cols, this table's own columns, which always pass the ownership
+	// check selectList runs. Checked anyway, since selectList is a general
+	// renderer with no way to know which caller guarantees what.
 	list, err := c.selectList(f.columns())
 	if err != nil {
 		return "", nil, err
@@ -320,8 +345,40 @@ func (q queryState) compiler() *compiler {
 	return &compiler{d: q.db.d, args: &argBuilder{d: q.db.d}, table: q.st.name, unscoped: q.unscoped}
 }
 
+// compilerJoined is compiler, with every Join/LeftJoin/JoinOn this query
+// carries already added. It is a separate constructor rather than a change
+// to compiler itself because only a few terminals — Filtered's own reads,
+// and SelectAs — make sense over a joined statement; everywhere else
+// (Scalars, Grouped, the scalar aggregates, UpdateAll/DeleteAll) rejects a
+// Join outright with noJoins instead of calling this.
+func (q queryState) compilerJoined() (*compiler, error) {
+	c := q.compiler()
+	for _, spec := range q.joins {
+		if err := c.addJoin(spec); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
+// noJoins rejects a query carrying a Join, LeftJoin or JoinOn, the same
+// shape noLock rejects a lock with.
+func (q queryState) noJoins(op string) error {
+	if len(q.joins) == 0 {
+		return nil
+	}
+	return fmt.Errorf("orm: table %q: %s cannot run over a query carrying a Join "+
+		"or LeftJoin; narrow with Where instead, or use SelectAs to read joined "+
+		"columns", q.tableName(), op)
+}
+
 // compileRead wraps list in the clauses every read shares, so a projection, a
 // single column and a whole row differ only in what they select.
+//
+// Joins, when c carries any, go between the table and the WHERE clause,
+// which is where SQL puts them; joinsClause is "" for every query that
+// never called Join, so this reads exactly as it did before Join existed
+// for them.
 func (q queryState) compileRead(c *compiler, list string) (string, error) {
 	where, err := c.where(q.effectivePreds())
 	if err != nil {
@@ -341,7 +398,7 @@ func (q queryState) compileRead(c *compiler, list string) (string, error) {
 	if q.distinct {
 		keyword = "SELECT DISTINCT "
 	}
-	return keyword + list + " FROM " + c.d.QuoteIdent(q.st.name) +
+	return keyword + list + " FROM " + c.d.QuoteIdent(q.st.name) + c.joinsClause() +
 		where + order + limitOffset(q.limit, q.offset) + lock, nil
 }
 
@@ -490,6 +547,13 @@ func (f *Filtered[E]) First(ctx context.Context) (*E, error) {
 //
 // Ordering and paging are dropped: they change which rows come back, not
 // how many match, and ORDER BY in a count is wasted work.
+//
+// After a Join, this counts joined rows, not distinct primary rows — a
+// user with three matching posts is counted three times, the same as raw
+// SQL would count them. That is not a bug to work around here: adding a
+// silent DISTINCT would be wrong exactly as often as it would be right.
+// Has/HasNone, built on EXISTS, are what to reach for when the question is
+// how many primary rows have a match, not how many matches there are.
 func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	if err := f.ready(); err != nil {
 		return 0, err
@@ -497,24 +561,31 @@ func (f *Filtered[E]) Count(ctx context.Context) (int64, error) {
 	if err := f.noLock("Count"); err != nil {
 		return 0, err
 	}
-	c := f.compiler()
+	c, err := f.compilerJoined()
+	if err != nil {
+		return 0, err
+	}
 	where, err := c.where(f.effectivePreds())
 	if err != nil {
 		return 0, err
 	}
-	sql := "SELECT COUNT(*) FROM " + c.d.QuoteIdent(f.st.name) + where
+	sql := "SELECT COUNT(*) FROM " + c.d.QuoteIdent(f.st.name) + c.joinsClause() + where
 
 	if f.distinct {
 		// Counting a distinct query means counting the rows that query
 		// returns, which is a count over the read rather than over the table.
 		// The derived table is named because Postgres and MySQL both require
 		// it; leaving it out would work only where it is optional.
+		//
+		// selectList's error is unreachable here for the same reason it is in
+		// compileSelect: f.columns() is either f.sel, already checked by
+		// Select, or this table's own columns, which always pass.
 		list, err := c.selectList(f.columns())
 		if err != nil {
 			return 0, err
 		}
 		sql = "SELECT COUNT(*) FROM (SELECT DISTINCT " + list + " FROM " +
-			c.d.QuoteIdent(f.st.name) + where + ") AS " + c.d.QuoteIdent("t")
+			c.d.QuoteIdent(f.st.name) + c.joinsClause() + where + ") AS " + c.d.QuoteIdent("t")
 	}
 
 	return scanCount(ctx, f.db, f.st.name, sql, c.args.args)

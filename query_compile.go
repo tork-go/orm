@@ -31,21 +31,33 @@ func (b *argBuilder) bind(v any) string {
 // compiler turns predicates, orderings and assignments into SQL for one
 // statement.
 //
-// Every statement it writes names one table, so column references are
-// bare. A statement over more than one, which is what eager loading needs,
-// will have to qualify them; SQL is not consistent about where that is
+// Most statements name one table, so column references are bare. A
+// statement joined onto another, or a subquery, has more than one table in
+// scope and has to qualify them; SQL is not consistent about where that is
 // even allowed, since an UPDATE's SET clause must stay bare, so the choice
 // belongs per clause rather than per compiler when it arrives.
 type compiler struct {
 	d     QueryDialect
 	args  *argBuilder
-	table string // the statement's table, for validating column references
+	table string // the statement's primary table, for validating column references
 
-	// qualify prefixes a column with its table. A statement over one table
-	// needs no prefix and reads better without one, so this is set only
-	// inside a subquery, where the outer statement's table is also in scope
-	// and an unqualified name would be resolved by how the two happen to be
-	// nested rather than by what the caller wrote.
+	// extraTables are the tables a Join or LeftJoin has added to this
+	// statement, beyond table. Empty for every query that never calls one —
+	// which is every query outside this one statement shape — so column
+	// behaves exactly as it did before Join existed for them. A slice
+	// rather than a set: a statement rarely joins more than a handful of
+	// tables, and this keeps the common, join-free path allocation-free.
+	extraTables []string
+
+	// joinSQL holds each addJoin call's rendered " JOIN ..."/" LEFT JOIN
+	// ..." fragment, in call order; see joinsClause.
+	joinSQL []string
+
+	// qualify prefixes a column with its own table. A statement over one
+	// table needs no prefix and reads better without one, so this is set
+	// only inside a subquery or a joined statement, where more than one
+	// table is in scope and an unqualified name would be resolved by how
+	// they happen to be nested rather than by what the caller wrote.
 	qualify bool
 
 	// unscoped carries the outer query's Unscoped call into whatever this
@@ -56,6 +68,20 @@ type compiler struct {
 	unscoped bool
 }
 
+// owns reports whether table is this statement's primary table or one a
+// Join added.
+func (c *compiler) owns(table string) bool {
+	if table == c.table {
+		return true
+	}
+	for _, t := range c.extraTables {
+		if t == table {
+			return true
+		}
+	}
+	return false
+}
+
 // column renders a column reference, checking it belongs to the statement.
 //
 // A predicate over another table's column would otherwise compile into a
@@ -64,19 +90,24 @@ type compiler struct {
 // mistake. A column with no owner is accepted: only DefineTable binds a
 // column to its table, and a model built by hand still has to be usable.
 func (c *compiler) column(col ColumnMeta) (string, error) {
-	if owner := col.OwnerTable(); owner != "" && owner != c.table {
+	if owner := col.OwnerTable(); owner != "" && !c.owns(owner) {
 		return "", fmt.Errorf("orm: table %q: column %q belongs to table %q, "+
 			"which this statement does not select from",
 			c.table, col.Name(), owner)
 	}
 	if c.qualify {
-		return c.qualified(c.table, col), nil
+		table := col.OwnerTable()
+		if table == "" {
+			table = c.table
+		}
+		return c.qualified(table, col), nil
 	}
 	return c.d.QuoteIdent(col.Name()), nil
 }
 
 // qualified names a column of a table other than this statement's, which is
-// how a subquery refers back to the one containing it.
+// how a subquery refers back to the one containing it, or a joined
+// statement names a column of the table it joined onto.
 //
 // It skips the ownership check on purpose: the whole point of a correlated
 // subquery is to name a column the inner statement does not select from.
@@ -92,6 +123,48 @@ func (c *compiler) qualified(table string, col ColumnMeta) string {
 func (c *compiler) sub(table string) *compiler {
 	return &compiler{d: c.d, args: c.args, table: table, qualify: true, unscoped: c.unscoped}
 }
+
+// addJoin extends this statement with one JOIN or LEFT JOIN, correlated on
+// the relationship's own foreign key — the same correlation existsDirect
+// already renders as a nested EXISTS, rendered here as a real join instead.
+//
+// It rejects a many to many outright: that needs two joins through a join
+// table, which multiplies rows in a way Has and HasNone, built on EXISTS,
+// never do, and this package already has an answer for that question.
+func (c *compiler) addJoin(spec joinSpec) error {
+	info, err := spec.rel.info()
+	if err != nil {
+		return err
+	}
+	if info.LocalTable != c.table {
+		return fmt.Errorf("orm: table %q: this relationship belongs to table %q, "+
+			"which this statement does not select from", c.table, info.LocalTable)
+	}
+	if info.Kind == KindManyToMany {
+		return fmt.Errorf("orm: table %q: Join does not support a many to many "+
+			"relationship, which needs two joins; use Has or HasNone instead", c.table)
+	}
+	c.qualify = true
+	c.extraTables = append(c.extraTables, info.ForeignTable)
+
+	on := c.qualified(info.ForeignTable, info.ForeignColumn) + " = " +
+		c.qualified(info.LocalTable, info.LocalColumn)
+	onSQL, err := c.conditions(on, spec.extra)
+	if err != nil {
+		return err
+	}
+	kw := " JOIN "
+	if spec.kind == joinLeft {
+		kw = " LEFT JOIN "
+	}
+	c.joinSQL = append(c.joinSQL, kw+c.d.QuoteIdent(info.ForeignTable)+" ON "+onSQL)
+	return nil
+}
+
+// joinsClause renders every join addJoin has added, in call order, or ""
+// when there are none — which is every statement outside this one shape,
+// so a query with no Join reads exactly as it did before Join existed.
+func (c *compiler) joinsClause() string { return strings.Join(c.joinSQL, "") }
 
 // The two constants below stand in for an always true and an always false
 // condition. They are written as comparisons rather than as TRUE and FALSE

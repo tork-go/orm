@@ -66,6 +66,9 @@ func (s *Scalars[T]) compile() (string, []any, *compiler, error) {
 	if err := s.ready(); err != nil {
 		return "", nil, nil, err
 	}
+	if err := s.q.noJoins("Select"); err != nil {
+		return "", nil, nil, err
+	}
 	c := s.q.compiler()
 	list, err := c.selectList([]ColumnMeta{s.col})
 	if err != nil {
@@ -145,6 +148,9 @@ func (s *Scalars[T]) Count(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	if err := s.q.noLock("Count"); err != nil {
+		return 0, err
+	}
+	if err := s.q.noJoins("Count"); err != nil {
 		return 0, err
 	}
 	c := s.q.compiler()

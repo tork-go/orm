@@ -410,6 +410,31 @@ func (d *Dialect) RenderUpsertDoUpdate(target, updates []string) (string, error)
 	return "UPSERT " + strings.Join(target, "+") + " REPLACE " + strings.Join(sets, " & "), nil
 }
 
+// RenderJSONHasKey, RenderJSONContains and RenderJSONKey spell the JSON tests
+// as functions rather than Postgres's operators, and fail when NoJSON is set
+// so the database whose SQL cannot reach inside a document has somewhere to be
+// tested.
+func (d *Dialect) RenderJSONHasKey(quotedColumn, keyPlaceholder string) (string, error) {
+	if d.NoJSON {
+		return "", errors.New("fake: this database cannot query inside a JSON document")
+	}
+	return "HASKEY(" + quotedColumn + ", " + keyPlaceholder + ")", nil
+}
+
+func (d *Dialect) RenderJSONContains(quotedColumn, valuePlaceholder string) (string, error) {
+	if d.NoJSON {
+		return "", errors.New("fake: this database cannot query inside a JSON document")
+	}
+	return "CONTAINS(" + quotedColumn + ", " + valuePlaceholder + ")", nil
+}
+
+func (d *Dialect) RenderJSONKey(quotedColumn, keyPlaceholder string, op orm.Operator, valuePlaceholder string) (string, error) {
+	if d.NoJSON {
+		return "", errors.New("fake: this database cannot query inside a JSON document")
+	}
+	return "GET(" + quotedColumn + ", " + keyPlaceholder + ") " + op.String() + " " + valuePlaceholder, nil
+}
+
 // Dialect is an in-memory fake driver.Dialect. Its history methods
 // (InsertHistoryRow, DeleteHistoryRow, AppliedRevisions) are fully
 // functional, backed by an in-memory map, for testing migrate's runner.
@@ -441,6 +466,10 @@ type Dialect struct {
 	// NoLocking makes RenderLock fail, standing in for a database that locks
 	// something coarser than a row, as SQLite does.
 	NoLocking bool
+
+	// NoJSON makes the three JSON renderers fail, standing in for a database
+	// whose SQL cannot query inside a document.
+	NoJSON bool
 }
 
 // NewDialect returns a ready-to-use fake dialect with no applied revisions.

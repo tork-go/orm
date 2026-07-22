@@ -135,6 +135,32 @@ type InSubquery struct {
 	Not bool
 }
 
+// JSONHasKey is "the document has this top-level key". Build one with a JSON
+// column's HasKey.
+type JSONHasKey struct {
+	Col ColumnMeta
+	Key string
+}
+
+// JSONContains is "the document contains this one, as a subtree". Build one
+// with a JSON column's Contains. Value is the Go value to test containment of,
+// encoded through the column's own codec exactly as a stored document is.
+type JSONContains struct {
+	Col   ColumnMeta
+	Value any
+}
+
+// JSONKey is `(col ->> key) <op> value`: the text at a top-level key compared
+// against a value. Build one with a JSON column's Key(...).Eq or .NotEq. The
+// value is text because ->> extracts text; a number or a nested object is what
+// Contains and Raw are for.
+type JSONKey struct {
+	Col   ColumnMeta
+	Key   string
+	Op    Operator
+	Value string
+}
+
 // subquerySource is something that renders as a single-column SELECT inside
 // another statement. Only this package's own query values satisfy it.
 type subquerySource interface {
@@ -212,8 +238,11 @@ func (Pattern) predicate()    {}
 func (Nullness) predicate()   {}
 func (Group) predicate()      {}
 func (Negation) predicate()   {}
-func (Existence) predicate()  {}
-func (InSubquery) predicate() {}
+func (Existence) predicate()   {}
+func (InSubquery) predicate()  {}
+func (JSONHasKey) predicate()  {}
+func (JSONContains) predicate() {}
+func (JSONKey) predicate()     {}
 
 // And joins preds with AND.
 //

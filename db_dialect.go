@@ -63,6 +63,25 @@ type QueryDialect interface {
 	// has not locked and leaving the caller to find out later.
 	RenderLock(mode LockMode, wait LockWait) (string, error)
 
+	// RenderJSONHasKey returns the test that an already-quoted JSON column has
+	// the given top-level key, whose already-rendered placeholder binds it.
+	//
+	// JSON querying is where dialects diverge most: Postgres has operators
+	// (?, @>, ->>), MySQL has functions (JSON_CONTAINS, JSON_EXTRACT), and a
+	// database with no JSON type at all has neither. A dialect that cannot
+	// express one returns an error naming the operation.
+	RenderJSONHasKey(quotedColumn, keyPlaceholder string) (string, error)
+
+	// RenderJSONContains returns the test that an already-quoted JSON column
+	// contains the JSON value its already-rendered placeholder binds, as a
+	// subtree.
+	RenderJSONContains(quotedColumn, valuePlaceholder string) (string, error)
+
+	// RenderJSONKey returns the comparison of the text at a top-level key of an
+	// already-quoted JSON column against a value, both placeholders already
+	// rendered and the operator one of the six comparisons.
+	RenderJSONKey(quotedColumn, keyPlaceholder string, op Operator, valuePlaceholder string) (string, error)
+
 	// MaxBindParams reports how many parameters one statement may bind, or
 	// 0 when the database sets no practical limit.
 	//

@@ -104,6 +104,26 @@ func (Dialect) RenderLock(mode orm.LockMode, wait orm.LockWait) (string, error) 
 	return "", fmt.Errorf("postgres: unknown lock wait %d", wait)
 }
 
+// RenderJSONHasKey returns Postgres's jsonb key-existence operator. The `?`
+// is the operator, not a parameter marker: pgx numbers its parameters `$1`
+// and passes `?` through untouched, so the two do not collide.
+func (Dialect) RenderJSONHasKey(quotedColumn, keyPlaceholder string) (string, error) {
+	return quotedColumn + " ? " + keyPlaceholder, nil
+}
+
+// RenderJSONContains returns Postgres's jsonb containment operator. The value
+// is cast to jsonb because it arrives as text: `@>` wants jsonb on both sides,
+// and text casts to it where the driver's binary type would not.
+func (Dialect) RenderJSONContains(quotedColumn, valuePlaceholder string) (string, error) {
+	return quotedColumn + " @> " + valuePlaceholder + "::jsonb", nil
+}
+
+// RenderJSONKey returns the comparison of a top-level key's text against a
+// value, using ->> to extract text so the value compares as text.
+func (Dialect) RenderJSONKey(quotedColumn, keyPlaceholder string, op orm.Operator, valuePlaceholder string) (string, error) {
+	return "(" + quotedColumn + " ->> " + keyPlaceholder + ") " + op.String() + " " + valuePlaceholder, nil
+}
+
 // MaxBindParams reports Postgres's limit of 65535 parameters per
 // statement.
 //

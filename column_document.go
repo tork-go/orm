@@ -8,15 +8,19 @@ package orm
 // and it needs no entry in the Go-type-to-kind table: schema extraction
 // checks for a JSON kind before it consults that table.
 //
-// It offers no comparison operations. Postgres's json type has no equality
-// operator at all, so `json_col = json_col` is an error rather than a
-// false, and a JSONColumn may be either kind. Exposing Eq would hand out a
-// method that fails at query time for half its instantiations. Containment and
-// path operators need AST nodes and dialect rendering that do not exist
-// yet; until then a JSON column is written and read, not filtered on.
+// It offers no equality or ordering. Postgres's json type has no equality
+// operator at all, so `json_col = json_col` is an error rather than a false,
+// and a JSONColumn may be either kind. Exposing Eq would hand out a method
+// that fails at query time for half its instantiations.
+//
+// What it does offer is the JSON tests jsonOps carries: HasKey, Contains, and
+// Key(...).Eq. These are the operations every JSON storing database can
+// express in some spelling, so the dialect writes each one and a driver that
+// cannot returns an error naming it.
 type JSONColumn[T any] struct {
 	chain[T, *JSONColumn[T]]
 	jsonBuilder[T, *JSONColumn[T]]
+	jsonOps[T]
 	assignable[T]
 }
 
@@ -34,6 +38,7 @@ func NewJSONColumn[T any](name string) *JSONColumn[T] {
 	c := x.chain.c
 	c.JSONB()
 	x.jsonBuilder = jsonBuilder[T, *JSONColumn[T]]{c: c, self: x}
+	x.jsonOps = jsonOps[T]{c: c}
 	x.assignable = assignable[T]{c: c}
 	return x
 }
@@ -42,6 +47,7 @@ func NewJSONColumn[T any](name string) *JSONColumn[T] {
 type NullableJSONColumn[T any] struct {
 	chain[*T, *NullableJSONColumn[T]]
 	jsonBuilder[*T, *NullableJSONColumn[T]]
+	nullJSONOps[T]
 	nullAssignable[T]
 	nullness
 }
@@ -59,6 +65,7 @@ func NewNullableJSONColumn[T any](name string) *NullableJSONColumn[T] {
 	c := x.chain.c
 	c.JSONB()
 	x.jsonBuilder = jsonBuilder[*T, *NullableJSONColumn[T]]{c: c, self: x}
+	x.nullJSONOps = nullJSONOps[T]{c: c}
 	x.nullAssignable = nullAssignable[T]{c: c}
 	x.nullness = nullness{c: c}
 	return x

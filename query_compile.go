@@ -168,6 +168,39 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 	case InSubquery:
 		return c.inSubquery(p)
 
+	case JSONHasKey:
+		col, err := c.column(p.Col)
+		if err != nil {
+			return "", err
+		}
+		return c.d.RenderJSONHasKey(col, c.args.bind(p.Key))
+
+	case JSONContains:
+		col, err := c.column(p.Col)
+		if err != nil {
+			return "", err
+		}
+		v, err := c.value(p.Col, p.Value)
+		if err != nil {
+			return "", err
+		}
+		// The encoded document is bound as text, not as the []byte the codec
+		// hands back: a []byte reaches the driver as the database's binary
+		// type, which will not cast to a JSON type, where text will.
+		if b, ok := v.([]byte); ok {
+			v = string(b)
+		}
+		return c.d.RenderJSONContains(col, c.args.bind(v))
+
+	case JSONKey:
+		col, err := c.column(p.Col)
+		if err != nil {
+			return "", err
+		}
+		// Key before value, so the placeholders number in the order they read.
+		key := c.args.bind(p.Key)
+		return c.d.RenderJSONKey(col, key, p.Op, c.args.bind(p.Value))
+
 	case rawPredicate:
 		return c.raw(p)
 	}

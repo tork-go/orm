@@ -36,6 +36,15 @@ func (*stubDriver) RenderUpsertDoUpdate(_, _ []string) (string, error) {
 func (*stubDriver) RenderLock(orm.LockMode, orm.LockWait) (string, error) {
 	return "FOR UPDATE", nil
 }
+func (*stubDriver) RenderJSONHasKey(col, key string) (string, error) {
+	return col + " ? " + key, nil
+}
+func (*stubDriver) RenderJSONContains(col, val string) (string, error) {
+	return col + " @> " + val, nil
+}
+func (*stubDriver) RenderJSONKey(col, key string, op orm.Operator, val string) (string, error) {
+	return col + " ->> " + key + " " + op.String() + " " + val, nil
+}
 
 func (d *stubDriver) Open(_ context.Context, cfg orm.Config) (orm.Conn, error) {
 	d.opened = append(d.opened, cfg)

@@ -438,18 +438,18 @@ func (d *Dialect) RenderJSONKey(quotedColumn, keyPlaceholder string, op orm.Oper
 // RenderArrayContains, RenderArrayOverlaps and RenderArrayLength spell the
 // array tests unlike Postgres, and fail when NoArray is set so the database
 // without a native array type has somewhere to be tested.
-func (d *Dialect) RenderArrayContains(quotedColumn string, placeholders []string) (string, error) {
+func (d *Dialect) RenderArrayContains(quotedColumn, placeholder string) (string, error) {
 	if d.NoArray {
 		return "", errors.New("fake: this database has no array type to test")
 	}
-	return "SUPERSET(" + quotedColumn + ", [" + strings.Join(placeholders, " ") + "])", nil
+	return "SUPERSET(" + quotedColumn + ", " + placeholder + ")", nil
 }
 
-func (d *Dialect) RenderArrayOverlaps(quotedColumn string, placeholders []string) (string, error) {
+func (d *Dialect) RenderArrayOverlaps(quotedColumn, placeholder string) (string, error) {
 	if d.NoArray {
 		return "", errors.New("fake: this database has no array type to test")
 	}
-	return "MEETS(" + quotedColumn + ", [" + strings.Join(placeholders, " ") + "])", nil
+	return "MEETS(" + quotedColumn + ", " + placeholder + ")", nil
 }
 
 func (d *Dialect) RenderArrayLength(quotedColumn string, op orm.Operator, placeholder string) (string, error) {

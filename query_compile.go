@@ -2,6 +2,7 @@ package orm
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -202,10 +203,10 @@ func (c *compiler) predicate(p Predicate) (string, error) {
 		return c.d.RenderJSONKey(col, key, p.Op, c.args.bind(p.Value))
 
 	case ArrayContains:
-		return c.arrayMembership(p.Col, p.Values, true)
+		return c.arrayMembership(p.Col, p.Elems, true)
 
 	case ArrayOverlaps:
-		return c.arrayMembership(p.Col, p.Values, false)
+		return c.arrayMembership(p.Col, p.Elems, false)
 
 	case ArrayLength:
 		col, err := c.column(p.Col)
@@ -256,15 +257,15 @@ func (c *compiler) inList(p InList) (string, error) {
 }
 
 // arrayMembership renders ArrayContains (Has, HasAll) and ArrayOverlaps
-// (HasAny).
+// (HasAny). elems is a typed slice, bound whole as one array parameter.
 //
 // An empty list is defined rather than left to the database, the same way an
 // empty IN list is: containing all of nothing is true of every array, and
-// overlapping nothing is false for every one. Compiling to a constant also
-// steps around the typed empty array literal a dialect would otherwise need,
-// since ARRAY[] on its own has no element type to infer.
-func (c *compiler) arrayMembership(col ColumnMeta, values []any, all bool) (string, error) {
-	if len(values) == 0 {
+// overlapping nothing is false for every one. Answering it here also means the
+// empty case never has to bind an empty array whose element type the driver
+// would have to be told.
+func (c *compiler) arrayMembership(col ColumnMeta, elems any, all bool) (string, error) {
+	if reflect.ValueOf(elems).Len() == 0 {
 		if all {
 			return sqlTrue, nil
 		}
@@ -274,14 +275,11 @@ func (c *compiler) arrayMembership(col ColumnMeta, values []any, all bool) (stri
 	if err != nil {
 		return "", err
 	}
-	marks := make([]string, len(values))
-	for i, v := range values {
-		marks[i] = c.args.bind(v)
-	}
+	mark := c.args.bind(elems)
 	if all {
-		return c.d.RenderArrayContains(quoted, marks)
+		return c.d.RenderArrayContains(quoted, mark)
 	}
-	return c.d.RenderArrayOverlaps(quoted, marks)
+	return c.d.RenderArrayOverlaps(quoted, mark)
 }
 
 // inSubquery renders IN and NOT IN over another query.

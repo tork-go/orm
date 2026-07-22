@@ -45,11 +45,11 @@ func (*stubDriver) RenderJSONContains(col, val string) (string, error) {
 func (*stubDriver) RenderJSONKey(col, key string, op orm.Operator, val string) (string, error) {
 	return col + " ->> " + key + " " + op.String() + " " + val, nil
 }
-func (*stubDriver) RenderArrayContains(col string, marks []string) (string, error) {
-	return col + " @> ARRAY[" + strings.Join(marks, ", ") + "]", nil
+func (*stubDriver) RenderArrayContains(col, mark string) (string, error) {
+	return col + " @> " + mark, nil
 }
-func (*stubDriver) RenderArrayOverlaps(col string, marks []string) (string, error) {
-	return col + " && ARRAY[" + strings.Join(marks, ", ") + "]", nil
+func (*stubDriver) RenderArrayOverlaps(col, mark string) (string, error) {
+	return col + " && " + mark, nil
 }
 func (*stubDriver) RenderArrayLength(col string, op orm.Operator, mark string) (string, error) {
 	return "cardinality(" + col + ") " + op.String() + " " + mark, nil

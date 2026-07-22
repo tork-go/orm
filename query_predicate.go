@@ -164,16 +164,22 @@ type JSONKey struct {
 // ArrayContains is "the array holds all of these elements". Build one with an
 // array column's Has (one element) or HasAll (several). An empty list is
 // "holds all of nothing", which every array does.
+//
+// Elems is a typed slice ([]int, []string, ...), bound whole as one array
+// parameter rather than element by element: an ARRAY[$1, $2] constructor
+// leaves its element type for the database to infer, and it infers text, so
+// an int array's containment would compile to integer[] @> text[]. Binding
+// the slice lets the driver encode it as the array type the column is.
 type ArrayContains struct {
-	Col    ColumnMeta
-	Values []any
+	Col   ColumnMeta
+	Elems any
 }
 
 // ArrayOverlaps is "the array holds any of these elements". Build one with an
 // array column's HasAny. An empty list overlaps nothing.
 type ArrayOverlaps struct {
-	Col    ColumnMeta
-	Values []any
+	Col   ColumnMeta
+	Elems any
 }
 
 // ArrayLength is `len(col) <op> value`: the number of elements compared

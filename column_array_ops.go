@@ -17,19 +17,19 @@ type arrayOps[Elem any] struct{ c ColumnMeta }
 
 // Has is "the array holds this element".
 func (m arrayOps[Elem]) Has(v Elem) Predicate {
-	return ArrayContains{Col: m.c, Values: []any{v}}
+	return ArrayContains{Col: m.c, Elems: []Elem{v}}
 }
 
 // HasAll is "the array holds every one of these". With no arguments it is true
 // of every array, since every array holds all of nothing.
 func (m arrayOps[Elem]) HasAll(vs ...Elem) Predicate {
-	return ArrayContains{Col: m.c, Values: anySlice(vs)}
+	return ArrayContains{Col: m.c, Elems: vs}
 }
 
 // HasAny is "the array holds any one of these". With no arguments it matches
 // nothing, since no array overlaps the empty set.
 func (m arrayOps[Elem]) HasAny(vs ...Elem) Predicate {
-	return ArrayOverlaps{Col: m.c, Values: anySlice(vs)}
+	return ArrayOverlaps{Col: m.c, Elems: vs}
 }
 
 // Len names the array's element count, which the comparisons then test.

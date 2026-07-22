@@ -124,16 +124,16 @@ func (Dialect) RenderJSONKey(quotedColumn, keyPlaceholder string, op orm.Operato
 	return "(" + quotedColumn + " ->> " + keyPlaceholder + ") " + op.String() + " " + valuePlaceholder, nil
 }
 
-// RenderArrayContains returns Postgres's array containment, building the right
-// operand with an ARRAY constructor whose element type Postgres infers from the
-// bound values and the column.
-func (Dialect) RenderArrayContains(quotedColumn string, placeholders []string) (string, error) {
-	return quotedColumn + " @> ARRAY[" + strings.Join(placeholders, ", ") + "]", nil
+// RenderArrayContains returns Postgres's array containment. The placeholder
+// binds a whole array, so it is the operator's right operand directly, with no
+// ARRAY constructor whose element type Postgres would infer as text.
+func (Dialect) RenderArrayContains(quotedColumn, placeholder string) (string, error) {
+	return quotedColumn + " @> " + placeholder, nil
 }
 
 // RenderArrayOverlaps returns Postgres's array overlap operator.
-func (Dialect) RenderArrayOverlaps(quotedColumn string, placeholders []string) (string, error) {
-	return quotedColumn + " && ARRAY[" + strings.Join(placeholders, ", ") + "]", nil
+func (Dialect) RenderArrayOverlaps(quotedColumn, placeholder string) (string, error) {
+	return quotedColumn + " && " + placeholder, nil
 }
 
 // RenderArrayLength returns the comparison of an array's element count,

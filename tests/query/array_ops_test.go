@@ -1,6 +1,7 @@
 package query_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -34,6 +35,19 @@ var arrRows = orm.DefineTable[arrRow]("arr_rows", func(t *orm.TableBuilder[arrRo
 	}
 })
 
+// oneArg asserts a statement bound exactly one argument, equal to want. The
+// membership operators bind the whole slice as one array parameter rather than
+// an element per placeholder.
+func oneArg(t *testing.T, args []any, want any) {
+	t.Helper()
+	if len(args) != 1 {
+		t.Fatalf("bound %v, want one array argument", args)
+	}
+	if !reflect.DeepEqual(args[0], want) {
+		t.Errorf("bound %#v, want %#v", args[0], want)
+	}
+}
+
 func TestArray_Has(t *testing.T) {
 	t.Run("postgres", func(t *testing.T) {
 		db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
@@ -41,12 +55,10 @@ func TestArray_Has(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
-		if want := `WHERE "tags" @> ARRAY[$1]`; !strings.HasSuffix(sql, want) {
+		if want := `WHERE "tags" @> $1`; !strings.HasSuffix(sql, want) {
 			t.Errorf("compiled %s, want it to end %s", sql, want)
 		}
-		if len(args) != 1 || args[0] != "go" {
-			t.Errorf("bound %v, want [go]", args)
-		}
+		oneArg(t, args, []string{"go"})
 	})
 
 	t.Run("fake", func(t *testing.T) {
@@ -55,7 +67,7 @@ func TestArray_Has(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
-		if want := `WHERE SUPERSET([tags], [?])`; !strings.HasSuffix(sql, want) {
+		if want := `WHERE SUPERSET([tags], ?)`; !strings.HasSuffix(sql, want) {
 			t.Errorf("compiled %s, want it to end %s", sql, want)
 		}
 	})
@@ -67,12 +79,10 @@ func TestArray_HasAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if want := `WHERE "tags" @> ARRAY[$1, $2]`; !strings.HasSuffix(sql, want) {
+	if want := `WHERE "tags" @> $1`; !strings.HasSuffix(sql, want) {
 		t.Errorf("compiled %s, want it to end %s", sql, want)
 	}
-	if len(args) != 2 || args[0] != "go" || args[1] != "sql" {
-		t.Errorf("bound %v, want [go sql]", args)
-	}
+	oneArg(t, args, []string{"go", "sql"})
 }
 
 func TestArray_HasAny(t *testing.T) {
@@ -81,12 +91,10 @@ func TestArray_HasAny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if want := `WHERE "tags" && ARRAY[$1, $2]`; !strings.HasSuffix(sql, want) {
+	if want := `WHERE "tags" && $1`; !strings.HasSuffix(sql, want) {
 		t.Errorf("compiled %s, want it to end %s", sql, want)
 	}
-	if len(args) != 2 || args[0] != "go" || args[1] != "sql" {
-		t.Errorf("bound %v, want [go sql]", args)
-	}
+	oneArg(t, args, []string{"go", "sql"})
 }
 
 func TestArray_Len(t *testing.T) {
@@ -142,21 +150,18 @@ func TestArray_Len(t *testing.T) {
 	})
 }
 
-// The element type is the array's, so an int array takes an int and a string
-// array a string. This one only has to compile to prove it; the SQL confirms
-// the value is carried.
+// The element type is the array's, so an int array takes an int; the slice is
+// bound as int[], which is what the whole-array binding is for.
 func TestArray_IntElements(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 	sql, args, err := arrRows.With(db).Where(arrRows.Nums.Has(3)).SQL()
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if want := `WHERE "nums" @> ARRAY[$1]`; !strings.HasSuffix(sql, want) {
+	if want := `WHERE "nums" @> $1`; !strings.HasSuffix(sql, want) {
 		t.Errorf("compiled %s, want it to end %s", sql, want)
 	}
-	if len(args) != 1 || args[0] != 3 {
-		t.Errorf("bound %v, want [3]", args)
-	}
+	oneArg(t, args, []int{3})
 }
 
 // An empty list is defined, the same way an empty IN list is: HasAll of
@@ -166,12 +171,15 @@ func TestArray_EmptyLists(t *testing.T) {
 	db := orm.NewDB(fakedriver.NewConn(), postgres.Dialect{})
 
 	t.Run("HasAll of nothing matches everything", func(t *testing.T) {
-		sql, _, err := arrRows.With(db).Where(arrRows.Tags.HasAll()).SQL()
+		sql, args, err := arrRows.With(db).Where(arrRows.Tags.HasAll()).SQL()
 		if err != nil {
 			t.Fatalf("SQL() error = %v", err)
 		}
 		if strings.Contains(sql, "WHERE") {
 			t.Errorf("compiled %s, want no WHERE for a condition true of every row", sql)
+		}
+		if len(args) != 0 {
+			t.Errorf("bound %v, want nothing for an empty list answered at compile time", args)
 		}
 	})
 
@@ -197,7 +205,7 @@ func TestArray_NullableColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if want := `WHERE ("opt" @> ARRAY[$1] AND cardinality("opt") >= $2)`; !strings.HasSuffix(sql, want) {
+	if want := `WHERE ("opt" @> $1 AND cardinality("opt") >= $2)`; !strings.HasSuffix(sql, want) {
 		t.Errorf("compiled %s, want it to end %s", sql, want)
 	}
 }
@@ -213,11 +221,11 @@ func TestArray_NumbersWithOtherPredicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if want := `WHERE ("id" > $1 AND "tags" && ARRAY[$2, $3])`; !strings.HasSuffix(sql, want) {
+	if want := `WHERE ("id" > $1 AND "tags" && $2)`; !strings.HasSuffix(sql, want) {
 		t.Errorf("compiled %s, want it to end %s", sql, want)
 	}
-	if len(args) != 3 || args[0] != 10 || args[1] != "go" || args[2] != "sql" {
-		t.Errorf("bound %v, want [10 go sql]", args)
+	if len(args) != 2 || args[0] != 10 || !reflect.DeepEqual(args[1], []string{"go", "sql"}) {
+		t.Errorf("bound %v, want [10 [go sql]]", args)
 	}
 }
 

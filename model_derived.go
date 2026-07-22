@@ -34,6 +34,10 @@ func (d DerivedTable[E]) TableName() string {
 	return d.st.name
 }
 
+// state returns the table this identity was built from, so a derived model
+// reaching Alias is recognised and refused rather than silently aliased.
+func (d DerivedTable[E]) state() *tableState { return d.st }
+
 // DefineDerived declares a model for a table whose rows come from a query.
 //
 //	type Ranked struct {

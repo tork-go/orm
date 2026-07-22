@@ -120,6 +120,9 @@ func (q queryState) derivedAliases() []string {
 // reason.
 func (q queryState) fromClause(c *compiler) (string, error) {
 	name := c.d.QuoteIdent(q.st.name)
+	if q.st.aliasOf != "" {
+		return c.d.QuoteIdent(q.st.aliasOf) + " AS " + name, nil
+	}
 	if !q.st.derived {
 		return name, nil
 	}
@@ -143,3 +146,7 @@ func (q queryState) noDerived(op string) error {
 	return fmt.Errorf("orm: derived table %q: %s cannot run over a derived table, "+
 		"whose rows come from a query rather than from storage", q.st.name, op)
 }
+
+// noAlias rejects an operation that cannot run over an alias, mirroring
+// noDerived.
+func (q queryState) noAlias(op string) error { return q.st.noAlias(op) }

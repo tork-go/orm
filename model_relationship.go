@@ -182,12 +182,25 @@ func (r *relation) resolve() (RelationInfo, error) {
 		return RelationInfo{}, err
 	}
 	if key == nil {
-		found, err := soleForeignKeyInto(holder, target.name)
+		// The search is by the table's stored name, not the one this
+		// statement calls it: a foreign key references storage, so a column
+		// of an aliased table still references "employees" however the
+		// alias is named. Everything reported below stays in the
+		// statement's own names, which is what a join has to be written in.
+		found, err := soleForeignKeyInto(holder, target.storageName())
 		if err != nil {
 			return RelationInfo{}, fmt.Errorf("orm: %s.%s -> %s: %w",
 				r.owner.name, r.kind, related.name, err)
 		}
 		key = found
+	} else if named := columnNamed(holder, key.Name()); named != nil {
+		// A Relations method names the key from the model it is declared on,
+		// which for a HasMany or a HasOne is not the table the key lives on:
+		// the far table's column of that name is meant. The two are the same
+		// object for a table under its own name, and differ only for an
+		// alias, whose model carries its own copy of every column. Resolving
+		// by name against the holder is what makes both read alike.
+		key = named
 	}
 
 	referenced := columnNamed(target, referencedColumnOf(key))

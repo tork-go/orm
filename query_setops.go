@@ -299,6 +299,10 @@ func (f *Filtered[E]) readyForSetOp(op string) error {
 	if err := f.noDerived(op); err != nil {
 		return err
 	}
+	// An alias names no table to write to, for the reason noAlias gives.
+	if err := f.noAlias(op); err != nil {
+		return err
+	}
 	var clause string
 	switch {
 	case len(f.ords) > 0:

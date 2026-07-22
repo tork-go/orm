@@ -318,15 +318,30 @@ func (b *TableBuilder[E]) NullableUUIDArray(name string) *NullableUUIDArrayColum
 // startup rather than at the first query.
 func DefineTable[E any, M Model](name string, build func(*TableBuilder[E]) M) M {
 	st := &tableState{name: name, entity: reflect.TypeFor[E]()}
-	m := build(&TableBuilder[E]{st: st})
-	fillTableState(name, m, st, "Table: t.Table()")
+	// The build function is kept, wrapped in a closure that has already
+	// captured E and M, so Alias can declare the same model again under
+	// another name without knowing either type. See model_alias.go.
+	st.rebuild = func(into *tableState) Model { return declare(into, build) }
 
+	m := declare(st, build)
 	registerTable(st.entity, st)
+	return m
+}
 
-	if err := bindRelations(name, m, st); err != nil {
+// declare builds a model into st and does everything a declaration owes it:
+// its columns, its keys, the entity field each column scans into, and its
+// relationship markers.
+//
+// It is separate from DefineTable so Alias can run it a second time against
+// a state of its own. Registration is deliberately not part of it: the
+// registry maps a row type to the one table declared for it, and an alias
+// registering itself would shadow the table it is an alias of.
+func declare[E any, M Model](st *tableState, build func(*TableBuilder[E]) M) M {
+	m := build(&TableBuilder[E]{st: st})
+	fillTableState(st.name, m, st, "Table: t.Table()")
+	if err := bindRelations(st.name, m, st); err != nil {
 		panic(err.Error())
 	}
-
 	return m
 }
 

@@ -272,6 +272,9 @@ func (q *Query[E]) readyToWrite() error {
 	if q.st.fieldIdx == nil {
 		return errNoEntityMapping(q.st.name)
 	}
+	if err := q.st.noAlias("a write"); err != nil {
+		return err
+	}
 	if q.db == nil {
 		return fmt.Errorf("orm: table %q: no database handle; pass one to With", q.st.name)
 	}

@@ -30,6 +30,19 @@ type tableState struct {
 	// the name alone. See model_derived.go.
 	derived bool
 
+	// aliasOf is the stored table an alias stands for, and "" for a table
+	// under its own name. It is what fromClause renders as `"employees" AS
+	// "mgr"`, and what relationship resolution matches a foreign key
+	// against, since a key references the stored table rather than any
+	// second name given to it here. See model_alias.go.
+	aliasOf string
+
+	// rebuild re-runs the model's own build function against another state,
+	// which is how Alias produces a second handle on this table. It is nil
+	// for a model built by NewTable or DefineDerived, neither of which has
+	// a build function to re-run.
+	rebuild func(*tableState) Model
+
 	// entity is E's type, and fieldIdx maps each column's name to the
 	// index path of the entity field it scans into. Both are set by
 	// DefineTable and left zero for a model built by hand, which never
@@ -70,6 +83,21 @@ type tableState struct {
 	scopeVal  Predicate
 }
 
+// storageName is the name the table is stored under: an alias's real
+// table, or the table's own name when it is not one.
+//
+// Everything that names a table in the finished statement — the FROM
+// clause, a JOIN, the qualification on a column — uses name, since that is
+// what the statement calls it. This is for the two questions that are about
+// storage rather than about the statement: which table a foreign key
+// references, and which table a write would touch.
+func (st *tableState) storageName() string {
+	if st.aliasOf != "" {
+		return st.aliasOf
+	}
+	return st.name
+}
+
 // Table gives a model struct its database identity and, through E, the row
 // type its queries return. Embed it by value in every model struct:
 //
@@ -105,6 +133,40 @@ func (t Table[E]) TableName() string {
 		return ""
 	}
 	return t.st.name
+}
+
+// state returns the table this identity was built from.
+//
+// It is how Alias reaches the state behind a Model, which the exported
+// Model interface deliberately does not expose: TableName is all anything
+// outside this package needs, and a caller able to reach the state could
+// rename a table every column has already been bound to. See stateOf.
+func (t Table[E]) state() *tableState { return t.st }
+
+// stateHolder is the read side of the table identity a model embeds,
+// satisfied through promotion by every model carrying a Table or a
+// DerivedTable.
+type stateHolder interface {
+	state() *tableState
+}
+
+// stateOf returns the table state behind a model, or nil for one built
+// without either identity — which a caller can write, since Model asks only
+// for a TableName.
+//
+// A nil model pointer reports nil rather than panicking. The identity is
+// embedded by value, so reaching its method through a nil pointer would
+// dereference it, and a caller who passed a model that was never declared
+// deserves the error naming that rather than a nil dereference.
+func stateOf(m Model) *tableState {
+	h, ok := any(m).(stateHolder)
+	if !ok {
+		return nil
+	}
+	if v := reflect.ValueOf(m); v.Kind() == reflect.Pointer && v.IsNil() {
+		return nil
+	}
+	return h.state()
 }
 
 // primaryKeyColumns returns the table's primary key columns in declaration

@@ -15,27 +15,8 @@ import (
 // rejected but no second diagnostic is added, keeping one mistake at
 // one diagnostic.
 
-// spanOf returns an expression's span for anchoring diagnostics.
-func spanOf(e ast.Expr) token.Span {
-	switch e := e.(type) {
-	case *ast.Ident:
-		return e.Span
-	case *ast.StringLit:
-		return e.Span
-	case *ast.IntLit:
-		return e.Span
-	case *ast.FloatLit:
-		return e.Span
-	case *ast.BoolLit:
-		return e.Span
-	case *ast.FuncCall:
-		return e.Span
-	case *ast.ArrayExpr:
-		return e.Span
-	default:
-		return e.(*ast.BadExpr).Span
-	}
-}
+// spanOf anchors a diagnostic at an expression.
+func spanOf(e ast.Expr) token.Span { return ast.SpanOf(e) }
 
 func isBad(e ast.Expr) bool {
 	_, bad := e.(*ast.BadExpr)

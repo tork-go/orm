@@ -204,6 +204,30 @@ func (*FuncCall) exprNode()  {}
 func (*ArrayExpr) exprNode() {}
 func (*BadExpr) exprNode()   {}
 
+// SpanOf returns an expression's source span. It lives here rather
+// than as a method so that Expr stays a pure marker interface, which
+// is what keeps the variant list closed and checkable.
+func SpanOf(e Expr) token.Span {
+	switch e := e.(type) {
+	case *Ident:
+		return e.Span
+	case *StringLit:
+		return e.Span
+	case *IntLit:
+		return e.Span
+	case *FloatLit:
+		return e.Span
+	case *BoolLit:
+		return e.Span
+	case *FuncCall:
+		return e.Span
+	case *ArrayExpr:
+		return e.Span
+	default:
+		return e.(*BadExpr).Span
+	}
+}
+
 // StringLit is a double quoted literal; Value holds the decoded text.
 type StringLit struct {
 	Value string

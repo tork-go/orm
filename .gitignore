@@ -1,1 +1,8 @@
 coverage.out
+
+# Build output of the VS Code extension. Its source lives here; the
+# compiled form is produced by npm and packaged by vsce, and neither
+# belongs in version control.
+editors/vscode/node_modules/
+editors/vscode/out/
+editors/vscode/*.vsix

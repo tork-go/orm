@@ -1,0 +1,71 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Tork schema",
+  "scopeName": "source.tork",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#declaration" },
+    { "include": "#block-attribute" },
+    { "include": "#attribute" },
+    { "include": "#field" },
+    { "include": "#literal" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.tork",
+      "match": "//.*$"
+    },
+    "declaration": {
+      "match": "\\b(model|enum|datasource)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.tork" },
+        "2": { "name": "entity.name.type.tork" }
+      }
+    },
+    "block-attribute": {
+      "match": "@@[A-Za-z_][A-Za-z0-9_]*",
+      "name": "storage.modifier.block.tork"
+    },
+    "attribute": {
+      "match": "@[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)?",
+      "name": "storage.modifier.tork"
+    },
+    "field": {
+      "match": "^\\s*([a-z][A-Za-z0-9_]*)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\[\\])?(\\?)?",
+      "captures": {
+        "1": { "name": "variable.other.member.tork" },
+        "2": { "name": "support.type.tork" },
+        "3": { "name": "punctuation.definition.list.tork" },
+        "4": { "name": "keyword.operator.optional.tork" }
+      }
+    },
+    "literal": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.tork",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.tork", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "constant.numeric.tork",
+          "match": "\\b-?[0-9]+(\\.[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.language.tork",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "support.function.tork",
+          "match": "\\b(autoincrement|now|uuid|dbgenerated|go)(?=\\s*\\()"
+        },
+        {
+          "name": "constant.language.action.tork",
+          "match": "\\b(Cascade|Restrict|NoAction|SetNull|SetDefault)\\b"
+        }
+      ]
+    }
+  }
+}

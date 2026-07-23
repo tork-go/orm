@@ -1,0 +1,70 @@
+{
+  "name": "tork",
+  "displayName": "Tork schema",
+  "description": "Schema language support for Tork ORM: syntax highlighting, diagnostics, completion, hover, go to definition, and formatting for .tork files.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:tork"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "tork",
+        "aliases": [
+          "Tork schema",
+          "tork"
+        ],
+        "extensions": [
+          ".tork"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tork",
+        "scopeName": "source.tork",
+        "path": "./syntaxes/tork.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Tork schema",
+      "properties": {
+        "tork.lsp.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `tork-lsp` executable. Leave empty to search `PATH`, then the Go bin directory."
+        },
+        "tork.lsp.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the traffic between the editor and the schema language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ."
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.4.0"
+  }
+}

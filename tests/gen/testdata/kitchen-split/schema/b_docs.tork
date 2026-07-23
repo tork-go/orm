@@ -1,0 +1,29 @@
+datasource db { provider = "postgres" }
+
+model Doc {
+	id       Int     @id @default(autoincrement())
+	title    String  @db.VarChar(120)
+	body     String  @db.Text
+	status   Status  @default(draft)
+	price    Decimal @db.Numeric(10, 2) @default(0)
+	key      Uuid    @unique @default(uuid())
+	blob     Json    @go.type("Meta") @db.Json
+	authorId Int
+	author   Author  @relation("AuthorDocs", fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+	parentId Int?
+	parent   Doc?    @relation("DocTree", fields: [parentId], references: [id])
+	children Doc[]   @relation("DocTree")
+	labels   Label[] @relation("DocLabels", through: DocLabel)
+
+	@@unique([title, authorId], name: "u_docs_title_author")
+	@@map("documents")
+}
+
+model DocLabel {
+	docId   Int
+	labelId Int
+	doc     Doc   @relation(fields: [docId], references: [id], onDelete: Cascade)
+	label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+	@@id([docId, labelId])
+}

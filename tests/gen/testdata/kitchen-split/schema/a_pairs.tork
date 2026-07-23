@@ -1,0 +1,39 @@
+model Ref {
+	id        Int     @id @default(autoincrement())
+	pa        Int?
+	pb        Int?
+	pair      Pair?   @relation("PairRef", fields: [pa, pb], references: [a, b], map: "fk_ref_pair", onDelete: SetNull)
+	labelCode String?
+	label     Label?  @relation("RL", fields: [labelCode], references: [code])
+}
+
+model Pair {
+	a     Int
+	b     Int
+	other Ref? @relation("PairRef")
+
+	@@id([a, b])
+}
+
+// Slot names its key t, which is exactly what the builder parameter
+// is called, so the hoisted local has to step aside.
+model Slot {
+	t       Int    @id @default(autoincrement())
+	parentT Int?
+	parent  Slot?  @relation("SlotTree", fields: [parentT], references: [t])
+	kids    Slot[] @relation("SlotTree")
+}
+
+// Node keeps a composite key it also points at, which puts a self
+// referencing composite foreign key in the ForeignKeys method, and a
+// column literally named t, which cannot shadow the builder parameter.
+model Node {
+	t        Int
+	u        Int
+	parentT  Int?
+	parentU  Int?
+	parent   Node?  @relation("NodeTree", fields: [parentT, parentU], references: [t, u], map: "fk_nodes_parent", onDelete: Cascade, onUpdate: Cascade)
+	children Node[] @relation("NodeTree")
+
+	@@id([t, u])
+}

@@ -95,7 +95,7 @@ model User {
 	posts     Post[]    @relation("UserPosts")
 
 	@@index([username, createdAt], name: "idx_user_name_date", where: "deleted_at IS NULL")
-	@@index(on: ["lower(mail)"])
+	@@index(on: ["lower(mail)"], name: "idx_user_lower_mail")
 	@@unique([age, ratio], name: "u_age_ratio")
 	@@check("age >= 0", name: "ck_age")
 }
@@ -232,8 +232,8 @@ model Post {
 		t.Errorf("index 0 = %+v, want named partial two column", named)
 	}
 	expr := user.Indexes[1]
-	if len(expr.Expressions) != 1 || expr.Expressions[0] != "lower(mail)" || len(expr.Fields) != 0 {
-		t.Errorf("index 1 = %+v, want expression index", expr)
+	if len(expr.Expressions) != 1 || expr.Expressions[0] != "lower(mail)" || len(expr.Fields) != 0 || expr.Name != "idx_user_lower_mail" {
+		t.Errorf("index 1 = %+v, want a named expression index", expr)
 	}
 	uniq := user.Indexes[2]
 	if !uniq.Unique || uniq.Name != "u_age_ratio" {

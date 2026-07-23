@@ -1,0 +1,47 @@
+datasource db { provider = "postgres" }
+
+// Publication state of a post.
+enum PostStatus {
+	draft
+	published
+}
+
+enum Visibility {
+	public
+	private
+}
+
+// User is an application account.
+model User {
+	id        Int      @id @default(autoincrement())
+	// Unique per tenant, and the login handle.
+	username  String   @unique @db.VarChar(30)
+	email     String?  @unique
+	settings  Json?    @go.type("myapp/config.Settings")
+	// Overrides that ship with the deployment.
+	// Read only once, at startup.
+	extra     Json?    @go.type("vendor/config.Extra")
+	notes     Json?    @go.type("gopkg.in/yaml.v3.Node")
+	diff      Json?    @go.type("github.com/google/go-cmp.Result")
+	odd       Json?    @go.type("example.com/1bad.Thing")
+	ref       Uuid     @default(go("myapp/ids.NewRef"))
+	nickname  String?  @index
+	createdAt DateTime @default(now())
+	posts     Post[]   @relation("UserPosts")
+
+	@@index([username])
+}
+
+model Post {
+	id        Int         @id @default(autoincrement())
+	title     String      @db.VarChar(100)
+	status    PostStatus  @default(draft)
+	seenBy    Visibility?
+	authorId  Int
+	author    User       @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+	createdAt DateTime   @default(now())
+
+	@@index([authorId, createdAt], name: "idx_posts_author_date")
+	@@index([title], where: "title IS NOT NULL")
+	@@check("length(title) > 0")
+}

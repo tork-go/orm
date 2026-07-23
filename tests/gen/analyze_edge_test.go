@@ -106,14 +106,14 @@ func TestAnalyze_EdgeCaseErrors(t *testing.T) {
 			},
 		},
 		{
-			name: "default on a relation field",
+			name:  "default on a relation field",
 			files: one(dsLine + "\nmodel A {\nbId Int\nb B @relation(fields: [bId], references: [id]) @default(now())\n}\nmodel B {\nid Int @id @default(autoincrement())\na A\n}\n"),
 			wantDiags: []string{
 				"schema.tork:4:48: @default cannot apply to a relation field",
 			},
 		},
 		{
-			name: "column attributes on a relation field",
+			name:  "column attributes on a relation field",
 			files: one(dsLine + "\nmodel A {\nbId Int\nb B @relation(fields: [bId], references: [id]) @map(\"x\") @unique @index\n}\nmodel B {\nid Int @id @default(autoincrement())\na A\n}\n"),
 			wantDiags: []string{
 				"schema.tork:4:48: @map cannot apply to a relation field (a relation has no column)",
@@ -249,42 +249,42 @@ func TestAnalyze_EdgeCaseErrors(t *testing.T) {
 			},
 		},
 		{
-			name: "relation map must be a string",
+			name:  "relation map must be a string",
 			files: one(dsLine + "\nmodel A {\nbId Int\nb B @relation(fields: [bId], references: [id], map: 5)\n}\nmodel B {\nid Int @id @default(autoincrement())\na A\n}\n"),
 			wantDiags: []string{
 				"schema.tork:4:53: map: expects a string in @relation",
 			},
 		},
 		{
-			name: "relation map with an invalid identifier",
+			name:  "relation map with an invalid identifier",
 			files: one(dsLine + "\nmodel A {\nbId Int\nb B @relation(fields: [bId], references: [id], map: \"1x\")\n}\nmodel B {\nid Int @id @default(autoincrement())\na A\n}\n"),
 			wantDiags: []string{
 				`schema.tork:4:53: map: value "1x" is not a valid identifier`,
 			},
 		},
 		{
-			name: "Json field used as a foreign key",
+			name:  "Json field used as a foreign key",
 			files: one(dsLine + "\nmodel A {\nj Json @go.type(\"X\")\nb B @relation(fields: [j], references: [id])\n}\nmodel B {\nid Int @id @default(autoincrement())\na A\n}\n"),
 			wantDiags: []string{
 				`schema.tork:4:24: "j" in fields: cannot be a Json field`,
 			},
 		},
 		{
-			name: "join model with a broken belongs to",
+			name:  "join model with a broken belongs to",
 			files: one(dsLine + "\nmodel A {\nid Int @id @default(autoincrement())\nts T[] @relation(\"M\", through: J)\n}\nmodel T {\nid Int @id @default(autoincrement())\nas A[] @relation(\"M\", through: J)\n}\nmodel J {\naId Int\ntId Int\na A @relation(fields: [aId], references: [nope])\nt T @relation(fields: [tId], references: [id])\n}\n"),
 			wantDiags: []string{
 				`schema.tork:13:43: model "A" has no field "nope" (referenced in references:)`,
 			},
 		},
 		{
-			name: "list field in references",
+			name:  "list field in references",
 			files: one(dsLine + "\nmodel A {\nbTags Int\nb B @relation(fields: [bTags], references: [tags])\n}\nmodel B {\nid Int @id @default(autoincrement())\ntags String[]\na A\n}\n"),
 			wantDiags: []string{
 				`schema.tork:4:45: "tags" in references: cannot be a list field`,
 			},
 		},
 		{
-			name: "join model missing the second endpoint",
+			name:  "join model missing the second endpoint",
 			files: one(dsLine + "\nmodel A {\nid Int @id @default(autoincrement())\nts T[] @relation(\"M\", through: J)\n}\nmodel T {\nid Int @id @default(autoincrement())\nas A[] @relation(\"M\", through: J)\n}\nmodel J {\naId Int\na A @relation(fields: [aId], references: [id])\n}\n"),
 			wantDiags: []string{
 				`schema.tork:4:32: join model "J" needs a belongs to relation to "T" (with fields: and references:)`,

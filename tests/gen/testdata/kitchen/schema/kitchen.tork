@@ -1,0 +1,135 @@
+datasource db { provider = "postgres" }
+
+// Editorial state of a document.
+enum Status {
+	draft
+	published
+
+	@@map("doc_status")
+}
+
+// Author writes documents.
+model Author {
+	id        Int       @id @default(autoincrement())
+	name      String    @unique @db.VarChar(80)
+	rating    Double?
+	tags      String[]  @db.VarChar(20)
+	scores    Int[]?
+	meta      Json?     @go.type("Meta")
+	nonce     String    @default(go("NewNonce"))
+	createdAt DateTime  @default(now())
+	deletedAt DateTime? @softDelete
+	docs      Doc[]     @relation("AuthorDocs")
+
+	@@index([name, createdAt], name: "idx_authors_name_created", where: "deleted_at IS NULL")
+	@@index(on: ["lower(name)"], name: "idx_authors_lower_name")
+	@@check("rating IS NULL OR rating >= 0", name: "ck_author_rating")
+}
+
+model Doc {
+	id       Int     @id @default(autoincrement())
+	title    String  @db.VarChar(120)
+	body     String  @db.Text
+	status   Status  @default(draft)
+	price    Decimal @db.Numeric(10, 2) @default(0)
+	key      Uuid    @unique @default(uuid())
+	blob     Json    @go.type("Meta") @db.Json
+	authorId Int
+	author   Author  @relation("AuthorDocs", fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+	parentId Int?
+	parent   Doc?    @relation("DocTree", fields: [parentId], references: [id])
+	children Doc[]   @relation("DocTree")
+	labels   Label[] @relation("DocLabels", through: DocLabel)
+
+	@@unique([title, authorId], name: "u_docs_title_author")
+	@@map("documents")
+}
+
+model Label {
+	id   Int     @id @default(autoincrement())
+	name String  @unique
+	code String? @unique
+	docs Doc[]   @relation("DocLabels", through: DocLabel)
+	refs Ref[]   @relation("RL")
+}
+
+model DocLabel {
+	docId   Int
+	labelId Int
+	doc     Doc   @relation(fields: [docId], references: [id], onDelete: Cascade)
+	label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+	@@id([docId, labelId])
+}
+
+model Pair {
+	a     Int
+	b     Int
+	other Ref? @relation("PairRef")
+
+	@@id([a, b])
+}
+
+model Ref {
+	id        Int     @id @default(autoincrement())
+	pa        Int?
+	pb        Int?
+	pair      Pair?   @relation("PairRef", fields: [pa, pb], references: [a, b], map: "fk_ref_pair", onDelete: SetNull)
+	labelCode String?
+	label     Label?  @relation("RL", fields: [labelCode], references: [code])
+}
+
+model Alpha {
+	id      Int     @id @default(autoincrement())
+	betaId  Int?
+	beta    Beta?   @relation("AB", fields: [betaId], references: [id])
+	pal     Beta?   @relation("BA")
+	gammaId Int?
+	gamma   Gamma?  @relation("AG", fields: [gammaId], references: [id])
+}
+
+model Beta {
+	id      Int     @id @default(autoincrement())
+	alphaId Int?
+	alpha   Alpha?  @relation("BA", fields: [alphaId], references: [id])
+	fans    Alpha[] @relation("AB")
+	gammaId Int?
+	gamma   Gamma?  @relation("BG", fields: [gammaId], references: [id])
+	gammas  Gamma[] @relation("GB")
+}
+
+// Gamma closes a second path from Alpha back to Beta, so the cycle
+// search meets a model it has already visited.
+model Gamma {
+	id      Int     @id @default(autoincrement())
+	betaId  Int?
+	beta    Beta?   @relation("GB", fields: [betaId], references: [id])
+	alphas  Alpha[] @relation("AG")
+	betas   Beta[]  @relation("BG")
+	pals    Gamma[] @relation("GG")
+	ownerId Int?
+	owner   Gamma?  @relation("GG", fields: [ownerId], references: [id])
+}
+
+// Slot names its key t, which is exactly what the builder parameter
+// is called, so the hoisted local has to step aside.
+model Slot {
+	t       Int    @id @default(autoincrement())
+	parentT Int?
+	parent  Slot?  @relation("SlotTree", fields: [parentT], references: [t])
+	kids    Slot[] @relation("SlotTree")
+}
+
+// Node keeps a composite key it also points at, which puts a self
+// referencing composite foreign key in the ForeignKeys method, and a
+// column literally named t, which cannot shadow the builder parameter.
+model Node {
+	t        Int
+	u        Int
+	parentT  Int?
+	parentU  Int?
+	parent   Node?  @relation("NodeTree", fields: [parentT, parentU], references: [t, u], map: "fk_nodes_parent", onDelete: Cascade, onUpdate: Cascade)
+	children Node[] @relation("NodeTree")
+
+	@@id([t, u])
+}

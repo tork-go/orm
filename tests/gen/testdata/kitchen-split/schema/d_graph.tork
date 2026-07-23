@@ -1,0 +1,31 @@
+// Gamma closes a second path from Alpha back to Beta, so the cycle
+// search meets a model it has already visited.
+model Gamma {
+	id      Int     @id @default(autoincrement())
+	betaId  Int?
+	beta    Beta?   @relation("GB", fields: [betaId], references: [id])
+	alphas  Alpha[] @relation("AG")
+	betas   Beta[]  @relation("BG")
+	pals    Gamma[] @relation("GG")
+	ownerId Int?
+	owner   Gamma?  @relation("GG", fields: [ownerId], references: [id])
+}
+
+model Beta {
+	id      Int     @id @default(autoincrement())
+	alphaId Int?
+	alpha   Alpha?  @relation("BA", fields: [alphaId], references: [id])
+	fans    Alpha[] @relation("AB")
+	gammaId Int?
+	gamma   Gamma?  @relation("BG", fields: [gammaId], references: [id])
+	gammas  Gamma[] @relation("GB")
+}
+
+model Alpha {
+	id      Int     @id @default(autoincrement())
+	betaId  Int?
+	beta    Beta?   @relation("AB", fields: [betaId], references: [id])
+	pal     Beta?   @relation("BA")
+	gammaId Int?
+	gamma   Gamma?  @relation("AG", fields: [gammaId], references: [id])
+}

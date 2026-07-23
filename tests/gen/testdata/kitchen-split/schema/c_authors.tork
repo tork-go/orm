@@ -1,0 +1,33 @@
+// Editorial state of a document.
+enum Status {
+	draft
+	published
+
+	@@map("doc_status")
+}
+
+// Author writes documents.
+model Author {
+	id        Int       @id @default(autoincrement())
+	name      String    @unique @db.VarChar(80)
+	rating    Double?
+	tags      String[]  @db.VarChar(20)
+	scores    Int[]?
+	meta      Json?     @go.type("Meta")
+	nonce     String    @default(go("NewNonce"))
+	createdAt DateTime  @default(now())
+	deletedAt DateTime? @softDelete
+	docs      Doc[]     @relation("AuthorDocs")
+
+	@@index([name, createdAt], name: "idx_authors_name_created", where: "deleted_at IS NULL")
+	@@index(on: ["lower(name)"], name: "idx_authors_lower_name")
+	@@check("rating IS NULL OR rating >= 0", name: "ck_author_rating")
+}
+
+model Label {
+	id   Int     @id @default(autoincrement())
+	name String  @unique
+	code String? @unique
+	docs Doc[]   @relation("DocLabels", through: DocLabel)
+	refs Ref[]   @relation("RL")
+}

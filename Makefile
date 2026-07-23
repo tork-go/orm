@@ -1,9 +1,9 @@
-.PHONY: test test-cover bench integration test-cover-integration
+.PHONY: test test-cover bench integration test-cover-integration golden-update
 
 # The packages actually shipped as part of Tork ORM. Coverage is scoped
 # to these, excluding tests/fakedriver and tests/fixtures (test support
 # code, not product code).
-PRODUCT_PKGS := github.com/tork-go/orm,github.com/tork-go/orm/driver,github.com/tork-go/orm/driver/postgres,github.com/tork-go/orm/migrate,github.com/tork-go/orm/migrate/cli,github.com/tork-go/orm/schema,github.com/tork-go/orm/gen/token,github.com/tork-go/orm/gen/diag,github.com/tork-go/orm/gen/ast,github.com/tork-go/orm/gen/parser,github.com/tork-go/orm/gen/analyze
+PRODUCT_PKGS := github.com/tork-go/orm,github.com/tork-go/orm/driver,github.com/tork-go/orm/driver/postgres,github.com/tork-go/orm/migrate,github.com/tork-go/orm/migrate/cli,github.com/tork-go/orm/schema,github.com/tork-go/orm/gen/token,github.com/tork-go/orm/gen/diag,github.com/tork-go/orm/gen/ast,github.com/tork-go/orm/gen/parser,github.com/tork-go/orm/gen/analyze,github.com/tork-go/orm/gen/codegen
 
 # Unit tests only (no live database required).
 test:
@@ -19,6 +19,13 @@ test-cover:
 
 bench:
 	go test -bench=. -benchmem -run=^$$ ./...
+
+# Rewrites the generator's expected output: the golden files under
+# tests/gen/testdata and the generated half of tests/genfixtures. Review
+# the resulting diff; that diff is how a codegen change gets checked.
+golden-update:
+	go test ./tests/gen/ -run Golden -update
+	go build ./tests/genfixtures/
 
 # Starts a local Postgres via Docker and runs every integration test
 # against it. Requires Docker.

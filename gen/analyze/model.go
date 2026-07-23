@@ -296,6 +296,14 @@ func (a *analyzer) indexAttr(m *Model, attr *ast.BlockAttribute, names map[strin
 		a.errorf(m.File, attr.Span, "@@index needs fields or on: expressions")
 		return
 	}
+	// The ORM derives an unnamed index's constraint name from its
+	// column list, which an expression only index does not have.
+	// Catching that here beats letting migration generation fail on
+	// code the user cannot see.
+	if len(idents) == 0 && idx.Name == "" {
+		a.errorf(m.File, attr.Span, `an expression index needs a name, e.g. @@index(on: [...], name: "idx_users_lower_email")`)
+		return
+	}
 	fields, ok := a.resolveIndexFields(m, "@@index", idents)
 	if !ok {
 		return

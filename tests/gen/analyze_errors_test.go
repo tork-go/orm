@@ -26,56 +26,56 @@ func one(src string) map[string]string {
 func TestAnalyze_StructureAndTypeErrors(t *testing.T) {
 	runErrCases(t, []errCase{
 		{
-			name: "model redeclared",
+			name:  "model redeclared",
 			files: one(dsLine + "\nmodel A {\nid Int @id @default(autoincrement())\n}\nmodel A {\nid Int @id @default(autoincrement())\n}\n"),
 			wantDiags: []string{
 				`schema.tork:5:7: model "A" redeclared (first declared at schema.tork:2:7)`,
 			},
 		},
 		{
-			name: "enum redeclared",
+			name:  "enum redeclared",
 			files: one(dsLine + "\nenum E {\na\n}\nenum E {\nb\n}\n"),
 			wantDiags: []string{
 				`schema.tork:5:6: enum "E" redeclared (first declared at schema.tork:2:6)`,
 			},
 		},
 		{
-			name: "enum conflicts with model",
+			name:  "enum conflicts with model",
 			files: one(dsLine + "\nmodel X {\nid Int @id @default(autoincrement())\n}\nenum X {\na\n}\n"),
 			wantDiags: []string{
 				`schema.tork:5:6: enum "X" conflicts with the model of the same name (declared at schema.tork:2:7)`,
 			},
 		},
 		{
-			name: "model conflicts with enum",
+			name:  "model conflicts with enum",
 			files: one(dsLine + "\nenum X {\na\n}\nmodel X {\nid Int @id @default(autoincrement())\n}\n"),
 			wantDiags: []string{
 				`schema.tork:5:7: model "X" conflicts with the enum of the same name (declared at schema.tork:2:6)`,
 			},
 		},
 		{
-			name: "lowercase model name",
+			name:  "lowercase model name",
 			files: one(dsLine + "\nmodel user {\nid Int @id @default(autoincrement())\n}\n"),
 			wantDiags: []string{
 				`schema.tork:2:7: model name "user" must start with an uppercase letter`,
 			},
 		},
 		{
-			name: "lowercase enum name",
+			name:  "lowercase enum name",
 			files: one(dsLine + "\nenum status {\na\n}\n"),
 			wantDiags: []string{
 				`schema.tork:2:6: enum name "status" must start with an uppercase letter`,
 			},
 		},
 		{
-			name: "model shadows a built in type",
+			name:  "model shadows a built in type",
 			files: one(dsLine + "\nmodel String {\nid Int @id @default(autoincrement())\n}\n"),
 			wantDiags: []string{
 				`schema.tork:2:7: "String" is a built in type name and cannot be used as a model name`,
 			},
 		},
 		{
-			name: "enum shadows a built in type",
+			name:  "enum shadows a built in type",
 			files: one(dsLine + "\nenum Json {\na\n}\n"),
 			wantDiags: []string{
 				`schema.tork:2:6: "Json" is a built in type name and cannot be used as an enum name`,
@@ -139,21 +139,21 @@ func TestAnalyze_StructureAndTypeErrors(t *testing.T) {
 			},
 		},
 		{
-			name: "table collision",
+			name:  "table collision",
 			files: one(dsLine + "\nmodel User {\nid Int @id @default(autoincrement())\n}\nmodel A {\nid Int @id @default(autoincrement())\n@@map(\"users\")\n}\n"),
 			wantDiags: []string{
 				`schema.tork:5:7: table "users" is used by both model "User" and model "A" (rename one with @@map)`,
 			},
 		},
 		{
-			name: "enum type collision",
+			name:  "enum type collision",
 			files: one(dsLine + "\nenum A {\nx\n@@map(\"t\")\n}\nenum B {\ny\n@@map(\"t\")\n}\n"),
 			wantDiags: []string{
 				`schema.tork:6:6: enum type "t" is used by both enum "A" and enum "B" (rename one with @@map)`,
 			},
 		},
 		{
-			name: "enum type collides with a table",
+			name:  "enum type collides with a table",
 			files: one(dsLine + "\nmodel User {\nid Int @id @default(autoincrement())\n}\nenum Users {\na\n}\n"),
 			wantDiags: []string{
 				`schema.tork:5:6: enum type "users" collides with the table of model "User"; Postgres cannot hold both (rename one with @@map)`,

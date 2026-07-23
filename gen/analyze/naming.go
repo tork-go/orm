@@ -52,10 +52,10 @@ func splitWords(name string) []string {
 	return words
 }
 
-// goName renders a schema field name as the exported Go identifier the
+// GoName renders a schema field name as the exported Go identifier the
 // generated structs use: authorId becomes AuthorID, created_at becomes
 // CreatedAt.
-func goName(name string) string {
+func GoName(name string) string {
 	var b strings.Builder
 	for _, w := range splitWords(name) {
 		lower := strings.ToLower(w)
@@ -69,10 +69,10 @@ func goName(name string) string {
 	return b.String()
 }
 
-// snakeCase renders a schema name as a SQL identifier: authorId becomes
+// SnakeCase renders a schema name as a SQL identifier: authorId becomes
 // author_id. Generated code never relies on the ORM guessing this back;
 // every row struct field carries an explicit db tag.
-func snakeCase(name string) string {
+func SnakeCase(name string) string {
 	words := splitWords(name)
 	for i, w := range words {
 		words[i] = strings.ToLower(w)

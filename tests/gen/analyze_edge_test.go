@@ -291,6 +291,41 @@ func TestAnalyze_EdgeCaseErrors(t *testing.T) {
 			},
 		},
 		{
+			name:  "table variable collides with a model name",
+			files: one(dsLine + "\nmodel Users {\nid String @id\n}\nmodel User {\nid String @id\n}\n"),
+			wantDiags: []string{
+				`schema.tork:5:7: the generated table variable "Users" collides with model "Users" (rename the table with @@map)`,
+			},
+		},
+		{
+			name:  "two models generate the same table variable",
+			files: one(dsLine + "\nmodel A {\nid String @id\n@@map(\"user_s\")\n}\nmodel B {\nid String @id\n@@map(\"userS\")\n}\n"),
+			wantDiags: []string{
+				`schema.tork:6:7: models "A" and "B" both generate the table variable "UserS" (rename one with @@map)`,
+			},
+		},
+		{
+			name:  "table variable AllModels is reserved",
+			files: one(dsLine + "\nmodel X {\nid String @id\n@@map(\"all_models\")\n}\n"),
+			wantDiags: []string{
+				`schema.tork:2:7: table "all_models" would generate a variable named AllModels, which is reserved for the registry (rename with @@map)`,
+			},
+		},
+		{
+			name:  "model name collides with a generated struct",
+			files: one(dsLine + "\nmodel User {\nid String @id\n}\nmodel UserModel {\nid String @id\n}\n"),
+			wantDiags: []string{
+				`schema.tork:5:7: model "UserModel" collides with the struct generated for model "User"; rename it`,
+			},
+		},
+		{
+			name:  "foreign key referencing itself",
+			files: one(dsLine + "\nmodel A {\nid Int @id @default(autoincrement())\nkids A[] @relation(\"T\")\nparent A? @relation(\"T\", fields: [id], references: [id])\n}\n"),
+			wantDiags: []string{
+				`schema.tork:5:35: foreign key "id" cannot reference itself`,
+			},
+		},
+		{
 			name:  "unique index name must be a string",
 			files: one(dsLine + "\nmodel A {\nalpha String\n@@unique([alpha], name: 5)\n}\n"),
 			wantDiags: []string{

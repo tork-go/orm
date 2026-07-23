@@ -359,6 +359,10 @@ func (a *analyzer) resolveOwnerKeys(owner *pendingRelation) (fks, refs []*Field,
 			a.errorf(file, refID.Span, "%q in references: cannot be a %s field", refID.Name, reason)
 			return nil, nil, false
 		}
+		if fk == ref {
+			a.errorf(file, id.Span, "foreign key %q cannot reference itself", fk.Name)
+			return nil, nil, false
+		}
 		if fk.Type.Kind != ref.Type.Kind || fk.Type.Enum != ref.Type.Enum {
 			a.errorf(file, id.Span, "foreign key %q (%s) does not match referenced %q (%s)", fk.Name, typeDisplay(fk), ref.Name, typeDisplay(ref))
 			return nil, nil, false

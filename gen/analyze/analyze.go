@@ -3,6 +3,7 @@ package analyze
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/tork-go/orm/gen/ast"
 	"github.com/tork-go/orm/gen/diag"
@@ -149,7 +150,7 @@ func (a *analyzer) declareEnum(file string, d *ast.EnumDecl) {
 		a.errorf(file, d.Name.Span, "enum %q conflicts with the model of the same name (declared at %s)", name, at(prev.File, prev.Decl.Name.Span))
 		return
 	}
-	e := &Enum{Name: name, DBName: snakeCase(name), File: file, Decl: d}
+	e := &Enum{Name: name, DBName: SnakeCase(name), File: file, Decl: d}
 	a.enums[name] = e
 	a.enumOrder = append(a.enumOrder, e)
 }
@@ -237,6 +238,36 @@ func (a *analyzer) checkNameCollisions() {
 		}
 		tables[m.TableName] = m
 	}
+	// The remaining collisions live in the generated Go, not in SQL:
+	// every model contributes a package variable named after its table
+	// and a struct named <Model>Model, and those share one namespace
+	// with the model type names and the registry's AllModels function.
+	varNames := map[string]*Model{}
+	for _, m := range a.modelOrder {
+		varName := GoName(m.TableName)
+		if other, ok := a.models[varName]; ok && other != m {
+			a.errorf(m.File, m.Decl.Name.Span, "the generated table variable %q collides with model %q (rename the table with @@map)", varName, other.Name)
+		}
+		if prev, ok := varNames[varName]; ok {
+			// Two identical table names already earned the table
+			// collision diagnostic; this one is for the subtler case
+			// of two distinct tables spelling one Go identifier.
+			if prev.TableName != m.TableName {
+				a.errorf(m.File, m.Decl.Name.Span, "models %q and %q both generate the table variable %q (rename one with @@map)", prev.Name, m.Name, varName)
+			}
+		} else {
+			varNames[varName] = m
+		}
+		if varName == "AllModels" {
+			a.errorf(m.File, m.Decl.Name.Span, "table %q would generate a variable named AllModels, which is reserved for the registry (rename with @@map)", m.TableName)
+		}
+		if base, ok := strings.CutSuffix(m.Name, "Model"); ok && base != "" {
+			if _, exists := a.models[base]; exists {
+				a.errorf(m.File, m.Decl.Name.Span, "model %q collides with the struct generated for model %q; rename it", m.Name, base)
+			}
+		}
+	}
+
 	types := map[string]*Enum{}
 	for _, e := range a.enumOrder {
 		if prev, ok := types[e.DBName]; ok {

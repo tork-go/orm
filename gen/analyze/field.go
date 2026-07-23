@@ -51,7 +51,7 @@ func (a *analyzer) buildField(m *Model, fd *ast.FieldDecl) {
 	}
 	f := &Field{
 		Name:     name,
-		GoName:   goName(name),
+		GoName:   GoName(name),
 		Optional: fd.Type.Optional,
 		List:     fd.Type.List,
 		Doc:      fd.Doc.Text(),
@@ -148,7 +148,7 @@ func (a *analyzer) buildField(m *Model, fd *ast.FieldDecl) {
 		a.errorf(m.File, fd.Name.Span, `a Json field needs @go.type to name its Go type, e.g. @go.type("Profile")`)
 	}
 	if f.Type.Kind != TypeModel && f.ColumnName == "" {
-		f.ColumnName = snakeCase(name)
+		f.ColumnName = SnakeCase(name)
 	}
 	if f.Type.Kind == TypeModel {
 		if rel == nil {

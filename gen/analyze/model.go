@@ -36,7 +36,7 @@ var blockAttrNames = []string{"id", "unique", "index", "check", "map"}
 // collisions and the single integer primary key rules.
 func (a *analyzer) fillModel(m *Model) {
 	m.Doc = m.Decl.Doc.Text()
-	m.TableName = pluralize(snakeCase(m.Name))
+	m.TableName = pluralize(SnakeCase(m.Name))
 
 	for _, fd := range m.Decl.Fields {
 		a.buildField(m, fd)

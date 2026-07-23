@@ -3,7 +3,7 @@
 # The packages actually shipped as part of Tork ORM. Coverage is scoped
 # to these, excluding tests/fakedriver and tests/fixtures (test support
 # code, not product code).
-PRODUCT_PKGS := github.com/tork-go/orm,github.com/tork-go/orm/driver,github.com/tork-go/orm/driver/postgres,github.com/tork-go/orm/migrate,github.com/tork-go/orm/migrate/cli,github.com/tork-go/orm/schema,github.com/tork-go/orm/gen/token,github.com/tork-go/orm/gen/diag,github.com/tork-go/orm/gen/parser
+PRODUCT_PKGS := github.com/tork-go/orm,github.com/tork-go/orm/driver,github.com/tork-go/orm/driver/postgres,github.com/tork-go/orm/migrate,github.com/tork-go/orm/migrate/cli,github.com/tork-go/orm/schema,github.com/tork-go/orm/gen/token,github.com/tork-go/orm/gen/diag,github.com/tork-go/orm/gen/ast,github.com/tork-go/orm/gen/parser,github.com/tork-go/orm/gen/analyze
 
 # Unit tests only (no live database required).
 test:

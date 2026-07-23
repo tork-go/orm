@@ -1,4 +1,6 @@
-datasource db { provider = "postgres" }
+datasource db {
+	provider = "postgres"
+}
 
 // Publication state of a post.
 enum PostStatus {
@@ -38,8 +40,8 @@ model Post {
 	status    PostStatus  @default(draft)
 	seenBy    Visibility?
 	authorId  Int
-	author    User       @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
-	createdAt DateTime   @default(now())
+	author    User        @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+	createdAt DateTime    @default(now())
 
 	@@index([authorId, createdAt], name: "idx_posts_author_date")
 	@@index([title], where: "title IS NOT NULL")

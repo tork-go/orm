@@ -1,4 +1,6 @@
-datasource db { provider = "postgres" }
+datasource db {
+	provider = "postgres"
+}
 
 model Doc {
 	id       Int     @id @default(autoincrement())

@@ -1,4 +1,6 @@
-datasource db { provider = "postgres" }
+datasource db {
+	provider = "postgres"
+}
 
 // Editorial state of a document.
 enum Status {
@@ -80,12 +82,12 @@ model Ref {
 }
 
 model Alpha {
-	id      Int     @id @default(autoincrement())
+	id      Int    @id @default(autoincrement())
 	betaId  Int?
-	beta    Beta?   @relation("AB", fields: [betaId], references: [id])
-	pal     Beta?   @relation("BA")
+	beta    Beta?  @relation("AB", fields: [betaId], references: [id])
+	pal     Beta?  @relation("BA")
 	gammaId Int?
-	gamma   Gamma?  @relation("AG", fields: [gammaId], references: [id])
+	gamma   Gamma? @relation("AG", fields: [gammaId], references: [id])
 }
 
 model Beta {
